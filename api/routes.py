@@ -6,15 +6,28 @@ from services.coinmarketcap_service import CoinMarketCapService
 from data.game_tokens import get_token_weight, validate_deck_weight, get_weight_distribution
 from models.simulation import CryptoSimulator, FantasyCryptoRankSystem, run_fantasy_simulation
 import json
+import os
 
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__)
 
-# In-memory storage (use database in production)
-game_sessions = {}
 
 # Initialize services
 cmc_service = CoinMarketCapService()
+
+SESSIONS_FILE = 'sessions.json'
+
+def load_sessions():
+    if os.path.isfile(SESSIONS_FILE):
+        with open(SESSIONS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_sessions(sessions):
+    with open(SESSIONS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(sessions, f, ensure_ascii=False, indent=2)
+        
+game_sessions = load_sessions()
 
 @api_bp.route('/tokens', methods=['GET'])
 def get_tokens():
@@ -91,7 +104,7 @@ def get_tournament_info():
             "status": "active",
             "rules": {
                 "deck_size": 5,
-                "weight_limit": 250,
+                "weight_limit": 28,
                 "duration_days": 7
             },
             "weight_tiers": {
@@ -186,7 +199,7 @@ def lock_deck():
             return jsonify({
                 "success": False,
                 "error": "Deck exceeds weight limit",
-                "message": f"Total deck weight ({total_weight}) exceeds tournament limit (250)"
+                "message": f"Total deck weight ({total_weight}) exceeds tournament limit (28)"
             }), 400
         
         # Get selected token details with starting prices and market caps
@@ -219,8 +232,8 @@ def lock_deck():
             "selected_tokens": selected_token_details,
             "total_tokens": len(selected_token_details),
             "total_weight": total_weight,
-            "weight_limit": 250,
-            "weight_remaining": 250 - total_weight,
+            "weight_limit": 28,
+            "weight_remaining": 28 - total_weight,
             "locked_at": now.isoformat(),
             "expires_at": expires_at.isoformat(),
             "status": "locked"
@@ -428,16 +441,16 @@ def validate_deck():
             total_weight += weight
         
         # Check weight limit
-        is_valid_weight = total_weight <= 250
+        is_valid_weight = total_weight <= 28
         
         validation_result = {
             "is_valid": is_valid_weight and len(selected_tokens) == 5,
             "deck_analysis": {
                 "total_tokens": len(selected_tokens),
                 "total_weight": total_weight,
-                "weight_limit": 250,
-                "weight_remaining": 250 - total_weight,
-                "weight_utilization": round((total_weight / 250) * 100, 1)
+                "weight_limit": 28,
+                "weight_remaining": 28 - total_weight,
+                "weight_utilization": round((total_weight / 28) * 100, 1)
             },
             "token_breakdown": token_weights,
             "validation_checks": {
@@ -533,6 +546,7 @@ def simulate_session():
         
         # Save updated session
         game_sessions[session_id] = session
+        save_sessions(game_sessions)
         
         logger.info(f"Simulation completed for session {session_id}, final score: {final_score}")
         

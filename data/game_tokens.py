@@ -2,45 +2,35 @@
 
 # Token weights for tournament restrictions (higher weight = stronger/more expensive token)
 TOKEN_WEIGHTS = {
-    # Tier 1: Giants (80-100 weight) - Top market cap, stable
-    'BTC': 100,   # Bitcoin - король
-    'ETH': 95,    # Ethereum - второй по важности  
-    'BNB': 85,    # Binance Coin - крупная экосистема
-    'XRP': 80,    # XRP - институциональный гигант
+    # Вес 10 (3 токена) - Абсолютные короли
+    'BTC': 10, 'ETH': 10, 'BNB': 10,
     
-    # Tier 2: Major players (60-75 weight) - Large established projects
-    'SOL': 75,    # Solana - топ L1
-    'DOGE': 70,   # Dogecoin - мемкоин король
-    'ADA': 65,    # Cardano - академический блокчейн  
-    'TRX': 60,    # TRON - популярная сеть
+    # Вес 9 (3 токена) - Топ экосистемы
+    'SOL': 9, 'XRP': 9, 'DOGE': 9,
     
-    # Tier 3: Mid-tier (40-55 weight) - Solid projects, medium risk
-    'HYPE': 55,   # Hyperliquid - DeFi перспектива
-    'POL': 50,    # Polygon - L2 решение
-    'FET': 50,    # AI токен
-    'LDO': 45,    # Lido - liquid staking
-    'PUMP': 45,   # Pump.fun - новая волна
-    'APT': 40,    # Aptos - новый L1
+    # Вес 8 (3 токена) - Крупные установленные
+    'ADA': 8, 'TRX': 8, 'AVAX': 8,
     
-    # Tier 4: Emerging/Speculative (25-35 weight) - Higher risk, higher potential
-    'DASH': 35,   # Старая школа privacy
-    'XTZ': 35,    # Tezos - governance focused
-    'ZEC': 35,    # Zcash - privacy coin  ← ДОБАВИЛ!
-    'KCS': 30,    # KuCoin token
-    'ENA': 30,    # Ethena - новый stablecoin protocol  
-    'KAS': 30,    # Kaspa - новый POW
-    'AR': 25,     # Arweave - storage
-    'SAND': 25,   # The Sandbox - gaming/metaverse
+    # Вес 7 (3 токена) - Сильные проекты
+    'HYPE': 7, 'POL': 7, 'LDO': 7,
     
-    # Tier 5: High risk/High reward (15-20 weight) - Volatile, potential gems
-    'DCR': 20,    # Decred - governance coin
-    'FLR': 20,    # Flare - smart contracts на XRP
-    'WLFI': 20,   # World Liberty Financial
-    'SPX': 20,    # SPX6900 - мем потенциал
-    'DEXE': 15,   # DeXe - DAO платформа
-    'KAIA': 15,   # Kaia - новый проект
-    '2Z': 15,     # DoubleZero - экспериментальный
-    'M': 15,      # MemeCore - мемкоин
+    # Вес 6 (3 токена) - Перспективные средние
+    'FET': 6, 'PUMP': 6, 'APT': 6,
+    
+    # Вес 5 (3 токена) - Средний сегмент
+    'DASH': 5, 'XTZ': 5, 'ZEC': 5,
+    
+    # Вес 4 (3 токена) - Растущие проекты  
+    'KCS': 4, 'ENA': 4, 'KAS': 4,
+    
+    # Вес 3 (3 токена) - Спекулятивные
+    'AR': 3, 'SAND': 3, 'DCR': 3,
+    
+    # Вес 2 (3 токена) - Рисковые ставки
+    'FLR': 2, 'WLFI': 2, 'SPX': 2,
+    
+    # Вес 1 (3 токена) - Максимальный риск/потенциал
+    'DEXE': 1, 'KAIA': 1, 'M': 1
 }
 
 GAME_TOKENS = list(TOKEN_WEIGHTS.keys())
