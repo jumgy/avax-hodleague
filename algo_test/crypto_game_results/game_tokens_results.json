@@ -1,0 +1,1112 @@
+{
+  "DASH": {
+    "weekly_change_pct": 18.528027385537005,
+    "activity_score": 48.49159141829645,
+    "weekly_rank": 6,
+    "activity_rank": 3,
+    "weekly_rank_points": 95,
+    "activity_rank_points": 98,
+    "mc_factor": 12.449376519387844,
+    "raw_score": 5950.801976267389,
+    "market_cap": 1277739652.8630009,
+    "name": "Dash",
+    "final_rank": 4,
+    "final_score": 761,
+    "weekly_score": 604,
+    "activity_score_points": 157,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": 35.51561831407788,
+        "activity": 35.51561831407788,
+        "price": 126.68
+      },
+      {
+        "day": 2,
+        "change_pct": 18.249893025246045,
+        "activity": 48.256382444169446,
+        "price": 110.54
+      },
+      {
+        "day": 3,
+        "change_pct": 18.528027385537005,
+        "activity": 48.49159141829645,
+        "price": 110.8
+      }
+    ]
+  },
+  "ZK": {
+    "weekly_change_pct": 36.787335538970524,
+    "activity_score": 34.67126358851716,
+    "weekly_rank": 3,
+    "activity_rank": 4,
+    "weekly_rank_points": 98,
+    "activity_rank_points": 97,
+    "mc_factor": 10.961294985722262,
+    "raw_score": 5360.073248018186,
+    "market_cap": 546853248.1665677,
+    "name": "ZKsync",
+    "final_rank": 9,
+    "final_score": 696,
+    "weekly_score": 557,
+    "activity_score_points": 139,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": 4.235592829114416,
+        "activity": 4.235592829114416,
+        "price": 0.05419
+      },
+      {
+        "day": 2,
+        "change_pct": 32.95952912210511,
+        "activity": 31.792337615975466,
+        "price": 0.069123
+      },
+      {
+        "day": 3,
+        "change_pct": 36.787335538970524,
+        "activity": 34.67126358851716,
+        "price": 0.071113
+      }
+    ]
+  },
+  "ASTER": {
+    "weekly_change_pct": 3.677058667093231,
+    "activity_score": 25.761101615446517,
+    "weekly_rank": 9,
+    "activity_rank": 6,
+    "weekly_rank_points": 92,
+    "activity_rank_points": 95,
+    "mc_factor": 13.60270214652801,
+    "raw_score": 6298.051093842469,
+    "market_cap": 2306532704.2592034,
+    "name": "Aster",
+    "final_rank": 3,
+    "final_score": 799,
+    "weekly_score": 635,
+    "activity_score_points": 164,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -10.34532163713996,
+        "activity": 10.34532163713996,
+        "price": 0.9136
+      },
+      {
+        "day": 2,
+        "change_pct": 2.014678794647013,
+        "activity": 24.131551934863246,
+        "price": 1.039551
+      },
+      {
+        "day": 3,
+        "change_pct": 3.677058667093231,
+        "activity": 25.761101615446517,
+        "price": 1.056491
+      }
+    ]
+  },
+  "XPL": {
+    "weekly_change_pct": 0.1259696346880627,
+    "activity_score": 23.64704003391832,
+    "weekly_rank": 15,
+    "activity_rank": 7,
+    "weekly_rank_points": 86,
+    "activity_rank_points": 94,
+    "mc_factor": 11.155814248118391,
+    "raw_score": 4886.246640675856,
+    "market_cap": 614893905.7165692,
+    "name": "Plasma",
+    "final_rank": 14,
+    "final_score": 642,
+    "weekly_score": 504,
+    "activity_score_points": 138,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.001237596410971,
+        "activity": 6.001237596410971,
+        "price": 0.255201
+      },
+      {
+        "day": 2,
+        "change_pct": 5.661266915659276,
+        "activity": 18.408320640756408,
+        "price": 0.286864
+      },
+      {
+        "day": 3,
+        "change_pct": 0.1259696346880627,
+        "activity": 23.64704003391832,
+        "price": 0.271836
+      }
+    ]
+  },
+  "SPX": {
+    "weekly_change_pct": -14.172021435515003,
+    "activity_score": 19.416890512493516,
+    "weekly_rank": 97,
+    "activity_rank": 8,
+    "weekly_rank_points": 4,
+    "activity_rank_points": 93,
+    "mc_factor": 12.235000296408781,
+    "raw_score": 1333.6150323085571,
+    "market_cap": 678492789.6517344,
+    "name": "SPX6900",
+    "final_rank": 83,
+    "final_score": 110,
+    "weekly_score": 16,
+    "activity_score_points": 94,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -14.839253105463095,
+        "activity": 14.839253105463095,
+        "price": 0.656161
+      },
+      {
+        "day": 2,
+        "change_pct": -12.53489630718874,
+        "activity": 17.545143885317426,
+        "price": 0.673916
+      },
+      {
+        "day": 3,
+        "change_pct": -14.172021435515003,
+        "activity": 19.416890512493516,
+        "price": 0.661302
+      }
+    ]
+  },
+  "AR": {
+    "weekly_change_pct": 18.76606683804627,
+    "activity_score": 17.827334356286276,
+    "weekly_rank": 5,
+    "activity_rank": 12,
+    "weekly_rank_points": 96,
+    "activity_rank_points": 89,
+    "mc_factor": 10.938284511215809,
+    "raw_score": 5173.808573805077,
+    "market_cap": 539245416.8264326,
+    "name": "Arweave",
+    "final_rank": 10,
+    "final_score": 675,
+    "weekly_score": 547,
+    "activity_score_points": 128,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": 5.655526992287922,
+        "activity": 5.655526992287922,
+        "price": 4.11
+      },
+      {
+        "day": 2,
+        "change_pct": 8.226221079691513,
+        "activity": 8.088617016618814,
+        "price": 4.21
+      },
+      {
+        "day": 3,
+        "change_pct": 18.76606683804627,
+        "activity": 17.827334356286276,
+        "price": 4.62
+      }
+    ]
+  },
+  "FLR": {
+    "weekly_change_pct": -1.1628679646488127,
+    "activity_score": 17.04404568865385,
+    "weekly_rank": 18,
+    "activity_rank": 13,
+    "weekly_rank_points": 83,
+    "activity_rank_points": 88,
+    "mc_factor": 11.880347231847301,
+    "raw_score": 4989.745837375866,
+    "market_cap": 1221918494.6631165,
+    "name": "Flare",
+    "final_rank": 13,
+    "final_score": 654,
+    "weekly_score": 516,
+    "activity_score_points": 138,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -8.817861651937006,
+        "activity": 8.817861651937006,
+        "price": 0.013722
+      },
+      {
+        "day": 2,
+        "change_pct": -5.149843843444745,
+        "activity": 12.840598862256204,
+        "price": 0.014274
+      },
+      {
+        "day": 3,
+        "change_pct": -1.1628679646488127,
+        "activity": 17.04404568865385,
+        "price": 0.014874
+      }
+    ]
+  },
+  "SYRUP": {
+    "weekly_change_pct": -1.6900977117646532,
+    "activity_score": 15.792952494156562,
+    "weekly_rank": 20,
+    "activity_rank": 16,
+    "weekly_rank_points": 81,
+    "activity_rank_points": 85,
+    "mc_factor": 12.411859184036352,
+    "raw_score": 5076.4504062708675,
+    "market_cap": 509199684.58220196,
+    "name": "Maple Finance",
+    "final_rank": 12,
+    "final_score": 664,
+    "weekly_score": 526,
+    "activity_score_points": 138,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -8.439482826272124,
+        "activity": 8.439482826272124,
+        "price": 0.38269
+      },
+      {
+        "day": 2,
+        "change_pct": -8.206926912365658,
+        "activity": 8.693474307627799,
+        "price": 0.383662
+      },
+      {
+        "day": 3,
+        "change_pct": -1.6900977117646532,
+        "activity": 15.792952494156562,
+        "price": 0.4109
+      }
+    ]
+  },
+  "WLFI": {
+    "weekly_change_pct": -4.259733523519302,
+    "activity_score": 14.694817985400762,
+    "weekly_rank": 41,
+    "activity_rank": 19,
+    "weekly_rank_points": 60,
+    "activity_rank_points": 82,
+    "mc_factor": 11.341876144330007,
+    "raw_score": 3652.084118474262,
+    "market_cap": 3089775414.671081,
+    "name": "World Liberty Financial",
+    "final_rank": 34,
+    "final_score": 490,
+    "weekly_score": 365,
+    "activity_score_points": 125,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -9.076247284987197,
+        "activity": 9.076247284987197,
+        "price": 0.112189
+      },
+      {
+        "day": 2,
+        "change_pct": -4.109799980549155,
+        "activity": 14.53845837520104,
+        "price": 0.118317
+      },
+      {
+        "day": 3,
+        "change_pct": -4.259733523519302,
+        "activity": 14.694817985400762,
+        "price": 0.118132
+      }
+    ]
+  },
+  "HYPE": {
+    "weekly_change_pct": -2.7927486526212655,
+    "activity_score": 14.484654656819314,
+    "weekly_rank": 28,
+    "activity_rank": 20,
+    "weekly_rank_points": 73,
+    "activity_rank_points": 81,
+    "mc_factor": 10.501981083641716,
+    "raw_score": 3917.2389441983605,
+    "market_cap": 14394622736.63543,
+    "name": "Hyperliquid",
+    "final_rank": 30,
+    "final_score": 525,
+    "weekly_score": 410,
+    "activity_score_points": 115,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.050955414012736,
+        "activity": 6.050955414012736,
+        "price": 38.35
+      },
+      {
+        "day": 2,
+        "change_pct": -0.39196472317492326,
+        "activity": 12.074423471379086,
+        "price": 40.66
+      },
+      {
+        "day": 3,
+        "change_pct": -2.7927486526212655,
+        "activity": 14.484654656819314,
+        "price": 39.68
+      }
+    ]
+  },
+  "PUMP": {
+    "weekly_change_pct": -4.213898472153773,
+    "activity_score": 14.029354350648008,
+    "weekly_rank": 39,
+    "activity_rank": 21,
+    "weekly_rank_points": 62,
+    "activity_rank_points": 80,
+    "mc_factor": 11.759688687667865,
+    "raw_score": 3857.1778895550597,
+    "market_cap": 1498678314.6140764,
+    "name": "Pump.fun",
+    "final_rank": 32,
+    "final_score": 517,
+    "weekly_score": 390,
+    "activity_score_points": 127,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.185312962050269,
+        "activity": 6.185312962050269,
+        "price": 0.003807
+      },
+      {
+        "day": 2,
+        "change_pct": -1.4539181862986699,
+        "activity": 11.228654175604245,
+        "price": 0.003999
+      },
+      {
+        "day": 3,
+        "change_pct": -4.213898472153773,
+        "activity": 14.029354350648008,
+        "price": 0.003887
+      }
+    ]
+  },
+  "FET": {
+    "weekly_change_pct": -1.9292949141642357,
+    "activity_score": 12.384767154155849,
+    "weekly_rank": 23,
+    "activity_rank": 27,
+    "weekly_rank_points": 78,
+    "activity_rank_points": 74,
+    "mc_factor": 12.098261080500766,
+    "raw_score": 4669.928777073295,
+    "market_cap": 849504872.0957824,
+    "name": "Artificial Superintelligence Alliance",
+    "final_rank": 16,
+    "final_score": 617,
+    "weekly_score": 498,
+    "activity_score_points": 119,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.998160024294832,
+        "activity": 6.998160024294832,
+        "price": 0.208246
+      },
+      {
+        "day": 2,
+        "change_pct": -3.6178745601028948,
+        "activity": 10.632803666909826,
+        "price": 0.215815
+      },
+      {
+        "day": 3,
+        "change_pct": -1.9292949141642357,
+        "activity": 12.384767154155849,
+        "price": 0.219596
+      }
+    ]
+  },
+  "DEXE": {
+    "weekly_change_pct": -11.11111111111111,
+    "activity_score": 11.47493949470234,
+    "weekly_rank": 91,
+    "activity_rank": 34,
+    "weekly_rank_points": 10,
+    "activity_rank_points": 67,
+    "mc_factor": 12.336897634825478,
+    "raw_score": 1320.0480469263262,
+    "market_cap": 574785358.6989731,
+    "name": "DeXe",
+    "final_rank": 84,
+    "final_score": 107,
+    "weekly_score": 40,
+    "activity_score_points": 67,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -4.592592592592587,
+        "activity": 4.592592592592587,
+        "price": 6.44
+      },
+      {
+        "day": 2,
+        "change_pct": -10.370370370370372,
+        "activity": 10.648493213710609,
+        "price": 6.05
+      },
+      {
+        "day": 3,
+        "change_pct": -11.11111111111111,
+        "activity": 11.47493949470234,
+        "price": 6.0
+      }
+    ]
+  },
+  "XTZ": {
+    "weekly_change_pct": 3.017893364109762,
+    "activity_score": 11.18285969119287,
+    "weekly_rank": 11,
+    "activity_rank": 38,
+    "weekly_rank_points": 90,
+    "activity_rank_points": 63,
+    "mc_factor": 11.46992373566858,
+    "raw_score": 4851.777740187809,
+    "market_cap": 739937823.976464,
+    "name": "Tezos",
+    "final_rank": 15,
+    "final_score": 638,
+    "weekly_score": 542,
+    "activity_score_points": 96,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -3.9589273858276117,
+        "activity": 3.9589273858276117,
+        "price": 0.525094
+      },
+      {
+        "day": 2,
+        "change_pct": -3.370895436396516,
+        "activity": 4.57119871248533,
+        "price": 0.528309
+      },
+      {
+        "day": 3,
+        "change_pct": 3.017893364109762,
+        "activity": 11.18285969119287,
+        "price": 0.563239
+      }
+    ]
+  },
+  "KAS": {
+    "weekly_change_pct": -5.371179935554053,
+    "activity_score": 10.64084591064768,
+    "weekly_rank": 49,
+    "activity_rank": 41,
+    "weekly_rank_points": 52,
+    "activity_rank_points": 60,
+    "mc_factor": 11.793928820087698,
+    "raw_score": 3160.772923783503,
+    "market_cap": 1414017791.5949183,
+    "name": "Kaspa",
+    "final_rank": 42,
+    "final_score": 424,
+    "weekly_score": 329,
+    "activity_score_points": 95,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -7.905917123329846,
+        "activity": 7.905917123329846,
+        "price": 0.044871
+      },
+      {
+        "day": 2,
+        "change_pct": -6.315292572296458,
+        "activity": 9.63309057611672,
+        "price": 0.045646
+      },
+      {
+        "day": 3,
+        "change_pct": -5.371179935554053,
+        "activity": 10.64084591064768,
+        "price": 0.046106
+      }
+    ]
+  },
+  "LDO": {
+    "weekly_change_pct": -6.142371641418984,
+    "activity_score": 10.313512823337565,
+    "weekly_rank": 59,
+    "activity_rank": 43,
+    "weekly_rank_points": 42,
+    "activity_rank_points": 58,
+    "mc_factor": 12.172990975780802,
+    "raw_score": 2751.095960526461,
+    "market_cap": 751067413.5735214,
+    "name": "Lido DAO",
+    "final_rank": 50,
+    "final_score": 366,
+    "weekly_score": 272,
+    "activity_score_points": 94,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -8.144398471234169,
+        "activity": 8.144398471234169,
+        "price": 0.733275
+      },
+      {
+        "day": 2,
+        "change_pct": -6.811926979008902,
+        "activity": 9.595013861094728,
+        "price": 0.743912
+      },
+      {
+        "day": 3,
+        "change_pct": -6.142371641418984,
+        "activity": 10.313512823337565,
+        "price": 0.749257
+      }
+    ]
+  },
+  "ETH": {
+    "weekly_change_pct": -9.087397731661929,
+    "activity_score": 9.982926970277646,
+    "weekly_rank": 86,
+    "activity_rank": 46,
+    "weekly_rank_points": 15,
+    "activity_rank_points": 55,
+    "mc_factor": 8.877111018562793,
+    "raw_score": 1020.8677671347211,
+    "market_cap": 415137433011.0959,
+    "name": "Ethereum",
+    "final_rank": 100,
+    "final_score": 0,
+    "weekly_score": 0,
+    "activity_score_points": 0,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.381220170327934,
+        "activity": 6.381220170327934,
+        "price": 3466.02
+      },
+      {
+        "day": 2,
+        "change_pct": -9.414764455320654,
+        "activity": 9.621536152347655,
+        "price": 3353.71
+      },
+      {
+        "day": 3,
+        "change_pct": -9.087397731661929,
+        "activity": 9.982926970277646,
+        "price": 3365.83
+      }
+    ]
+  },
+  "SOL": {
+    "weekly_change_pct": -9.053899082568803,
+    "activity_score": 9.479273661741843,
+    "weekly_rank": 85,
+    "activity_rank": 52,
+    "weekly_rank_points": 16,
+    "activity_rank_points": 49,
+    "mc_factor": 9.58220125778088,
+    "raw_score": 1082.7887421292394,
+    "market_cap": 90015885136.2299,
+    "name": "Solana",
+    "final_rank": 98,
+    "final_score": 35,
+    "weekly_score": 19,
+    "activity_score_points": 16,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -8.233944954128448,
+        "activity": 8.233944954128448,
+        "price": 160.04
+      },
+      {
+        "day": 2,
+        "change_pct": -9.214449541284399,
+        "activity": 9.302427833408615,
+        "price": 158.33
+      },
+      {
+        "day": 3,
+        "change_pct": -9.053899082568803,
+        "activity": 9.479273661741843,
+        "price": 158.61
+      }
+    ]
+  },
+  "2Z": {
+    "weekly_change_pct": 2.8338133445164733,
+    "activity_score": 9.320611227099901,
+    "weekly_rank": 12,
+    "activity_rank": 55,
+    "weekly_rank_points": 89,
+    "activity_rank_points": 46,
+    "mc_factor": 11.21912275479327,
+    "raw_score": 4510.087347426895,
+    "market_cap": 638534488.1425313,
+    "name": "DoubleZero",
+    "final_rank": 17,
+    "final_score": 598,
+    "weekly_score": 529,
+    "activity_score_points": 69,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -3.190275610703725,
+        "activity": 3.190275610703725,
+        "price": 0.156976
+      },
+      {
+        "day": 2,
+        "change_pct": -0.6198003071249149,
+        "activity": 5.845458568608121,
+        "price": 0.161144
+      },
+      {
+        "day": 3,
+        "change_pct": 2.8338133445164733,
+        "activity": 9.320611227099901,
+        "price": 0.166744
+      }
+    ]
+  },
+  "ENA": {
+    "weekly_change_pct": -8.581539790754151,
+    "activity_score": 8.752309872758014,
+    "weekly_rank": 84,
+    "activity_rank": 58,
+    "weekly_rank_points": 17,
+    "activity_rank_points": 43,
+    "mc_factor": 11.460592743598005,
+    "raw_score": 1272.1257945393786,
+    "market_cap": 2508899824.7915993,
+    "name": "Ethena",
+    "final_rank": 86,
+    "final_score": 94,
+    "weekly_score": 57,
+    "activity_score_points": 37,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.84554887695578,
+        "activity": 6.84554887695578,
+        "price": 0.325613
+      },
+      {
+        "day": 2,
+        "change_pct": -6.825236524470668,
+        "activity": 6.867353903167874,
+        "price": 0.325684
+      },
+      {
+        "day": 3,
+        "change_pct": -8.581539790754151,
+        "activity": 8.752309872758014,
+        "price": 0.319545
+      }
+    ]
+  },
+  "ARB": {
+    "weekly_change_pct": -5.411439544859017,
+    "activity_score": 8.419763280613102,
+    "weekly_rank": 50,
+    "activity_rank": 62,
+    "weekly_rank_points": 51,
+    "activity_rank_points": 39,
+    "mc_factor": 11.70169416815844,
+    "raw_score": 2843.511682862501,
+    "market_cap": 1654436314.57774,
+    "name": "Arbitrum",
+    "final_rank": 48,
+    "final_score": 379,
+    "weekly_score": 318,
+    "activity_score_points": 61,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.864085859401642,
+        "activity": 6.864085859401642,
+        "price": 0.259472
+      },
+      {
+        "day": 2,
+        "change_pct": -5.72084926147275,
+        "activity": 8.091578613918504,
+        "price": 0.262657
+      },
+      {
+        "day": 3,
+        "change_pct": -5.411439544859017,
+        "activity": 8.419763280613102,
+        "price": 0.263519
+      }
+    ]
+  },
+  "LINK": {
+    "weekly_change_pct": -7.4859638178415535,
+    "activity_score": 7.91636028680539,
+    "weekly_rank": 73,
+    "activity_rank": 71,
+    "weekly_rank_points": 28,
+    "activity_rank_points": 30,
+    "mc_factor": 10.639221120373735,
+    "raw_score": 1510.7693990930704,
+    "market_cap": 11102690102.44237,
+    "name": "Chainlink",
+    "final_rank": 78,
+    "final_score": 151,
+    "weekly_score": 119,
+    "activity_score_points": 32,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -7.111665626949473,
+        "activity": 7.111665626949473,
+        "price": 14.89
+      },
+      {
+        "day": 2,
+        "change_pct": -6.924516531503438,
+        "activity": 7.313143128628448,
+        "price": 14.92
+      },
+      {
+        "day": 3,
+        "change_pct": -7.4859638178415535,
+        "activity": 7.91636028680539,
+        "price": 14.83
+      }
+    ]
+  },
+  "POL": {
+    "weekly_change_pct": -7.141855311509435,
+    "activity_score": 7.175333564362849,
+    "weekly_rank": 68,
+    "activity_rank": 77,
+    "weekly_rank_points": 33,
+    "activity_rank_points": 24,
+    "mc_factor": 11.616136976298845,
+    "raw_score": 1812.1173683026198,
+    "market_cap": 1915977612.0887058,
+    "name": "Polygon (prev. MATIC)",
+    "final_rank": 70,
+    "final_score": 211,
+    "weekly_score": 178,
+    "activity_score_points": 33,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.680131279979788,
+        "activity": 6.680131279979788,
+        "price": 0.166338
+      },
+      {
+        "day": 2,
+        "change_pct": -7.038626609442046,
+        "activity": 7.064288838685556,
+        "price": 0.165699
+      },
+      {
+        "day": 3,
+        "change_pct": -7.141855311509435,
+        "activity": 7.175333564362849,
+        "price": 0.165515
+      }
+    ]
+  },
+  "DOGE": {
+    "weekly_change_pct": -6.007407578344936,
+    "activity_score": 7.172162421146453,
+    "weekly_rank": 58,
+    "activity_rank": 78,
+    "weekly_rank_points": 43,
+    "activity_rank_points": 23,
+    "mc_factor": 10.173641721026016,
+    "raw_score": 1983.8601356000731,
+    "market_cap": 27170406460.429146,
+    "name": "Dogecoin",
+    "final_rank": 66,
+    "final_score": 242,
+    "weekly_score": 213,
+    "activity_score_points": 29,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -5.394724696543129,
+        "activity": 5.394724696543129,
+        "price": 0.163985
+      },
+      {
+        "day": 2,
+        "change_pct": -4.857040660912899,
+        "activity": 5.96306936221378,
+        "price": 0.164917
+      },
+      {
+        "day": 3,
+        "change_pct": -6.007407578344936,
+        "activity": 7.172162421146453,
+        "price": 0.162923
+      }
+    ]
+  },
+  "XRP": {
+    "weekly_change_pct": -4.583333333333329,
+    "activity_score": 7.160766961651935,
+    "weekly_rank": 43,
+    "activity_rank": 79,
+    "weekly_rank_points": 58,
+    "activity_rank_points": 22,
+    "mc_factor": 9.374558273463048,
+    "raw_score": 2381.137801459614,
+    "market_cap": 139511066906.42496,
+    "name": "XRP",
+    "final_rank": 57,
+    "final_score": 309,
+    "weekly_score": 282,
+    "activity_score_points": 27,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -5.833333333333339,
+        "activity": 5.833333333333339,
+        "price": 2.26
+      },
+      {
+        "day": 2,
+        "change_pct": -5.833333333333339,
+        "activity": 5.833333333333339,
+        "price": 2.26
+      },
+      {
+        "day": 3,
+        "change_pct": -4.583333333333329,
+        "activity": 7.160766961651935,
+        "price": 2.29
+      }
+    ]
+  },
+  "BNB": {
+    "weekly_change_pct": -7.0715864848472965,
+    "activity_score": 7.095175763593232,
+    "weekly_rank": 67,
+    "activity_rank": 81,
+    "weekly_rank_points": 34,
+    "activity_rank_points": 20,
+    "mc_factor": 9.385696288383205,
+    "raw_score": 1464.1686209877798,
+    "market_cap": 136236972946.29239,
+    "name": "BNB",
+    "final_rank": 79,
+    "final_score": 141,
+    "weekly_score": 122,
+    "activity_score_points": 19,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -6.745837653825841,
+        "activity": 6.745837653825841,
+        "price": 953.3
+      },
+      {
+        "day": 2,
+        "change_pct": -7.064738911822826,
+        "activity": 7.087807652776853,
+        "price": 950.04
+      },
+      {
+        "day": 3,
+        "change_pct": -7.0715864848472965,
+        "activity": 7.095175763593232,
+        "price": 949.97
+      }
+    ]
+  },
+  "ADA": {
+    "weekly_change_pct": -6.7090222672772395,
+    "activity_score": 6.757023737230035,
+    "weekly_rank": 64,
+    "activity_rank": 86,
+    "weekly_rank_points": 37,
+    "activity_rank_points": 15,
+    "mc_factor": 10.311270609251842,
+    "raw_score": 1680.7371093080503,
+    "market_cap": 20767356972.836166,
+    "name": "Cardano",
+    "final_rank": 74,
+    "final_score": 186,
+    "weekly_score": 168,
+    "activity_score_points": 18,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -5.9777327227601695,
+        "activity": 5.9777327227601695,
+        "price": 0.537939
+      },
+      {
+        "day": 2,
+        "change_pct": -6.374663543887851,
+        "activity": 6.399899548366774,
+        "price": 0.535668
+      },
+      {
+        "day": 3,
+        "change_pct": -6.7090222672772395,
+        "activity": 6.757023737230035,
+        "price": 0.533755
+      }
+    ]
+  },
+  "TRX": {
+    "weekly_change_pct": -1.609289410923784,
+    "activity_score": 5.139960114329053,
+    "weekly_rank": 19,
+    "activity_rank": 93,
+    "weekly_rank_points": 82,
+    "activity_rank_points": 8,
+    "mc_factor": 10.163283383078262,
+    "raw_score": 3414.863216714296,
+    "market_cap": 27729639089.674973,
+    "name": "TRON",
+    "final_rank": 38,
+    "final_score": 459,
+    "weekly_score": 448,
+    "activity_score_points": 11,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -3.1367913181533793,
+        "activity": 3.1367913181533793,
+        "price": 0.28187
+      },
+      {
+        "day": 2,
+        "change_pct": -1.4010405569797724,
+        "activity": 4.928752151161493,
+        "price": 0.286921
+      },
+      {
+        "day": 3,
+        "change_pct": -1.609289410923784,
+        "activity": 5.139960114329053,
+        "price": 0.286315
+      }
+    ]
+  },
+  "BTC": {
+    "weekly_change_pct": -4.709918896263905,
+    "activity_score": 4.827427363944102,
+    "weekly_rank": 45,
+    "activity_rank": 95,
+    "weekly_rank_points": 56,
+    "activity_rank_points": 6,
+    "mc_factor": 8.19293440557371,
+    "raw_score": 1884.3749132819535,
+    "market_cap": 2064597345487.6418,
+    "name": "Bitcoin",
+    "final_rank": 67,
+    "final_score": 225,
+    "weekly_score": 219,
+    "activity_score_points": 6,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": -3.5898193781006538,
+        "activity": 3.5898193781006538,
+        "price": 103790.11
+      },
+      {
+        "day": 2,
+        "change_pct": -4.746238715775772,
+        "activity": 4.789297825517274,
+        "price": 102545.17
+      },
+      {
+        "day": 3,
+        "change_pct": -4.709918896263905,
+        "activity": 4.827427363944102,
+        "price": 102584.27
+      }
+    ]
+  },
+  "M": {
+    "weekly_change_pct": 3.3898305084745797,
+    "activity_score": 3.3773153114496206,
+    "weekly_rank": 10,
+    "activity_rank": 98,
+    "weekly_rank_points": 91,
+    "activity_rank_points": 3,
+    "mc_factor": 13.911004489330939,
+    "raw_score": 5105.3386475844545,
+    "market_cap": 2678232637.557206,
+    "name": "MemeCore",
+    "final_rank": 11,
+    "final_score": 667,
+    "weekly_score": 661,
+    "activity_score_points": 6,
+    "card_weight": 50,
+    "daily_progression": [
+      {
+        "day": 1,
+        "change_pct": 0.42372881355933184,
+        "activity": 0.42372881355933184,
+        "price": 2.37
+      },
+      {
+        "day": 2,
+        "change_pct": 3.3898305084745797,
+        "activity": 3.3773153114496206,
+        "price": 2.44
+      },
+      {
+        "day": 3,
+        "change_pct": 3.3898305084745797,
+        "activity": 3.3773153114496206,
+        "price": 2.44
+      }
+    ]
+  }
+}

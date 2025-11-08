@@ -1,0 +1,36 @@
+# python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# virtualenv
+.venv/
+env/
+venv/
+ENV/
+*.egg-info/
+
+# PyCharm, VSCode, other IDE
+.idea/
+.vscode/
+
+# OS trash
+.DS_Store
+
+# database and state files
+*.db
+*.sqlite3
+instance/
+*.log
+*.bak
+
+# dotenv
+.env
+.env.*
+
+# mypy, coverage, etc
+.mypy_cache/
+.coverage
+htmlcov/

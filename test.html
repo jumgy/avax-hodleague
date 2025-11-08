@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { padding: 10px 20px; margin: 10px 0; }
+        pre { background: #f0f0f0; padding: 10px; border-radius: 5px; }
+        input { padding: 5px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Fantasy Crypto API Tester</h1>
+    
+    <h3>1. Test Lock Deck</h3>
+    <button onclick="testLockDeck()">Lock Test Deck</button>
+    
+    <h3>2. Test Get Session</h3>
+    <input type="text" id="sessionId" placeholder="Session ID" style="width: 300px;">
+    <button onclick="getSession()">Get Session</button>
+    
+    <h3>3. Get All Sessions</h3>
+    <button onclick="getAllSessions()">Get All Sessions</button>
+    
+    <h2>Result:</h2>
+    <pre id="result">Нажми на кнопку для теста...</pre>
+
+    <script>
+    async function testLockDeck() {
+        document.getElementById('result').textContent = 'Loading...';
+        
+        try {
+            const response = await fetch('http://127.0.0.1:5000/api/lock-deck', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    wallet_address: '0x1234567890abcdef',
+                    selected_tokens: ['BTC', 'ETH', 'SOL', 'ADA', 'DOGE']
+                })
+            });
+            
+            const data = await response.json();
+            document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+            
+            if (data.success && data.data.session_id) {
+                document.getElementById('sessionId').value = data.data.session_id;
+            }
+        } catch (error) {
+            document.getElementById('result').textContent = 'Error: ' + error.message;
+        }
+    }
+    
+    async function getSession() {
+        const sessionId = document.getElementById('sessionId').value;
+        if (!sessionId) {
+            document.getElementById('result').textContent = 'Введи Session ID!';
+            return;
+        }
+        
+        document.getElementById('result').textContent = 'Loading...';
+        
+        try {
+            const response = await fetch(`http://127.0.0.1:5000/api/session/${sessionId}`);
+            const data = await response.json();
+            document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+            document.getElementById('result').textContent = 'Error: ' + error.message;
+        }
+    }
+    
+    async function getAllSessions() {
+        document.getElementById('result').textContent = 'Loading...';
+        
+        try {
+            const response = await fetch('http://127.0.0.1:5000/api/sessions');
+            const data = await response.json();
+            document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+            document.getElementById('result').textContent = 'Error: ' + error.message;
+        }
+    }
+    </script>
+</body>
+</html>
