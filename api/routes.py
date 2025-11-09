@@ -479,50 +479,126 @@ def validate_deck():
         
 @api_bp.route('/simulate-session', methods=['POST'])
 def simulate_session():
-    """Run simulation for a locked deck and calculate daily scores"""
+    """Lock deck and run simulation in one step"""
     try:
         data = request.get_json()
         
-        if not data or 'session_id' not in data:
+        # Основные проверки
+        if not data:
             return jsonify({
                 "success": False,
-                "error": "Missing session_id",
-                "message": "session_id is required"
+                "error": "No data provided",
+                "message": "Request body is required"
             }), 400
-        
-        session_id = data['session_id']
-        
-        # Get session data
-        if session_id not in game_sessions:
+
+        wallet_address = data.get('wallet_address')
+        selected_tokens = data.get('selected_tokens', [])
+        session_id = data.get('session_id')
+
+        if not wallet_address:
             return jsonify({
                 "success": False,
-                "error": "Session not found",
-                "message": f"No session found with ID: {session_id}"
-            }), 404
-        
-        session = game_sessions[session_id]
-        
-        if session.get('simulation_completed'):
+                "error": "Missing wallet_address",
+                "message": "wallet_address is required"
+            }), 400
+
+        if not isinstance(selected_tokens, list) or len(selected_tokens) != 5:
+            return jsonify({
+                "success": False,
+                "error": "Invalid selected_tokens",
+                "message": "selected_tokens must be an array of exactly 5 token symbols"
+            }), 400
+
+        # Normalize token symbols
+        selected_tokens = [symbol.upper() for symbol in selected_tokens]
+
+        # Check for duplicates
+        if len(set(selected_tokens)) != len(selected_tokens):
+            return jsonify({
+                "success": False,
+                "error": "Duplicate tokens",
+                "message": "All 5 tokens must be unique"
+            }), 400
+
+        # Get current available tokens
+        available_tokens = cmc_service.get_available_game_tokens()
+        available_symbols = {token['symbol'] for token in available_tokens}
+
+        # Check if all selected tokens are available
+        invalid_tokens = [symbol for symbol in selected_tokens if symbol not in available_symbols]
+        if invalid_tokens:
+            return jsonify({
+                "success": False,
+                "error": "Invalid tokens",
+                "message": f"The following tokens are not available: {', '.join(invalid_tokens)}"
+            }), 400
+
+        # Check tournament weight limit
+        total_weight, is_valid_weight = validate_deck_weight(selected_tokens)
+        if not is_valid_weight:
+            return jsonify({
+                "success": False,
+                "error": "Deck exceeds weight limit",
+                "message": f"Total deck weight ({total_weight}) exceeds tournament limit (28)"
+            }), 400
+
+        # Get selected token details
+        selected_token_details = []
+        for symbol in selected_tokens:
+            token = next(t for t in available_tokens if t['symbol'] == symbol)
+            selected_token_details.append({
+                'symbol': token['symbol'],
+                'name': token['name'],
+                'starting_price': token['current_price'],
+                'starting_market_cap': token['market_cap'],
+                'starting_market_cap_formatted': token['market_cap_formatted'],
+                'cmc_rank': token['cmc_rank'],
+                'logo_url': token['logo_url'],
+                'tournament_weight': token['tournament_weight']
+            })
+
+        # Create unique session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+
+        # Check if session already exists and is completed
+        if session_id in game_sessions and game_sessions[session_id].get('simulation_completed'):
             return jsonify({
                 "success": False,
                 "error": "Already simulated",
                 "message": "This session has already been simulated"
             }), 409
-        
-        # Get all 100 tokens for simulation background
+
+        # Create/update session data
+        now = datetime.utcnow()
+        expires_at = now + timedelta(days=7)
+
+        game_session_data = {
+            "session_id": session_id,
+            "wallet_address": wallet_address,
+            "selected_tokens": selected_token_details,
+            "total_tokens": len(selected_token_details),
+            "total_weight": total_weight,
+            "weight_limit": 28,
+            "weight_remaining": 28 - total_weight,
+            "locked_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "status": "locked"
+        }
+
+        # Get all simulation tokens
         simulation_tokens = cmc_service.get_simulation_tokens()
         if len(simulation_tokens) < 100:
             logger.warning(f"Only {len(simulation_tokens)} simulation tokens available, expected 100")
 
-        # Calculate scores for selected tokens
-        selected_tokens = session['selected_tokens']
-        results = run_fantasy_simulation(selected_tokens, simulation_tokens)
+        # Run simulation
+        results = run_fantasy_simulation(selected_token_details, simulation_tokens)
 
         # Prepare simulation results
         simulation_results = {
             'session_id': session_id,
-            'wallet_address': session['wallet_address'],
-            'simulation_date': datetime.utcnow().isoformat(),
+            'wallet_address': wallet_address,
+            'simulation_date': now.isoformat(),
             'daily_scores': [
                 {
                     'day': d.day,
@@ -535,27 +611,27 @@ def simulate_session():
             'final_market_position': results['final_position']
         }
 
-        # Final score from results
-        final_score = results['final_score']
-
         # Update session with simulation results
-        session['simulation_results'] = simulation_results
-        session['simulation_completed'] = True
-        session['final_score'] = final_score
-        session['status'] = 'completed'
-        
-        # Save updated session
-        game_sessions[session_id] = session
+        game_session_data['simulation_results'] = simulation_results
+        game_session_data['simulation_completed'] = True
+        game_session_data['final_score'] = results['final_score']
+        game_session_data['status'] = 'completed'
+
+        # Save session
+        game_sessions[session_id] = game_session_data
         save_sessions(game_sessions)
-        
-        logger.info(f"Simulation completed for session {session_id}, final score: {final_score}")
-        
+
+        logger.info(f"Deck locked and simulation completed for session {session_id}, final score: {results['final_score']}")
+
         return jsonify({
             "success": True,
-            "data": simulation_results,
-            "message": f"Simulation completed! Final score: {final_score}"
+            "data": {
+                "session": game_session_data,
+                "simulation": simulation_results
+            },
+            "message": f"Deck locked and simulation completed! Final score: {results['final_score']}"
         })
-        
+
     except Exception as e:
         logger.error(f"Error in simulate_session: {e}")
         return jsonify({
@@ -563,6 +639,7 @@ def simulate_session():
             "error": "Internal server error",
             "message": str(e)
         }), 500
+        
 @api_bp.route('/session/<session_id>/results', methods=['GET'])
 def get_session_results(session_id):
     """Get detailed simulation results for a session"""

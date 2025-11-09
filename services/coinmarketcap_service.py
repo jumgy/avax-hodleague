@@ -122,7 +122,7 @@ class CoinMarketCapService:
             'circulating_supply': crypto.get('circulating_supply', 0),
             'total_supply': crypto.get('total_supply'),
             'max_supply': crypto.get('max_supply'),
-            'logo_url': f"https://s2.coinmarketcap.com/static/img/coins/64x64/{crypto['id']}.png",
+            'logo_url': f"https://s2.coinmarketcap.com/static/img/coins/200x200/{crypto['id']}.png",
             'is_game_token': is_game_token,
             'tournament_weight': token_weight
         }
