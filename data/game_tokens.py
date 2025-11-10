@@ -1,39 +1,73 @@
 """Fixed list of 30 game tokens with their weights for tournament play"""
+import random
 
-# Token weights for tournament restrictions (higher weight = stronger/more expensive token)
-TOKEN_WEIGHTS = {
-    # Вес 10 (3 токена) - Абсолютные короли
-    'BTC': 10, 'ETH': 10, 'BNB': 10,
-    
-    # Вес 9 (3 токена) - Топ экосистемы
-    'SOL': 9, 'XRP': 9, 'DOGE': 9,
-    
-    # Вес 8 (3 токена) - Крупные установленные
-    'ADA': 8, 'TRX': 8, 'AVAX': 8,
-    
-    # Вес 7 (3 токена) - Сильные проекты
-    'HYPE': 7, 'POL': 7, 'LDO': 7,
-    
-    # Вес 6 (3 токена) - Перспективные средние
-    'FET': 6, 'PUMP': 6, 'APT': 6,
-    
-    # Вес 5 (3 токена) - Средний сегмент
-    'DASH': 5, 'XTZ': 5, 'ZEC': 5,
-    
-    # Вес 4 (3 токена) - Растущие проекты  
-    'KCS': 4, 'ENA': 4, 'KAS': 4,
-    
-    # Вес 3 (3 токена) - Спекулятивные
-    'AR': 3, 'SAND': 3, 'DCR': 3,
-    
-    # Вес 2 (3 токена) - Рисковые ставки
-    'FLR': 2, 'WLFI': 2, 'SPX': 2,
-    
-    # Вес 1 (3 токена) - Максимальный риск/потенциал
-    'DEXE': 1, 'KAIA': 1, 'M': 1
+# Базовые группы токенов с диапазонами весов
+TOKEN_WEIGHT_RANGES = {
+    'tier_1': {'tokens': ['BTC', 'ETH', 'BNB'], 'weight_range': (9, 10)},
+    'tier_2': {'tokens': ['SOL', 'XRP', 'DOGE'], 'weight_range': (8, 9)},
+    'tier_3': {'tokens': ['ADA', 'TRX', 'AVAX'], 'weight_range': (6, 8)},
+    'tier_4': {'tokens': ['HYPE', 'POL', 'LDO'], 'weight_range': (5, 7)},
+    'tier_5': {'tokens': ['FET', 'PUMP', 'APT'], 'weight_range': (4, 6)},
+    'tier_6': {'tokens': ['DASH', 'XTZ', 'ZEC'], 'weight_range': (3, 5)},
+    'tier_7': {'tokens': ['KCS', 'ENA', 'KAS'], 'weight_range': (2, 4)},
+    'tier_8': {'tokens': ['AR', 'SAND', 'DCR'], 'weight_range': (1, 3)},
+    'tier_9': {'tokens': ['FLR', 'WLFI', 'SPX'], 'weight_range': (1, 2)},
+    'tier_10': {'tokens': ['DEXE', 'KAIA', 'M'], 'weight_range': (1, 2)}
 }
 
+def generate_random_token_weights():
+    """Генерирует случайные веса токенов, обеспечивая по 3 токена каждого веса"""
+    weights = {}
+    
+    # Создаем список весов: по 3 штуки каждого веса от 1 до 10
+    available_weights = []
+    for weight in range(1, 11):
+        available_weights.extend([weight] * 3)
+    
+    # Перемешиваем веса
+    random.shuffle(available_weights)
+    
+    # Собираем все токены в один список
+    all_tokens = []
+    token_ranges = {}
+    
+    for tier_info in TOKEN_WEIGHT_RANGES.values():
+        for token in tier_info['tokens']:
+            all_tokens.append(token)
+            token_ranges[token] = tier_info['weight_range']
+    
+    # Распределяем веса с учетом диапазонов
+    used_weights = []
+    
+    for token in all_tokens:
+        min_weight, max_weight = token_ranges[token]
+        
+        # Найдем подходящий вес из доступных
+        suitable_weights = [w for w in available_weights if min_weight <= w <= max_weight and w not in used_weights]
+        
+        # Если нет подходящих весов в диапазоне, расширяем поиск
+        if not suitable_weights:
+            suitable_weights = [w for w in available_weights if w not in used_weights]
+        
+        # Выбираем случайный подходящий вес
+        if suitable_weights:
+            chosen_weight = random.choice(suitable_weights)
+            weights[token] = chosen_weight
+            used_weights.append(chosen_weight)
+            available_weights.remove(chosen_weight)
+    
+    return weights
+
+# Генерируем веса при импорте модуля
+TOKEN_WEIGHTS = generate_random_token_weights()
 GAME_TOKENS = list(TOKEN_WEIGHTS.keys())
+
+def regenerate_weights():
+    """Перегенерирует веса токенов"""
+    global TOKEN_WEIGHTS, GAME_TOKENS
+    TOKEN_WEIGHTS = generate_random_token_weights()
+    GAME_TOKENS = list(TOKEN_WEIGHTS.keys())
+    return TOKEN_WEIGHTS
 
 def get_game_tokens_list():
     """Return the list of game token symbols"""
@@ -54,7 +88,7 @@ def get_all_token_weights():
 def validate_deck_weight(selected_tokens):
     """Validate if deck weight is within tournament limits"""
     total_weight = sum(get_token_weight(token) for token in selected_tokens)
-    return total_weight, total_weight <= 250
+    return total_weight, total_weight <= 28
 
 def get_weight_distribution():
     """Get weight distribution statistics"""
