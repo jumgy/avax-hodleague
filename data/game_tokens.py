@@ -54,7 +54,7 @@ def get_all_token_weights():
 def validate_deck_weight(selected_tokens):
     """Validate if deck weight is within tournament limits"""
     total_weight = sum(get_token_weight(token) for token in selected_tokens)
-    return total_weight, total_weight <= 250
+    return total_weight, total_weight <= 28
 
 def get_weight_distribution():
     """Get weight distribution statistics"""

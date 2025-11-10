@@ -604,11 +604,19 @@ def simulate_session():
                     'day': d.day,
                     'score': d.score,
                     'market_position': d.market_position,
+                    'market_sentiment': {  # NEW: добавили market_sentiment
+                        'status': d.market_sentiment['status'],
+                        'description': d.market_sentiment['description'],
+                        'market_change_pct': d.market_sentiment['market_change_pct'],
+                        'actual_market_change_pct': d.market_sentiment.get('actual_market_change_pct', 0),
+                        'trend': d.market_sentiment['trend']
+                    },
                     'tokens_performance': d.tokens_performance
                 } for d in results["daily_scores"]
             ],
             'final_score': results['final_score'],
-            'final_market_position': results['final_position']
+            'final_market_position': results['final_position'],
+            'market_overview': results['market_analysis']['daily_sentiments']  # NEW: общий обзор рынка по дням
         }
 
         # Update session with simulation results
