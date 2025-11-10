@@ -36,25 +36,38 @@ def generate_random_token_weights():
             all_tokens.append(token)
             token_ranges[token] = tier_info['weight_range']
     
+    # Проверяем что у нас 30 токенов
+    print(f"Всего токенов: {len(all_tokens)}")  # Для отладки
+    
     # Распределяем веса с учетом диапазонов
-    used_weights = []
+    weight_index = 0
     
     for token in all_tokens:
+        if weight_index >= len(available_weights):
+            break
+            
         min_weight, max_weight = token_ranges[token]
         
-        # Найдем подходящий вес из доступных
-        suitable_weights = [w for w in available_weights if min_weight <= w <= max_weight and w not in used_weights]
+        # Ищем подходящий вес начиная с текущего индекса
+        found_weight = None
+        for i in range(len(available_weights)):
+            check_index = (weight_index + i) % len(available_weights)
+            if available_weights[check_index] is not None and min_weight <= available_weights[check_index] <= max_weight:
+                found_weight = available_weights[check_index]
+                available_weights[check_index] = None  # Помечаем как использованный
+                break
         
-        # Если нет подходящих весов в диапазоне, расширяем поиск
-        if not suitable_weights:
-            suitable_weights = [w for w in available_weights if w not in used_weights]
+        # Если не нашли подходящий в диапазоне, берем любой доступный
+        if found_weight is None:
+            for i in range(len(available_weights)):
+                if available_weights[i] is not None:
+                    found_weight = available_weights[i]
+                    available_weights[i] = None
+                    break
         
-        # Выбираем случайный подходящий вес
-        if suitable_weights:
-            chosen_weight = random.choice(suitable_weights)
-            weights[token] = chosen_weight
-            used_weights.append(chosen_weight)
-            available_weights.remove(chosen_weight)
+        if found_weight is not None:
+            weights[token] = found_weight
+            weight_index += 1
     
     return weights
 
@@ -104,3 +117,17 @@ def get_weight_distribution():
         'tier_4': len([w for w in weights if 25 <= w < 40]),  # 25-39
         'tier_5': len([w for w in weights if w < 25])  # < 25
     }
+
+# Функция для проверки
+def debug_tokens():
+    """Отладочная функция для проверки количества токенов"""
+    print(f"Количество токенов: {len(GAME_TOKENS)}")
+    print(f"Токены: {GAME_TOKENS}")
+    
+    weight_count = {}
+    for weight in TOKEN_WEIGHTS.values():
+        weight_count[weight] = weight_count.get(weight, 0) + 1
+    
+    print("Распределение весов:")
+    for w in sorted(weight_count.keys(), reverse=True):
+        print(f"Вес {w}: {weight_count[w]} токенов")
