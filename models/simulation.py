@@ -313,7 +313,7 @@ class FantasyCryptoRankSystem:
             max_possible_score = len(selected_tokens) * 1000
             if max_possible_score > 0:
                 market_position = min(100, max(1, int((player_score / max_possible_score) * 100)))
-                market_position = 1 - market_position
+                market_position = 100 - market_position
             else:
                 market_position = 50
 
