@@ -3,6 +3,29 @@ from typing import Dict, List
 import random
 import math
 
+TOKEN_WEIGHTS = {
+    # Вес 10 (3 токена) - Абсолютные короли
+    'BTC': 10, 'ETH': 10, 'BNB': 10,
+    # Вес 9 (3 токена) - Топ экосистемы
+    'SOL': 9, 'XRP': 9, 'DOGE': 9,
+    # Вес 8 (3 токена) - Крупные установленные
+    'ADA': 8, 'TRX': 8, 'AVAX': 8,
+    # Вес 7 (3 токена) - Сильные проекты
+    'HYPE': 7, 'POL': 7, 'LDO': 7,
+    # Вес 6 (3 токена) - Перспективные средние
+    'FET': 6, 'PUMP': 6, 'APT': 6,
+    # Вес 5 (3 токена) - Средний сегмент
+    'DASH': 5, 'XTZ': 5, 'ZEC': 5,
+    # Вес 4 (3 токена) - Растущие проекты  
+    'KCS': 4, 'ENA': 4, 'KAS': 4,
+    # Вес 3 (3 токена) - Спекулятивные
+    'AR': 3, 'SAND': 3, 'DCR': 3,
+    # Вес 2 (3 токена) - Рисковые ставки
+    'FLR': 2, 'WLFI': 2, 'SPX': 2,
+    # Вес 1 (3 токена) - Максимальный риск/потенциал
+    'DEXE': 1, 'KAIA': 1, 'M': 1
+}
+
 @dataclass
 class DailyTokenData:
     """Daily token price and market cap data"""
@@ -158,6 +181,8 @@ class FantasyCryptoRankSystem:
     def __init__(self, all_tokens: List[Dict]):
         self.all_tokens = all_tokens
         self.days = [1, 2, 3, 4, 5]
+        self.max_deck_weight = 28
+        self.deck_size = 5
 
     def calculate_mc_factor(self, market_cap: float, change: float) -> float:
         """Calculate MC factor based on market cap and change direction"""
@@ -178,6 +203,40 @@ class FantasyCryptoRankSystem:
             activity += change
 
         return activity
+
+    def get_token_weight(self, symbol: str) -> int:
+        """Get weight for a token symbol"""
+        return TOKEN_WEIGHTS.get(symbol, 5)  # Default weight 5 if not found
+
+    def is_valid_deck(self, tokens: List[str]) -> bool:
+        """Check if deck is valid (5 tokens, weight <= 28)"""
+        if len(tokens) != self.deck_size:
+            return False
+        
+        total_weight = sum(self.get_token_weight(symbol) for symbol in tokens)
+        return total_weight <= self.max_deck_weight
+
+    def find_max_possible_score(self, all_scores: Dict[str, Dict]) -> int:
+        """Find maximum possible score with deck constraints"""
+        from itertools import combinations
+        
+        # Get all available tokens sorted by score
+        available_tokens = [(symbol, data['final_score']) for symbol, data in all_scores.items()]
+        available_tokens.sort(key=lambda x: x[1], reverse=True)
+        
+        max_score = 0
+        
+        # Try combinations of top tokens
+        top_tokens = available_tokens[:min(15, len(available_tokens))]  # Limit for performance
+        
+        for combination in combinations([t[0] for t in top_tokens], self.deck_size):
+            if self.is_valid_deck(list(combination)):
+                combo_score = sum(all_scores[symbol]['final_score'] for symbol in combination)
+                if combo_score > max_score:
+                    max_score = combo_score
+        
+        return max_score
+
 
     def calculate_scores_for_day(self, daily_data: Dict[int, Dict[str, DailyTokenData]], current_day: int) -> Dict[str, Dict]:
         """Calculate scores for all tokens up to current day"""
@@ -310,10 +369,12 @@ class FantasyCryptoRankSystem:
                     })
 
             # Calculate market position (1-100 scale)
-            max_possible_score = len(selected_tokens) * 1000
+            max_possible_score = self.find_max_possible_score(all_scores)
+
+            # Calculate market position (1-100 scale)
             if max_possible_score > 0:
-                market_position = min(100, max(1, int((player_score / max_possible_score) * 100)))
-                market_position = 100 - market_position
+                position_ratio = player_score / max_possible_score
+                market_position = max(1, min(100, int((1 - position_ratio) * 100)))
             else:
                 market_position = 50
 
