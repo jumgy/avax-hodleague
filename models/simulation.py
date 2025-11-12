@@ -113,12 +113,18 @@ class CryptoSimulator:
         """Generate realistic daily price changes for all tokens"""
         daily_data = {}
         daily_sentiments = {}
+        
+        weekly_sentiment = random.uniform(-0.12, 0.12)  # Задать тренд на неделю
 
         for day in self.days:
             daily_data[day] = {}
 
             # Market sentiment for the day
-            market_sentiment = random.uniform(-0.3, 0.3)
+            if random.random() < 0.2:  # 20% шанс на микро-отскок
+                daily_sentiment = -weekly_sentiment * random.uniform(0.3, 0.7)
+            else:
+                daily_sentiment = weekly_sentiment + random.uniform(-0.005, 0.005)
+            market_sentiment = daily_sentiment
 
             for token in self.simulation_tokens:
                 symbol = token['symbol']
@@ -126,12 +132,12 @@ class CryptoSimulator:
                 base_market_cap = token['market_cap']
 
                 # Token-specific volatility based on market cap
-                if base_market_cap > 100e9:  # Large cap (>100B)
-                    volatility = random.uniform(0.02, 0.08)  # 2-8% daily
-                elif base_market_cap > 10e9:  # Mid cap (10-100B) 
-                    volatility = random.uniform(0.05, 0.15)  # 5-15% daily
-                else:  # Small cap (<10B)
-                    volatility = random.uniform(0.08, 0.25)  # 8-25% daily
+                if base_market_cap > 100e9:
+                    volatility = random.uniform(0.005, 0.03)
+                elif base_market_cap > 10e9:
+                    volatility = random.uniform(0.02, 0.05)
+                else:
+                    volatility = random.uniform(0.03, 0.20)
 
                 # Random walk with market sentiment bias
                 individual_change = random.uniform(-volatility, volatility)
