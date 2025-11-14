@@ -204,7 +204,7 @@ class FantasyCryptoRankSystem:
         if change >= 0:
             return (market_cap_billions ** 0.15) * 12
         else:
-            return (market_cap_billions ** -0.05) * 12
+            return (market_cap_billions ** 0.05) * 12
 
     def calculate_activity_score(self, prices: List[float]) -> float:
         """Calculate activity score based on price changes"""
