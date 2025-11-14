@@ -133,7 +133,7 @@ class CryptoSimulator:
 
                 # Token-specific volatility based on market cap
                 if base_market_cap > 100e9:
-                    volatility = random.uniform(0.005, 0.03)
+                    volatility = random.uniform(0.005, 0.015)
                 elif base_market_cap > 10e9:
                     volatility = random.uniform(0.02, 0.05)
                 else:
@@ -141,7 +141,15 @@ class CryptoSimulator:
 
                 # Random walk with market sentiment bias
                 individual_change = random.uniform(-volatility, volatility)
-                total_change = individual_change + (market_sentiment * 0.5)
+                
+                if base_market_cap > 100e9:
+                    sentiment_multiplier = 0.2  # Для BTC, ETH, BNB
+                elif base_market_cap > 10e9:
+                    sentiment_multiplier = 0.35  # Для средних
+                else:
+                    sentiment_multiplier = 0.5   # Для остальных
+                    
+                total_change = individual_change + (market_sentiment * sentiment_multiplier)
 
                 # Apply momentum from previous day
                 if day != 1:
