@@ -305,11 +305,11 @@ class FantasyCryptoRankSystem:
 
         # Calculate raw scores
         total_tokens = len(scores)
+
         for symbol, data in scores.items():
             weekly_points = total_tokens - data['change_rank'] + 1
             activity_points = total_tokens - data['activity_rank'] + 1
             mc_factor = self.calculate_mc_factor(data['market_cap'], data['period_change'])
-
             raw_score = (weekly_points * mc_factor * 4) + (activity_points * mc_factor * 1)
             scores[symbol]['raw_score'] = raw_score
             scores[symbol]['mc_factor'] = mc_factor
@@ -321,36 +321,44 @@ class FantasyCryptoRankSystem:
             max_raw = max(raw_values)
             range_raw = max_raw - min_raw
 
+            def get_base_score(symbol, sorted_symbols):
+                if symbol == "BTC":
+                    return 700
+                elif symbol == "ETH":
+                    return 600
+                else:
+                    try:
+                        position = sorted_symbols.index(symbol) + 1
+                        if position == 3:
+                            return 520
+                        elif position == 4:
+                            return 480
+                        else:
+                            base = int(480 * math.exp(-0.13 * (position - 4)))
+                            return max(base, 0)
+                    except ValueError:
+                        # Если токена нет в sorted_symbols, возвращаем 0
+                        return 0
+
+            # Получаем отсортированный список по market cap
+            sorted_symbols = [t['symbol'] for t in sorted(self.all_tokens, key=lambda x: -x['initial_market_cap'])]
+            
             for symbol, data in scores.items():
                 if range_raw > 0:
                     normalized = (data['raw_score'] - min_raw) / range_raw
-                    final_score = int(1000 * (normalized ** 0.7))
+                    algorithm_score = int(1000 * (normalized ** 0.7))
                 else:
-                    final_score = 500
-
+                    algorithm_score = 500
+                    
+                # Получаем базовый скор
+                base_score = get_base_score(symbol, sorted_symbols)
+                
+                # ВАЖНО: Ограничиваем итоговый результат до 1000
+                final_score = min(algorithm_score + base_score, 1000)
+                
+                scores[symbol]['algorithm_score'] = algorithm_score  # для отладки
+                scores[symbol]['base_score'] = base_score  # для отладки
                 scores[symbol]['final_score'] = final_score
-                
-        def get_base_score(symbol, sorted_symbols):
-            if symbol == "BTC":
-                return 700
-            elif symbol == "ETH":
-                return 600
-            else:
-                position = sorted_symbols.index(symbol) + 1
-                if position == 3:
-                    return 520
-                elif position == 4:
-                    return 480
-                else:
-                    # Плавное уменьшение после 4 места (пример — экспонента или линейно)
-                    # Минимум — 0, максимум — 480 (на 4-м месте)
-                    base = int(480 * math.exp(-0.13 * (position - 4)))
-                    return max(base, 0)
-                
-        sorted_symbols = [t['symbol'] for t in sorted(self.all_tokens, key=lambda x: -x['initial_market_cap'])]
-        base_score = get_base_score(symbol, sorted_symbols)
-        scores[symbol]['final_score'] += base_score
-        scores[symbol]['base_score'] = base_score  # для отладки
 
         return scores
 

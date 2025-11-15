@@ -482,7 +482,9 @@ def simulate_session():
     """Lock deck and run simulation in one step"""
     try:
         data = request.get_json()
-        
+        logger.info(f"=== SIMULATE SESSION START ===")
+        logger.info(f"Raw request data: {data}")
+
         # Основные проверки
         if not data:
             return jsonify({
@@ -494,6 +496,8 @@ def simulate_session():
         wallet_address = data.get('wallet_address')
         selected_tokens = data.get('selected_tokens', [])
         session_id = data.get('session_id')
+
+        logger.info(f"Parsed data - wallet: {wallet_address}, tokens: {selected_tokens}, session_id: {session_id}")
 
         if not wallet_address:
             return jsonify({
@@ -510,7 +514,9 @@ def simulate_session():
             }), 400
 
         # Normalize token symbols
+        original_tokens = selected_tokens.copy()
         selected_tokens = [symbol.upper() for symbol in selected_tokens]
+        logger.info(f"Token normalization - original: {original_tokens}, normalized: {selected_tokens}")
 
         # Check for duplicates
         if len(set(selected_tokens)) != len(selected_tokens):
@@ -520,21 +526,52 @@ def simulate_session():
                 "message": "All 5 tokens must be unique"
             }), 400
 
+        # Create unique session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            logger.info(f"Generated new session_id: {session_id}")
+
+        # Check if session already exists and is completed
+        if session_id in game_sessions:
+            existing_session = game_sessions[session_id]
+            logger.info(f"Found existing session {session_id}")
+            logger.info(f"Existing session data: {existing_session}")
+            
+            if existing_session.get('simulation_completed'):
+                logger.info(f"Session {session_id} already completed, returning error")
+                return jsonify({
+                    "success": False,
+                    "error": "Already simulated",
+                    "message": "This session has already been simulated"
+                }), 409
+            else:
+                logger.info(f"Session {session_id} exists but not completed, proceeding")
+
         # Get current available tokens
+        logger.info(f"Getting available tokens...")
         available_tokens = cmc_service.get_available_game_tokens()
         available_symbols = {token['symbol'] for token in available_tokens}
+        logger.info(f"Available tokens count: {len(available_tokens)}")
+        logger.info(f"Available symbols (first 20): {list(available_symbols)[:20]}")
 
         # Check if all selected tokens are available
         invalid_tokens = [symbol for symbol in selected_tokens if symbol not in available_symbols]
         if invalid_tokens:
+            logger.error(f"Invalid tokens found: {invalid_tokens}")
+            logger.error(f"Selected tokens: {selected_tokens}")
+            logger.error(f"All available symbols: {sorted(list(available_symbols))}")
             return jsonify({
                 "success": False,
                 "error": "Invalid tokens",
                 "message": f"The following tokens are not available: {', '.join(invalid_tokens)}"
             }), 400
 
+        logger.info(f"All selected tokens are valid: {selected_tokens}")
+
         # Check tournament weight limit
         total_weight, is_valid_weight = validate_deck_weight(selected_tokens)
+        logger.info(f"Weight validation - total: {total_weight}, is_valid: {is_valid_weight}")
+        
         if not is_valid_weight:
             return jsonify({
                 "success": False,
@@ -543,31 +580,36 @@ def simulate_session():
             }), 400
 
         # Get selected token details
+        logger.info(f"Getting token details for: {selected_tokens}")
         selected_token_details = []
-        for symbol in selected_tokens:
-            token = next(t for t in available_tokens if t['symbol'] == symbol)
-            selected_token_details.append({
-                'symbol': token['symbol'],
-                'name': token['name'],
-                'starting_price': token['current_price'],
-                'starting_market_cap': token['market_cap'],
-                'starting_market_cap_formatted': token['market_cap_formatted'],
-                'cmc_rank': token['cmc_rank'],
-                'logo_url': token['logo_url'],
-                'tournament_weight': token['tournament_weight']
-            })
 
-        # Create unique session ID if not provided
-        if not session_id:
-            session_id = str(uuid.uuid4())
+        for i, symbol in enumerate(selected_tokens):
+            logger.info(f"Processing token {i+1}/5: {symbol}")
+            
+            try:
+                token = next(t for t in available_tokens if t['symbol'] == symbol)
+                logger.info(f"Found token {symbol}: {token['name']}")
+                
+                selected_token_details.append({
+                    'symbol': token['symbol'],
+                    'name': token['name'],
+                    'starting_price': token['current_price'],
+                    'starting_market_cap': token['market_cap'],
+                    'starting_market_cap_formatted': token['market_cap_formatted'],
+                    'cmc_rank': token['cmc_rank'],
+                    'logo_url': token['logo_url'],
+                    'tournament_weight': token['tournament_weight']
+                })
+            except StopIteration:
+                logger.error(f"CRITICAL ERROR: Token {symbol} not found in available_tokens!")
+                logger.error(f"Available token symbols: {[t['symbol'] for t in available_tokens]}")
+                return jsonify({
+                    "success": False,
+                    "error": "Token not found",
+                    "message": f"Token {symbol} is not available"
+                }), 400
 
-        # Check if session already exists and is completed
-        if session_id in game_sessions and game_sessions[session_id].get('simulation_completed'):
-            return jsonify({
-                "success": False,
-                "error": "Already simulated",
-                "message": "This session has already been simulated"
-            }), 409
+        logger.info(f"Successfully got details for {len(selected_token_details)} tokens")
 
         # Create/update session data
         now = datetime.utcnow()
@@ -586,13 +628,22 @@ def simulate_session():
             "status": "locked"
         }
 
+        logger.info(f"Created session data for: {[t['symbol'] for t in selected_token_details]}")
+
         # Get all simulation tokens
+        logger.info(f"Getting simulation tokens...")
         simulation_tokens = cmc_service.get_simulation_tokens()
+        
         if len(simulation_tokens) < 100:
             logger.warning(f"Only {len(simulation_tokens)} simulation tokens available, expected 100")
 
+        logger.info(f"Got {len(simulation_tokens)} simulation tokens")
+        logger.info(f"Starting simulation with selected tokens: {[t['symbol'] for t in selected_token_details]}")
+
         # Run simulation
         results = run_fantasy_simulation(selected_token_details, simulation_tokens)
+        
+        logger.info(f"Simulation completed - final score: {results['final_score']}")
 
         # Prepare simulation results
         simulation_results = {
@@ -604,7 +655,7 @@ def simulate_session():
                     'day': d.day,
                     'score': d.score,
                     'market_position': d.market_position,
-                    'market_sentiment': {  # NEW: добавили market_sentiment
+                    'market_sentiment': {
                         'status': d.market_sentiment['status'],
                         'description': d.market_sentiment['description'],
                         'market_change_pct': d.market_sentiment['market_change_pct'],
@@ -616,7 +667,7 @@ def simulate_session():
             ],
             'final_score': results['final_score'],
             'final_market_position': results['final_position'],
-            'market_overview': results['market_analysis']['daily_sentiments']  # NEW: общий обзор рынка по дням
+            'market_overview': results['market_analysis']['daily_sentiments']
         }
 
         # Update session with simulation results
@@ -629,7 +680,7 @@ def simulate_session():
         game_sessions[session_id] = game_session_data
         save_sessions(game_sessions)
 
-        logger.info(f"Deck locked and simulation completed for session {session_id}, final score: {results['final_score']}")
+        logger.info(f"=== SIMULATE SESSION SUCCESS === Session: {session_id}, Score: {results['final_score']}")
 
         return jsonify({
             "success": True,
@@ -641,7 +692,11 @@ def simulate_session():
         })
 
     except Exception as e:
-        logger.error(f"Error in simulate_session: {e}")
+        logger.error(f"=== SIMULATE SESSION ERROR === Exception: {e}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
         return jsonify({
             "success": False,
             "error": "Internal server error",
