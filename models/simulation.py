@@ -207,27 +207,20 @@ class FantasyCryptoRankSystem:
         self.max_deck_weight = 28
         self.deck_size = 5
 
-    def calculate_mc_factor(self, market_cap: float, all_market_caps: list) -> float:
-        """
-        Возвращает MC factor без хардкода конкретных токенов.
-        - Мягко усиливает топы, но при этом ETH, BNB и другие получают больше, чем при чисто степенной формуле.
-        - Средние и мелкие тоже не обессилены.
-        """
-
-        # Приведённая капитализация
-        market_cap_billions = market_cap / 1_000_000_000
-        avg_cap = sum(all_market_caps) / len(all_market_caps)
-        avg_cap_billions = avg_cap / 1_000_000_000 if avg_cap > 0 else 1
-
-        # Коэффициент относительного веса
-        rel = market_cap_billions / avg_cap_billions
-
-        # Гибридная формула: топы усиливаются чуть-чуть логарифмически, середняки — почти линейно
-        factor = ((rel ** 0.28) + (math.log10(market_cap_billions + 1))) * 7.9
-
-        # Немного сгладить микротопы, но не дать BTC/ETH/BNB быть всегда недосягаемыми
-        # Можно добавить "мягкий кап", если вдруг MC factor выходит за разумные пределы:
-        return min(factor, 85)
+    def calculate_mc_factor(self, market_cap_billions, all_market_caps):
+        # Вычисляем среднее значение market cap из списка
+        avg_market_cap_billions = sum(all_market_caps) / len(all_market_caps)
+        
+        rel = market_cap_billions / avg_market_cap_billions
+        
+        # Новая формула с естественным сглаживанием для гигантов
+        mc_factor = (
+            math.log(1 + rel * 2.5) * 12 +  # логарифмическое сглаживание отношения к средней капе
+            math.sqrt(math.log10(market_cap_billions + 1)) * 15 +  # корень из логарифма абсолютной капы
+            (rel / (1 + rel * 0.1)) * 8  # гиперболическое сглаживание для очень больших rel
+        )
+        
+        return mc_factor
 
     def calculate_activity_score(self, prices: List[float]) -> float:
         """Calculate activity score based on price changes"""
@@ -345,29 +338,7 @@ class FantasyCryptoRankSystem:
             min_raw = min(raw_values)
             max_raw = max(raw_values)
             range_raw = max_raw - min_raw
-
-            def get_base_score(symbol, sorted_symbols):
-                if symbol == "BTC":
-                    return 700
-                elif symbol == "ETH":
-                    return 600
-                else:
-                    try:
-                        position = sorted_symbols.index(symbol) + 1
-                        if position == 3:
-                            return 520
-                        elif position == 4:
-                            return 480
-                        else:
-                            base = int(480 * math.exp(-0.13 * (position - 4)))
-                            return max(base, 0)
-                    except ValueError:
-                        # Если токена нет в sorted_symbols, возвращаем 0
-                        return 0
-
-            # Получаем отсортированный список по market cap
-            sorted_symbols = [t['symbol'] for t in sorted(self.all_tokens, key=lambda x: -x['initial_market_cap'])]
-            
+ 
             for symbol, data in scores.items():
                 if range_raw > 0:
                     normalized = (data['raw_score'] - min_raw) / range_raw
@@ -375,14 +346,10 @@ class FantasyCryptoRankSystem:
                 else:
                     algorithm_score = 500
                     
-                # Получаем базовый скор
-                base_score = get_base_score(symbol, sorted_symbols)
                 
                 # ВАЖНО: Ограничиваем итоговый результат до 1000
                 final_score = min(algorithm_score, 1000)
                 
-                scores[symbol]['algorithm_score'] = algorithm_score  # для отладки
-                scores[symbol]['base_score'] = base_score  # для отладки
                 scores[symbol]['final_score'] = final_score
 
         return scores
