@@ -207,13 +207,27 @@ class FantasyCryptoRankSystem:
         self.max_deck_weight = 28
         self.deck_size = 5
 
-    def calculate_mc_factor(self, market_cap: float, change: float) -> float:
-        """Calculate MC factor based on market cap and change direction"""
+    def calculate_mc_factor(self, market_cap: float, all_market_caps: list) -> float:
+        """
+        Возвращает MC factor без хардкода конкретных токенов.
+        - Мягко усиливает топы, но при этом ETH, BNB и другие получают больше, чем при чисто степенной формуле.
+        - Средние и мелкие тоже не обессилены.
+        """
+
+        # Приведённая капитализация
         market_cap_billions = market_cap / 1_000_000_000
-        if change >= 0:
-            return (market_cap_billions ** 0.2) * 12
-        else:
-            return (market_cap_billions ** 0.2) * 12
+        avg_cap = sum(all_market_caps) / len(all_market_caps)
+        avg_cap_billions = avg_cap / 1_000_000_000 if avg_cap > 0 else 1
+
+        # Коэффициент относительного веса
+        rel = market_cap_billions / avg_cap_billions
+
+        # Гибридная формула: топы усиливаются чуть-чуть логарифмически, середняки — почти линейно
+        factor = ((rel ** 0.28) + (math.log10(market_cap_billions + 1))) * 7.9
+
+        # Немного сгладить микротопы, но не дать BTC/ETH/BNB быть всегда недосягаемыми
+        # Можно добавить "мягкий кап", если вдруг MC factor выходит за разумные пределы:
+        return min(factor, 85)
 
     def calculate_activity_score(self, prices: List[float]) -> float:
         """Calculate activity score based on price changes"""
@@ -314,11 +328,13 @@ class FantasyCryptoRankSystem:
 
         # Calculate raw scores
         total_tokens = len(scores)
+        
+        all_market_caps = [data['market_cap'] for symbol, data in scores.items()]
 
         for symbol, data in scores.items():
             weekly_points = total_tokens - data['change_rank'] + 1
             activity_points = total_tokens - data['activity_rank'] + 1
-            mc_factor = self.calculate_mc_factor(data['market_cap'], data['period_change'])
+            mc_factor = self.calculate_mc_factor(data['market_cap'], all_market_caps)
             raw_score = (weekly_points * mc_factor * 4) + (activity_points * mc_factor * 1)
             scores[symbol]['raw_score'] = raw_score
             scores[symbol]['mc_factor'] = mc_factor
