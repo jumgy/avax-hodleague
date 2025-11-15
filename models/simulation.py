@@ -204,7 +204,7 @@ class FantasyCryptoRankSystem:
         if change >= 0:
             return (market_cap_billions ** 0.15) * 12
         else:
-            return (market_cap_billions ** 0.05) * 12
+            return (market_cap_billions ** -0.05) * 12
 
     def calculate_activity_score(self, prices: List[float]) -> float:
         """Calculate activity score based on price changes"""
@@ -329,6 +329,28 @@ class FantasyCryptoRankSystem:
                     final_score = 500
 
                 scores[symbol]['final_score'] = final_score
+                
+        def get_base_score(symbol, sorted_symbols):
+            if symbol == "BTC":
+                return 700
+            elif symbol == "ETH":
+                return 600
+            else:
+                position = sorted_symbols.index(symbol) + 1
+                if position == 3:
+                    return 520
+                elif position == 4:
+                    return 480
+                else:
+                    # Плавное уменьшение после 4 места (пример — экспонента или линейно)
+                    # Минимум — 0, максимум — 480 (на 4-м месте)
+                    base = int(480 * math.exp(-0.13 * (position - 4)))
+                    return max(base, 0)
+                
+        sorted_symbols = [t['symbol'] for t in sorted(self.all_tokens, key=lambda x: -x['initial_market_cap'])]
+        base_score = get_base_score(symbol, sorted_symbols)
+        scores[symbol]['final_score'] += base_score
+        scores[symbol]['base_score'] = base_score  # для отладки
 
         return scores
 
