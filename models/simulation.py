@@ -211,9 +211,9 @@ class FantasyCryptoRankSystem:
         """Calculate MC factor based on market cap and change direction"""
         market_cap_billions = market_cap / 1_000_000_000
         if change >= 0:
-            return (market_cap_billions ** 0.15) * 12
+            return (market_cap_billions ** 0.2) * 12
         else:
-            return (market_cap_billions ** -0.05) * 12
+            return (market_cap_billions ** 0.05) * 12
 
     def calculate_activity_score(self, prices: List[float]) -> float:
         """Calculate activity score based on price changes"""
@@ -363,7 +363,7 @@ class FantasyCryptoRankSystem:
                 base_score = get_base_score(symbol, sorted_symbols)
                 
                 # ВАЖНО: Ограничиваем итоговый результат до 1000
-                final_score = min(algorithm_score + base_score, 1000)
+                final_score = min(algorithm_score, 1000)
                 
                 scores[symbol]['algorithm_score'] = algorithm_score  # для отладки
                 scores[symbol]['base_score'] = base_score  # для отладки
