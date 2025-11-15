@@ -30,7 +30,7 @@ TOKEN_WEIGHTS = {
     'FLR': 2, 'WLFI': 2, 'SPX': 2,
     
     # Вес 1 (3 токена) - Максимальный риск/потенциал
-    'DEXE': 1, 'KAIA': 1, 'M': 1
+    'ZK': 1, 'KAIA': 1, 'M': 1
 }
 
 GAME_TOKENS = list(TOKEN_WEIGHTS.keys())
