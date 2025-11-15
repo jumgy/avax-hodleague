@@ -29,6 +29,7 @@ instance/
 # dotenv
 .env
 .env.*
+.json
 
 # mypy, coverage, etc
 .mypy_cache/
