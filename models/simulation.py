@@ -213,7 +213,6 @@ class FantasyCryptoRankSystem:
         
         rel = market_cap_billions / avg_market_cap_billions
         
-        # Новая формула с естественным сглаживанием для гигантов
         mc_factor = (
             math.log(1 + rel * 2.5) * 12 +  # логарифмическое сглаживание отношения к средней капе
             math.sqrt(math.log10(market_cap_billions + 1)) * 15 +  # корень из логарифма абсолютной капы
@@ -437,7 +436,6 @@ class FantasyCryptoRankSystem:
         """Run complete simulation with detailed results"""
         daily_data = simulation_data['daily_data']
         daily_sentiments = simulation_data['daily_sentiments']
-
         daily_scores = self.calculate_daily_scores(selected_tokens, daily_data, daily_sentiments)
 
         # Get final day analysis
@@ -461,6 +459,18 @@ class FantasyCryptoRankSystem:
             symbol = token['symbol']
             if symbol in final_day_scores:
                 summary['selected_tokens_analysis'][symbol] = final_day_scores[symbol]
+
+        summary['all_tokens_final'] = {
+            symbol: {
+                'final_score': data.get('final_score', 0),
+                'period_change': data.get('period_change', 0),
+                'symbol': symbol,
+                'market_cap': data.get('market_cap', 0),
+                'change_rank': data.get('change_rank', 0),
+                'activity_rank': data.get('activity_rank', 0)
+            }
+            for symbol, data in final_day_scores.items()
+        }
 
         return summary
 

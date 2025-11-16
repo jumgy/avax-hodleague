@@ -667,7 +667,8 @@ def simulate_session():
             ],
             'final_score': results['final_score'],
             'final_market_position': results['final_position'],
-            'market_overview': results['market_analysis']['daily_sentiments']
+            'market_overview': results['market_analysis']['daily_sentiments'],
+            'all_tokens_final': results.get('all_tokens_final', {})
         }
 
         # Update session with simulation results
