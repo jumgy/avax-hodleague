@@ -23,7 +23,10 @@ app = FastAPI(
     title="Hodleague API",
     description="API for fantasy cryptocurrency trading game",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/admin/api-docs",          # вместо /docs
+    redoc_url="/admin/redoc",            # вместо /redoc  
+    openapi_url="/admin/openapi.json"    # вместо /openapi.json
 )
 
 # Setup CORS
@@ -84,7 +87,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=6000,
+        port=8000,
         reload=True,
         log_level=Config.LOG_LEVEL.lower()
     )
