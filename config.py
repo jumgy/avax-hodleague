@@ -1,5 +1,9 @@
 import os
 from datetime import timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 class Config:
     """Application configuration"""
@@ -7,6 +11,10 @@ class Config:
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'fantasy-crypto-game-secret-key-2025'
     DEBUG = os.environ.get('FLASK_DEBUG') == 'True'
+    
+    # Database settings (NEW)
+    DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql+asyncpg://postgres:postgres@localhost:5432/fantasy_crypto')
+    DB_ECHO = os.environ.get('DB_ECHO', 'False').lower() == 'true'
     
     # CoinMarketCap API settings
     COINMARKETCAP_API_KEY = os.environ.get('COINMARKETCAP_API_KEY') or 'your-api-key-here'
