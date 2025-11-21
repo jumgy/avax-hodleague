@@ -94,7 +94,7 @@ async def init_database():
     try:
         logger.info("Initializing database...")
         async with async_engine.begin() as conn:
-            from . import token_models, user_models
+            from . import token_models, user_models, card_models
             
             # Create all tables
             await conn.run_sync(Base.metadata.create_all)
@@ -126,7 +126,7 @@ def create_tables_sync():
     try:
         logger.info("Creating tables (sync)...")
         
-        from . import token_models, user_models
+        from . import token_models, user_models, card_models 
         
         Base.metadata.create_all(bind=sync_engine)
         logger.info("Tables created successfully")
