@@ -13,8 +13,7 @@ router.include_router(tokens_router, tags=["Game - Tokens"])
 router.include_router(sessions_router, tags=["Game - Sessions"])  
 router.include_router(tournaments_router, tags=["Game - Tournaments"])
 
-# ADMIN API - теги уже внутри admin_router
-router.include_router(admin_router)
+
 
 # Export router for main.py
 __all__ = ["router"]

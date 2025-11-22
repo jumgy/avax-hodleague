@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from api.routes import router as api_router
+from api.routes.admin import admin_router
 
 from config import Config
 
@@ -24,10 +26,14 @@ app = FastAPI(
     description="API for fantasy cryptocurrency trading game",
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/admin/api-docs",          # вместо /docs
-    redoc_url="/admin/redoc",            # вместо /redoc  
-    openapi_url="/admin/openapi.json"    # вместо /openapi.json
+    docs_url="/swagger",
+    redoc_url="/redoc",         
+    openapi_url="/openapi.json"
 )
+
+app.include_router(api_router, prefix="/api")
+
+app.include_router(admin_router)
 
 # Setup CORS
 app.add_middleware(
@@ -76,9 +82,6 @@ async def health_check():
     return {"status": "healthy", "service": "fantasy-crypto-api"}
 
 
-# Import and register API routes
-from api.routes import router as api_router
-app.include_router(api_router, prefix="/api")
 
 
 # Run configuration for development

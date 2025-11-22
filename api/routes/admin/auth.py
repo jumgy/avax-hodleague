@@ -59,7 +59,7 @@ class LoginResponse(BaseModel):
     expires_in: int = JWT_EXPIRE_HOURS * 3600
 
 # Router с менее очевидным путем
-router = APIRouter(prefix="/management")
+router = APIRouter(prefix="/panel")
 
 @router.post("/auth/signin", response_model=LoginResponse)
 async def system_login(request: LoginRequest):

@@ -110,7 +110,7 @@ class TokenResponse(BaseModel):
         from_attributes = True
 
 # Router
-router = APIRouter(prefix="/management/tokens")
+router = APIRouter(prefix="/panel/tokens")
 
 @router.get("/", response_model=List[TokenResponse])
 async def get_all_tokens(
@@ -118,7 +118,7 @@ async def get_all_tokens(
     db: Session = Depends(get_sync_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Get all tokens for management"""
+    """Get all tokens for panel"""
     query = db.query(Token)
     if active_only:
         query = query.filter(Token.is_active == True)
