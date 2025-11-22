@@ -8,13 +8,13 @@ from .admin import admin_router
 # Create main router that combines all route modules
 router = APIRouter()
 
-# Include all route modules
-router.include_router(tokens_router, tags=["Tokens"])
-router.include_router(sessions_router, tags=["Sessions"])  
-router.include_router(tournaments_router, tags=["Tournaments"])
+# PUBLIC API - для игроков
+router.include_router(tokens_router, tags=["Game - Tokens"])
+router.include_router(sessions_router, tags=["Game - Sessions"])  
+router.include_router(tournaments_router, tags=["Game - Tournaments"])
 
-# Include admin routes
-router.include_router(admin_router, tags=["Administration"])
+# ADMIN API - теги уже внутри admin_router
+router.include_router(admin_router)
 
 # Export router for main.py
 __all__ = ["router"]

@@ -4,6 +4,10 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
 
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from .database import Base
 class Token(Base):
     """
     Tokens available in the fantasy game.
@@ -22,9 +26,7 @@ class Token(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
     prices = relationship("TokenPrice", back_populates="token", cascade="all, delete-orphan")
-    cards = relationship("Card", back_populates="token", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Token(id={self.id}, symbol='{self.symbol}', name='{self.name}', weight={self.weight})>"

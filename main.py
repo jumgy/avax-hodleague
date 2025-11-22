@@ -55,7 +55,7 @@ async def root():
         "message": "Hodleague API",
         "version": "1.0.0",
         "framework": "FastAPI",
-        "docs": "/docs",
+        "docs": "/admin/api-docs",
         "endpoints": [
             "GET /api/tokens - Get 30 game tokens for user selection",
             "GET /api/simulation-tokens - Get 100 tokens for simulation calculations", 
@@ -78,7 +78,7 @@ async def health_check():
 
 # Import and register API routes
 from api.routes import router as api_router
-app.include_router(api_router, prefix="/api", tags=["Game API"])
+app.include_router(api_router, prefix="/api")
 
 
 # Run configuration for development
