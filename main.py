@@ -36,13 +36,13 @@ app.include_router(api_router, prefix="/api")
 app.include_router(admin_router)
 
 # Setup CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure this for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+#app.add_middleware(
+    #CORSMiddleware,
+    #allow_origins=["*"],
+    #allow_credentials=True,
+    #allow_methods=["*"],
+    #allow_headers=["*"],
+#)
 
 # Setup logging
 logging.basicConfig(
