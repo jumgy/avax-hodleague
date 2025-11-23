@@ -23,7 +23,7 @@ class Card(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    token = relationship("Token", back_populates="cards")
+    token = relationship("Token")
     
     def __repr__(self):
         return f"<Card(id={self.id}, token_id={self.token_id}, rarity='{self.rarity}', design='{self.design_type}')>"
