@@ -6,19 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from api.routes import router as api_router
 from api.routes.admin import admin_router
-
 from config import Config
-
 
 # Startup/shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     logging.info("🚀 Hodleague starting up...")
     yield
-    # Shutdown
     logging.info("🛑 Hodleague shutting down...")
-
 
 # Create FastAPI app
 app = FastAPI(
@@ -31,18 +26,18 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
+# Setup CORS 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"], 
+)
+
+# Include routers
 app.include_router(api_router, prefix="/api")
-
 app.include_router(admin_router)
-
-# Setup CORS
-#app.add_middleware(
-    #CORSMiddleware,
-    #allow_origins=["*"],
-    #allow_credentials=True,
-    #allow_methods=["*"],
-    #allow_headers=["*"],
-#)
 
 # Setup logging
 logging.basicConfig(
@@ -52,7 +47,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-
 # Main index endpoint
 @app.get("/", tags=["Root"])
 async def root():
@@ -61,7 +55,7 @@ async def root():
         "message": "Hodleague API",
         "version": "1.0.0",
         "framework": "FastAPI",
-        "docs": "/admin/api-docs",
+        "docs": "/swagger",
         "endpoints": [
             "GET /api/tokens - Get 30 game tokens for user selection",
             "GET /api/simulation-tokens - Get 100 tokens for simulation calculations", 
@@ -74,15 +68,11 @@ async def root():
         ]
     }
 
-
 # Health check endpoint
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "fantasy-crypto-api"}
-
-
-
 
 # Run configuration for development
 if __name__ == "__main__":
