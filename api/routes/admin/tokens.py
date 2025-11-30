@@ -8,6 +8,7 @@ from datetime import datetime
 from models.database import get_sync_db
 from models.token_models import Token
 from .auth import verify_admin_token
+from services.scheduler_service import scheduler_service
 
 # Pydantic models
 class TokenCreate(BaseModel):
@@ -194,37 +195,62 @@ async def update_token(
     
     return token
 
+
 @router.delete("/{token_id}")
 async def delete_token(
     token_id: int,
     db: Session = Depends(get_sync_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Delete token (soft delete by setting is_active=False)"""
+    """Delete token and all related cards (soft delete by setting is_active=False)"""
     token = db.query(Token).filter(Token.id == token_id).first()
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
     
-    # Soft delete
+    # Deactivate token
     token.is_active = False
     token.updated_at = datetime.utcnow()
+    
+    #Деактивируем все карточки связанные с этим токеном
+    from models.card_models import Card
+    affected_cards = db.query(Card).filter(
+        Card.token_id == token_id,
+        Card.is_active == True
+    ).all()
+    
+    for card in affected_cards:
+        card.is_active = False
+        card.updated_at = datetime.utcnow()
+    
     db.commit()
     
-    return {"message": f"Token '{token.symbol}' has been deactivated", "success": True}
-
-@router.post("/{token_id}/activate")
-async def activate_token(
-    token_id: int,
-    db: Session = Depends(get_sync_db),
+    return {
+        "message": f"Token ID {token_id} has been deactivated", 
+        "deactivated_cards": len(affected_cards),
+        "success": True
+    }
+    
+@router.get("/scheduler/status", tags=["Scheduler Management"])
+async def get_scheduler_status(
     admin: dict = Depends(verify_admin_token)
 ):
-    """Activate deactivated token"""
-    token = db.query(Token).filter(Token.id == token_id).first()
-    if not token:
-        raise HTTPException(status_code=404, detail="Token not found")
-    
-    token.is_active = True
-    token.updated_at = datetime.utcnow()
-    db.commit()
-    
-    return {"message": f"Token '{token.symbol}' has been activated", "success": True}
+    """Get price monitoring scheduler status (Admin only)"""
+    return scheduler_service.get_status()
+
+@router.post("/scheduler/trigger", tags=["Scheduler Management"])
+async def trigger_price_monitoring(
+    admin: dict = Depends(verify_admin_token)
+):
+    """Manually trigger price monitoring (Admin only)"""
+    try:
+        await scheduler_service.run_price_monitor_now()
+        return {
+            "message": "Price monitoring triggered successfully", 
+            "status": "completed",
+            "triggered_by": admin.get("username", "admin")
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to trigger price monitoring: {str(e)}"
+        )

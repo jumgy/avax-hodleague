@@ -1,13 +1,9 @@
 # models/token_models.py
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Numeric, BigInteger
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
-from datetime import datetime
-from .database import Base
 class Token(Base):
     """
     Tokens available in the fantasy game.
@@ -31,22 +27,27 @@ class Token(Base):
     def __repr__(self):
         return f"<Token(id={self.id}, symbol='{self.symbol}', name='{self.name}', weight={self.weight})>"
 
-
 class TokenPrice(Base):
     """
-    Historical price data for tokens.
+    Historical price data for tokens from multiple sources.
     Updated every 30 minutes from exchange APIs.
     """
     __tablename__ = 'token_prices'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     token_id = Column(Integer, ForeignKey('tokens.id'), nullable=False)
-    price = Column(Float, nullable=False)  # Current price in USD
-    market_cap = Column(Float, nullable=False)  # Market cap in USD
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    
+    # Price data
+    price = Column(Numeric(20, 8), nullable=False)
+    market_cap = Column(BigInteger, nullable=True)
+    change_24h = Column(Numeric(10, 4), nullable=True)
+    
+    # Metadata о источниках
+    sources_count = Column(Integer, nullable=False, default=1)  # Количество источников
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow) 
     
     # Relationships
     token = relationship("Token", back_populates="prices")
     
     def __repr__(self):
-        return f"<TokenPrice(token_id={self.token_id}, price=${self.price:.2f}, created_at={self.created_at})>"
+        return f"<TokenPrice(token_id={self.token_id}, price=${self.price}, timestamp={self.timestamp})>"

@@ -26,7 +26,7 @@ async_engine = create_async_engine(
 )
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
-    echo=os.environ.get("DB_ECHO", "False").lower() == "true",
+    echo=Config.DB_ECHO,
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
