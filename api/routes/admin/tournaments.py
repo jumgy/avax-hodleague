@@ -306,7 +306,7 @@ async def update_tournament(
     return TournamentResponse(**tournament_dict)
 
 # Дополнительные utility endpoints
-@router.get("/stats/summary", tags=["Tournament Statistics"])
+@router.get("/stats/summary")
 async def get_tournaments_summary(
     db: Session = Depends(get_sync_db),
     admin: dict = Depends(verify_admin_token)

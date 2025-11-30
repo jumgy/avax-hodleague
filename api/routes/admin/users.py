@@ -199,7 +199,7 @@ async def update_user(
     
     return UserResponse(**user_dict)
 
-@router.get("/stats/summary", tags=["User Statistics"])
+@router.get("/stats/summary")
 async def get_users_summary(
     db: Session = Depends(get_sync_db),
     admin: dict = Depends(verify_admin_token)
