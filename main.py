@@ -3,43 +3,48 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+
 from api.routes import router as api_router
 from api.routes.admin import admin_router
 from services.scheduler_service import scheduler_service
 from config import Config
+
+from models.database import create_tables_sync, init_database
 
 # Startup/shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.info("🚀 Hodleague starting up...")
     
-    # Запускаем price monitoring scheduler
+    try:
+        create_tables_sync()
+        logging.info("✅ Database tables created/verified")
+    except Exception as e:
+        logging.error(f"❌ Database initialization failed: {e}")
+    
     try:
         await scheduler_service.start()
         logging.info("✅ Price monitoring scheduler started")
     except Exception as e:
         logging.error(f"❌ Failed to start scheduler: {e}")
-    
+
     yield
-    
-    # Останавливаем scheduler
+
     try:
         await scheduler_service.stop()
         logging.info("✅ Price monitoring scheduler stopped")
     except Exception as e:
         logging.error(f"❌ Error stopping scheduler: {e}")
-    
+
     logging.info("🛑 Hodleague shutting down...")
 
-# Create FastAPI app
 app = FastAPI(
     title="Hodleague API",
-    description="API for fantasy cryptocurrency trading game",
+    description="API for fantasy cryptocurrency trading game", 
     version="1.0.0",
     lifespan=lifespan,
     docs_url="/swagger",
-    redoc_url="/redoc",         
+    redoc_url="/redoc",
     openapi_url="/openapi.json"
 )
 
