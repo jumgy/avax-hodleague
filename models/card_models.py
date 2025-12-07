@@ -1,9 +1,7 @@
-# models/card_models.py
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
-
 class Card(Base):
     """
     Game cards based on tokens with different rarities and designs.
@@ -13,7 +11,7 @@ class Card(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     token_id = Column(Integer, ForeignKey('tokens.id'), nullable=False)
-    rarity = Column(String(20), nullable=False)  # "common", "rare", "epic", "legendary"
+    rarity_id = Column(Integer, ForeignKey('rarities.id'), nullable=False)
     design_type = Column(String(50), nullable=False)  # "classic", "neon", "retro", etc.
     background_image_url = Column(String(500), nullable=False)  # Card background/design
     is_active = Column(Boolean, nullable=False, default=True)
@@ -24,6 +22,7 @@ class Card(Base):
     
     # Relationships
     token = relationship("Token")
+    rarity = relationship("Rarity")
     
     def __repr__(self):
-        return f"<Card(id={self.id}, token_id={self.token_id}, rarity='{self.rarity}', design='{self.design_type}')>"
+        return f"<Card(id={self.id}, token_id={self.token_id}, rarity_id={self.rarity_id}, design='{self.design_type}')>"
