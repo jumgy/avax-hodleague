@@ -43,6 +43,8 @@ class PackOpening(Base):
     # Relationships
     user = relationship("User")
     pack = relationship("UserPack", back_populates="opening")
+    cards = relationship("UserCard", back_populates="pack_opening")
+
     
     def __repr__(self):
         return f"<PackOpening(id={self.id}, user_id={self.user_id}, pack_id={self.pack_id}, cards={self.cards_count})>"
