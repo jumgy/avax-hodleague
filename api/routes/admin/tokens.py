@@ -6,7 +6,7 @@ from datetime import datetime
 import re
 
 from models.database import get_sync_db
-from models.token_models import Token
+from models.token_models import Token, TokenPrice
 from .auth import verify_admin_token
 from services.scheduler_service import scheduler_service
 
@@ -116,6 +116,25 @@ class PaginatedTokenResponse(BaseModel):
     has_next: bool
     has_prev: bool
 
+class TokenPriceResponse(BaseModel):
+    id: int
+    token_id: int
+    price: float
+    market_cap: Optional[int] = None
+    change_24h: Optional[float] = None
+    sources_count: int
+    timestamp: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class PaginatedTokenPriceResponse(BaseModel):
+    items: List[TokenPriceResponse]
+    total: int
+    skip: int
+    limit: int
+    has_next: bool
+    has_prev: bool
+
 router = APIRouter(prefix="/panel/tokens")
 
 @router.get("/", response_model=PaginatedTokenResponse)
@@ -189,6 +208,51 @@ async def get_token(
         raise HTTPException(status_code=404, detail="Token not found")
     return token
 
+@router.get("/{token_id}/prices", response_model=PaginatedTokenPriceResponse)
+async def get_token_prices(
+    token_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    price_from: Optional[float] = Query(None, ge=0),
+    price_to: Optional[float] = Query(None, ge=0),
+    timestamp_from: Optional[datetime] = Query(None),
+    timestamp_to: Optional[datetime] = Query(None),
+    sort_by: str = Query("timestamp", regex="^(id|price|market_cap|change_24h|timestamp)$"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$"),
+    db: Session = Depends(get_sync_db),
+    admin: dict = Depends(verify_admin_token)
+):
+    token = db.query(Token).filter(Token.id == token_id).first()
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    query = db.query(TokenPrice).filter(TokenPrice.token_id == token_id)
+
+    if price_from is not None:
+        query = query.filter(TokenPrice.price >= price_from)
+    if price_to is not None:
+        query = query.filter(TokenPrice.price <= price_to)
+    if timestamp_from:
+        query = query.filter(TokenPrice.timestamp >= timestamp_from)
+    if timestamp_to:
+        query = query.filter(TokenPrice.timestamp <= timestamp_to)
+
+    total = query.count()
+
+    sort_column = getattr(TokenPrice, sort_by)
+    query = query.order_by(sort_column.desc()) if sort_order == "desc" else query.order_by(sort_column.asc())
+
+    prices = query.offset(skip).limit(limit).all()
+
+    return PaginatedTokenPriceResponse(
+        items=prices,
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_next=(skip + limit) < total,
+        has_prev=skip > 0
+    )
+
 @router.post("/", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def create_token(
     token_data: TokenCreate,
@@ -206,6 +270,7 @@ async def create_token(
     db.add(new_token)
     db.commit()
     db.refresh(new_token)
+
     return new_token
 
 @router.put("/{token_id}", response_model=TokenResponse)
@@ -234,6 +299,7 @@ async def update_token(
     token.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(token)
+
     return token
 
 @router.delete("/{token_id}")
