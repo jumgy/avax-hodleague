@@ -353,6 +353,34 @@ async def update_tournament(
 
     return TournamentResponse(**tournament_dict)
 
+@router.delete("/{tournament_id}")
+async def delete_tournament(
+    tournament_id: int,
+    db: Session = Depends(get_sync_db),
+    admin: dict = Depends(verify_admin_token)
+):
+    tournament = db.query(Tournament).filter(Tournament.id == tournament_id).first()
+    if not tournament:
+        raise HTTPException(status_code=404, detail="Tournament not found")
+
+    # Проверка что турнир можно деактивировать
+    if tournament.status in [TournamentStatus.REGISTRATION, TournamentStatus.ONGOING]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot deactivate active tournament. Tournament #{tournament.tournament_number} is currently {tournament.status.lower()}"
+        )
+
+    tournament.is_active = False
+    tournament.updated_at = datetime.utcnow()
+    
+    db.commit()
+
+    return {
+        "message": f"Tournament #{tournament.tournament_number} has been deactivated",
+        "tournament_id": tournament_id,
+        "success": True
+    }
+
 @router.get("/stats/summary")
 async def get_tournaments_summary(
     db: Session = Depends(get_sync_db),
