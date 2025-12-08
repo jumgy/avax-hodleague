@@ -125,7 +125,7 @@ class PaginatedCardWeightResponse(BaseModel):
 
 # --- Routers ---
 
-router = APIRouter(prefix="/management/pack-configs", tags=["Admin - Pack Configs"])
+router = APIRouter(prefix="/management/pack-configs")
 
 # --- PackRarityConfig Endpoints ---
 
