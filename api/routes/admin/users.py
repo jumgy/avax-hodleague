@@ -67,7 +67,7 @@ async def get_all_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=1000),
     id: Optional[int] = Query(None),
-    active_only: Optional[bool] = Query(None, description="Filter only active users"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status (true=active, false=inactive, null=all)"),
     search: Optional[str] = Query(None, description="Search by nickname, wallet address, or referral route"),
     wallet_address: Optional[str] = Query(None, description="Filter by wallet address"),
     nickname: Optional[str] = Query(None, description="Search by nickname"),
@@ -87,10 +87,10 @@ async def get_all_users(
 
     if id is not None:
         query = query.filter(User.id == id)
-    if active_only is True:
-        query = query.filter(User.is_active == True)
-    elif active_only is False:
-        query = query.filter(User.is_active == False)
+
+    if is_active is not None:
+        query = query.filter(User.is_active == is_active)
+
     if search:
         search_term = f"%{search.lower()}%"
         query = query.filter(
@@ -98,6 +98,7 @@ async def get_all_users(
             User.wallet_address.ilike(search_term) |
             User.referral_route.ilike(search_term)
         )
+
     if wallet_address:
         query = query.filter(User.wallet_address.ilike(f"%{wallet_address}%"))
     if nickname:

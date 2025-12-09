@@ -126,7 +126,7 @@ async def get_all_rarities(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=1000),
     id: Optional[int] = Query(None),
-    active_only: Optional[bool] = Query(None, description="Filter only active rarities"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status (true=active, false=inactive, null=all)"),
     name: Optional[str] = Query(None, description="Search by name (case insensitive)"),
     description: Optional[str] = Query(None),
     color: Optional[str] = Query(None),
@@ -145,10 +145,9 @@ async def get_all_rarities(
 
     if id is not None:
         query = query.filter(Rarity.id == id)
-    if active_only is True:
-        query = query.filter(Rarity.is_active == True)
-    elif active_only is False:
-        query = query.filter(Rarity.is_active == False)
+        
+    if is_active is not None:
+        query = query.filter(Rarity.is_active == is_active)
     if name:
         query = query.filter(Rarity.name.ilike(f"%{name}%"))
     if description:

@@ -142,7 +142,7 @@ async def get_all_tokens(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=1000),
     id: Optional[int] = Query(None),
-    active_only: Optional[bool] = Query(None, description="Filter only active tokens"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status (true=active, false=inactive, null=all)"),
     name: Optional[str] = Query(None, description="Search by name"),
     symbol: Optional[str] = Query(None, description="Filter by symbol"),
     weight_from: Optional[int] = Query(None),
@@ -160,10 +160,9 @@ async def get_all_tokens(
 
     if id is not None:
         query = query.filter(Token.id == id)
-    if active_only is True:
-        query = query.filter(Token.is_active == True)
-    elif active_only is False:
-        query = query.filter(Token.is_active == False)
+
+    if is_active is not None:
+        query = query.filter(Token.is_active == is_active)
     if name:
         query = query.filter(Token.name.ilike(f"%{name}%"))
     if symbol:

@@ -122,7 +122,7 @@ async def get_all_tournaments(
     id: Optional[int] = Query(None),
     tournament_number: Optional[int] = Query(None),
     status_filter: Optional[str] = Query(None, description="Filter by tournament status"),
-    active_only: Optional[bool] = Query(None, description="Filter only active tournaments"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status (true=active, false=inactive, null=all)"),
     weight_limit_from: Optional[int] = Query(None),
     weight_limit_to: Optional[int] = Query(None),
     start_date_from: Optional[datetime] = Query(None),
@@ -142,8 +142,10 @@ async def get_all_tournaments(
 
     if id is not None:
         query = query.filter(Tournament.id == id)
+
     if tournament_number is not None:
         query = query.filter(Tournament.tournament_number == tournament_number)
+
     if status_filter:
         if not TournamentStatus.is_valid(status_filter):
             raise HTTPException(
@@ -151,13 +153,9 @@ async def get_all_tournaments(
                 detail=f"Invalid status filter. Must be one of: {', '.join(TournamentStatus.ALL_STATUSES)}"
             )
         query = query.filter(Tournament.status == status_filter)
-    if active_only is True:
-        query = query.filter(Tournament.status.in_([
-            TournamentStatus.REGISTRATION,
-            TournamentStatus.ONGOING
-        ]))
-    elif active_only is False:
-        query = query.filter(Tournament.status == TournamentStatus.FINISHED)
+
+    if is_active is not None:
+        query = query.filter(Tournament.is_active == is_active)
     if weight_limit_from is not None:
         query = query.filter(Tournament.weight_limit >= weight_limit_from)
     if weight_limit_to is not None:
