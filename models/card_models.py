@@ -23,6 +23,7 @@ class Card(Base):
     # Relationships
     token = relationship("Token")
     rarity = relationship("Rarity")
+    user_cards = relationship("UserCard", back_populates="card") 
     
     def __repr__(self):
         return f"<Card(id={self.id}, token_id={self.token_id}, rarity_id={self.rarity_id}, design='{self.design_type}')>"

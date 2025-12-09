@@ -1,4 +1,5 @@
 # services/web3_auth_service.py
+
 import secrets
 import hashlib
 import time
@@ -8,7 +9,6 @@ from eth_account.messages import encode_defunct
 from eth_account import Account
 import jwt
 import logging
-
 from models.database import get_sync_db
 from models.user_models import User
 from config import Config
@@ -20,11 +20,10 @@ class Web3AuthService:
         # Храним nonce в памяти (в продакшене лучше Redis)
         self.nonce_storage: Dict[str, Dict] = {}
         self.cleanup_interval = 600  # 10 минут для cleanup
-    
+
     def generate_nonce(self, wallet_address: str) -> str:
         """Генерируем nonce для подписи"""
         wallet_address = wallet_address.lower()
-        
         # Генерируем случайную строку
         nonce = secrets.token_hex(16)
         timestamp = int(time.time())
@@ -45,7 +44,7 @@ class Web3AuthService:
         
         logger.info(f"Generated nonce for wallet: {wallet_address[:10]}...")
         return message
-    
+
     def verify_signature(self, wallet_address: str, signature: str) -> bool:
         """Верифицируем подпись сообщения"""
         wallet_address = wallet_address.lower()
@@ -54,7 +53,7 @@ class Web3AuthService:
         if wallet_address not in self.nonce_storage:
             logger.warning(f"No nonce found for wallet: {wallet_address[:10]}...")
             return False
-        
+
         nonce_data = self.nonce_storage[wallet_address]
         
         # Проверяем, не истек ли nonce
@@ -62,7 +61,7 @@ class Web3AuthService:
             logger.warning(f"Nonce expired for wallet: {wallet_address[:10]}...")
             del self.nonce_storage[wallet_address]
             return False
-        
+
         try:
             # Кодируем сообщение для верификации
             message = nonce_data['message']
@@ -80,23 +79,34 @@ class Web3AuthService:
                 del self.nonce_storage[wallet_address]
             else:
                 logger.warning(f"Invalid signature for wallet: {wallet_address[:10]}...")
-            
+                
             return is_valid
             
         except Exception as e:
             logger.error(f"Error verifying signature: {e}")
             return False
-    
+
+    def get_user_by_wallet(self, wallet_address: str) -> Optional[User]:
+        """Получаем пользователя по wallet address"""
+        db = next(get_sync_db())
+        try:
+            wallet_address = wallet_address.lower()
+            user = db.query(User).filter(User.wallet_address == wallet_address).first()
+            return user
+        except Exception as e:
+            logger.error(f"Error getting user by wallet: {e}")
+            return None
+        finally:
+            db.close()
+
     def create_or_get_user(self, wallet_address: str, nickname: str = None, avatar_url: str = None) -> User:
         """Создаем или получаем пользователя"""
         db = next(get_sync_db())
-        
         try:
             wallet_address = wallet_address.lower()
             
             # Ищем существующего пользователя
             existing_user = db.query(User).filter(User.wallet_address == wallet_address).first()
-            
             if existing_user:
                 logger.info(f"Existing user login: {existing_user.nickname}")
                 return existing_user
@@ -142,7 +152,7 @@ class Web3AuthService:
             raise
         finally:
             db.close()
-    
+
     def create_jwt_token(self, user: User) -> str:
         """Создаем JWT токен для пользователя"""
         payload = {
@@ -153,17 +163,14 @@ class Web3AuthService:
             'iat': datetime.utcnow(),
             'type': 'user_access'
         }
-        
         return jwt.encode(payload, Config.JWT_SECRET, algorithm="HS256")
-    
+
     def verify_jwt_token(self, token: str) -> Optional[Dict]:
         """Проверяем JWT токен"""
         try:
             payload = jwt.decode(token, Config.JWT_SECRET, algorithms=["HS256"])
-            
             if payload.get('type') != 'user_access':
                 return None
-                
             return payload
         except jwt.ExpiredSignatureError:
             logger.warning("User JWT expired")
@@ -171,7 +178,7 @@ class Web3AuthService:
         except jwt.InvalidTokenError as e:
             logger.warning(f"Invalid user JWT: {e}")
             return None
-    
+
     def _cleanup_expired_nonces(self):
         """Очищаем истекшие nonce"""
         current_time = time.time()
@@ -182,7 +189,7 @@ class Web3AuthService:
         
         for wallet in expired_wallets:
             del self.nonce_storage[wallet]
-        
+            
         if expired_wallets:
             logger.info(f"Cleaned up {len(expired_wallets)} expired nonces")
 

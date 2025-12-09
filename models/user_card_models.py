@@ -25,7 +25,7 @@ class UserCard(Base):
     
     # Relationships
     user = relationship("User")
-    card = relationship("Card")
+    card = relationship("Card", back_populates="user_cards")
     pack_opening = relationship("PackOpening", back_populates="cards")
     
     def __repr__(self):
