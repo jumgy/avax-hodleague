@@ -22,31 +22,22 @@ logger = logging.getLogger(__name__)
 GAME_TOKENS_WEIGHTS = {
     # Вес 10
     'BTC': 10, 'ETH': 10, 'XRP': 10,
-    
     # Вес 9
     'BNB': 9, 'SOL': 9, 'TRX': 9,
-    
     # Вес 8
     'DOGE': 8, 'ADA': 8, 'AVAX': 8,
-    
     # Вес 7
     'HYPE': 7, 'WLFI': 7, 'ZEC': 7,
-    
     # Вес 6
     'ENA': 6, 'APT': 6, 'M': 6,
-    
     # Вес 5
     'PUMP': 5, 'KCS': 5, 'POL': 5,
-    
     # Вес 4
     'KAS': 4, 'FLR': 4, 'DASH': 4,
-    
     # Вес 3
     'FET': 3, 'LDO': 3, 'XTZ': 3,
-    
     # Вес 2
     'DCR': 2, 'IOTA': 2, 'AB': 2,
-    
     # Вес 1
     'KAIA': 1, 'FLOKI': 1, 'SPX': 1,
 }
@@ -66,24 +57,43 @@ def create_database_connection():
 def clear_tokens_table(session):
     """Clear all records from tokens table with cascade"""
     try:
-        logger.info("Clearing tokens table with cascade...")
+        logger.info("Clearing tokens table with all related data...")
         
-        # Delete token_prices first (safe approach)
+        # Delete in correct order to avoid foreign key violations
+        
+        # 1. Delete user_cards first (references cards)
+        logger.info("Deleting user_cards...")
+        user_cards_result = session.execute(text("DELETE FROM user_cards"))
+        user_cards_deleted = user_cards_result.rowcount
+        logger.info(f"Deleted {user_cards_deleted} user_cards records")
+        
+        # 2. Delete cards (references tokens)
+        logger.info("Deleting cards...")
+        cards_result = session.execute(text("DELETE FROM cards"))
+        cards_deleted = cards_result.rowcount
+        logger.info(f"Deleted {cards_deleted} cards records")
+        
+        # 3. Delete token_prices (references tokens)
         logger.info("Deleting token_prices...")
         prices_result = session.execute(text("DELETE FROM token_prices"))
         prices_deleted = prices_result.rowcount
         logger.info(f"Deleted {prices_deleted} token_prices records")
         
-        # Then delete tokens
+        # 4. Finally delete tokens
         logger.info("Deleting tokens...")
         tokens_result = session.execute(text("DELETE FROM tokens"))
         tokens_deleted = tokens_result.rowcount
         logger.info(f"Deleted {tokens_deleted} tokens records")
         
         session.commit()
-        logger.info(f"Successfully cleared tokens and related data")
-        return True
+        logger.info(f"Successfully cleared all tokens and related data:")
+        logger.info(f"  - User cards: {user_cards_deleted}")
+        logger.info(f"  - Cards: {cards_deleted}")
+        logger.info(f"  - Token prices: {prices_deleted}")
+        logger.info(f"  - Tokens: {tokens_deleted}")
         
+        return True
+
     except Exception as e:
         logger.error(f"Failed to clear tokens table: {e}")
         session.rollback()
@@ -93,7 +103,6 @@ def get_tokens_data_from_cmc(cmc_service):
     """Get token data from CoinMarketCap API"""
     try:
         logger.info("Fetching token data from CoinMarketCap...")
-        
         # Get specific tokens by symbols
         symbols_list = list(GAME_TOKENS_WEIGHTS.keys())
         logger.info(f"Fetching data for {len(symbols_list)} tokens: {symbols_list}")
@@ -103,10 +112,10 @@ def get_tokens_data_from_cmc(cmc_service):
         if not tokens_data:
             logger.error("Failed to get tokens data from CoinMarketCap")
             return {}
-            
+        
         logger.info(f"Successfully fetched data for {len(tokens_data)} tokens")
         return tokens_data
-        
+    
     except Exception as e:
         logger.error(f"Error fetching tokens data: {e}")
         return {}
@@ -118,7 +127,6 @@ def insert_token_with_sql(session, symbol, name, weight, image_url):
             INSERT INTO tokens (name, symbol, weight, image_url, is_active, created_at, updated_at)
             VALUES (:name, :symbol, :weight, :image_url, :is_active, :created_at, :updated_at)
         """)
-        
         session.execute(sql, {
             'name': name,
             'symbol': symbol,
@@ -128,9 +136,7 @@ def insert_token_with_sql(session, symbol, name, weight, image_url):
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow()
         })
-        
         return True
-        
     except Exception as e:
         logger.error(f"Error inserting token {symbol}: {e}")
         return False
@@ -185,12 +191,11 @@ def populate_tokens(session, cmc_service):
         
         if successful_tokens:
             logger.info(f"Successful tokens: {', '.join(successful_tokens)}")
-        
         if failed_tokens:
             logger.warning(f"Failed tokens: {', '.join(failed_tokens)}")
-            
-        return len(successful_tokens), len(failed_tokens)
         
+        return len(successful_tokens), len(failed_tokens)
+    
     except Exception as e:
         logger.error(f"Error populating tokens: {e}")
         session.rollback()
@@ -213,22 +218,42 @@ def verify_tokens_table(session):
         
         # Show weight distribution
         weight_result = session.execute(text("SELECT weight, array_agg(symbol) as symbols FROM tokens GROUP BY weight ORDER BY weight DESC"))
-        
         logger.info("Weight distribution:")
         for row in weight_result:
             weight = row[0]
             symbols = row[1]
             logger.info(f"  Weight {weight}: {', '.join(symbols)} ({len(symbols)} tokens)")
-            
-        return True
         
+        return True
+    
     except Exception as e:
         logger.error(f"Error verifying tokens table: {e}")
         return False
 
+def show_cleanup_warning():
+    """Show warning about data cleanup"""
+    logger.warning("=" * 60)
+    logger.warning("WARNING: This script will delete ALL existing data!")
+    logger.warning("Tables that will be cleared:")
+    logger.warning("  - user_cards (all user card collections)")
+    logger.warning("  - cards (all card definitions)")
+    logger.warning("  - token_prices (all price history)")
+    logger.warning("  - tokens (all token definitions)")
+    logger.warning("=" * 60)
+    
+    response = input("Are you sure you want to continue? (yes/no): ").strip().lower()
+    if response not in ['yes', 'y']:
+        logger.info("Operation cancelled by user")
+        return False
+    return True
+
 def main():
     """Main execution function"""
     logger.info("=== Starting tokens population script ===")
+    
+    # Show warning and get confirmation
+    if not show_cleanup_warning():
+        return False
     
     session = None
     try:
@@ -240,7 +265,7 @@ def main():
         logger.info("Connecting to database...")
         engine, session = create_database_connection()
         
-        # Clear existing tokens
+        # Clear existing tokens and related data
         if not clear_tokens_table(session):
             logger.error("Failed to clear tokens table. Aborting.")
             return False
@@ -256,12 +281,13 @@ def main():
         verify_tokens_table(session)
         
         logger.info("=== Tokens population completed successfully! ===")
+        logger.info("Note: You may need to recreate cards and user collections")
         return True
-        
+    
     except Exception as e:
         logger.error(f"Script execution failed: {e}")
         return False
-        
+    
     finally:
         if session:
             session.close()
