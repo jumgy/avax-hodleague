@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, validator
 from typing import Optional
 import logging
@@ -10,6 +11,8 @@ from services.user_pack_grant_service import user_pack_grant_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth")
+
+security = HTTPBearer()
 
 
 class NonceRequest(BaseModel):
@@ -65,22 +68,23 @@ class AuthResponse(BaseModel):
     packs_granted: Optional[int] = None  # Количество выданных паков
 
 
-def verify_jwt_dependency(authorization: str = Header(...)):
+def verify_jwt_dependency(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     """Verify JWT token from Authorization header"""
     try:
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authentication scheme")
+        token = credentials.credentials  # Получаем токен из Bearer
         
         payload = web3_auth_service.verify_jwt_token(token)
         if not payload:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
         
         return payload
-
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization header format")
-    except Exception:
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Authentication failed: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
 
 

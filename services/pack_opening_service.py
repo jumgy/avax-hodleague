@@ -1,0 +1,407 @@
+# services/pack_opening_service.py
+
+from sqlalchemy import select, func, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, List, Optional
+import random
+import logging
+from datetime import datetime
+
+from models.pack_models import PackType
+from models.user_pack_models import UserPack, PackOpening
+from models.user_card_models import UserCard
+from models.card_models import Card
+
+logger = logging.getLogger(__name__)
+
+class PackOpeningService:
+    """Service for pack opening logic"""
+
+    async def check_pack_availability(
+        self, 
+        user_id: int, 
+        pack_type_id: Optional[int], 
+        db: AsyncSession
+    ) -> Dict:
+        """
+        Check available packs for user
+        
+        Args:
+            user_id: User ID
+            pack_type_id: Specific pack type ID (optional)
+            db: Database session
+            
+        Returns:
+            Dict with available packs info
+        """
+        try:
+            query = select(
+                UserPack.pack_type_id,
+                func.count(UserPack.id).label('count')
+            ).where(
+                UserPack.user_id == user_id,
+                UserPack.is_opened == False
+            )
+            
+            if pack_type_id:
+                query = query.where(UserPack.pack_type_id == pack_type_id)
+            
+            query = query.group_by(UserPack.pack_type_id)
+            
+            result = await db.execute(query)
+            rows = result.all()
+            
+            packs_by_type = {row.pack_type_id: row.count for row in rows}
+            total = sum(packs_by_type.values())
+            
+            return {
+                "total": total,
+                "by_type": packs_by_type
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking pack availability for user {user_id}: {e}")
+            return {"total": 0, "by_type": {}}
+
+    async def get_pack_type_details(
+        self, 
+        pack_type_id: int, 
+        db: AsyncSession
+    ) -> Optional[PackType]:
+        """Get pack type configuration"""
+        try:
+            result = await db.execute(
+                select(PackType).where(
+                    PackType.id == pack_type_id,
+                    PackType.is_active == True
+                )
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting pack type {pack_type_id}: {e}")
+            return None
+
+    async def generate_cards_for_pack(
+        self, 
+        pack_type: PackType, 
+        db: AsyncSession
+    ) -> List[int]:
+        """
+        Generate card IDs based on pack type rules
+        
+        Args:
+            pack_type: PackType object with guaranteed_slots
+            db: Database session
+            
+        Returns:
+            List of card_ids
+        """
+        try:
+            guaranteed_slots = pack_type.guaranteed_slots
+            
+            # Детальная валидация конфигурации
+            if not guaranteed_slots:
+                logger.error(f"Pack type {pack_type.id} ({pack_type.name}) has NULL guaranteed_slots")
+                raise ValueError(f"Pack type '{pack_type.name}' has no configuration (guaranteed_slots is NULL)")
+            
+            if not isinstance(guaranteed_slots, dict):
+                logger.error(f"Pack type {pack_type.id} guaranteed_slots is not a dict: {type(guaranteed_slots)}")
+                raise ValueError(f"Pack type '{pack_type.name}' has invalid configuration format")
+            
+            if 'card_pools' not in guaranteed_slots:
+                logger.error(f"Pack type {pack_type.id} missing 'card_pools': {guaranteed_slots}")
+                raise ValueError(f"Pack type '{pack_type.name}' missing 'card_pools' in configuration")
+            
+            if 'drop_rules' not in guaranteed_slots:
+                logger.error(f"Pack type {pack_type.id} missing 'drop_rules': {guaranteed_slots}")
+                raise ValueError(f"Pack type '{pack_type.name}' missing 'drop_rules' in configuration")
+            
+            card_pools = guaranteed_slots['card_pools']
+            drop_rules = guaranteed_slots['drop_rules']
+            
+            logger.info(f"Opening pack type {pack_type.id} ({pack_type.name})")
+            logger.info(f"Card pools: {card_pools}")
+            logger.info(f"Drop rules: {drop_rules}")
+            
+            selected_card_ids = []
+            
+            # Process each category (top, mid, low, etc.)
+            for category, count in drop_rules.items():
+                if category not in card_pools:
+                    logger.warning(f"Category '{category}' in drop_rules but not in card_pools - skipping")
+                    continue
+                
+                token_symbols = card_pools[category]
+                
+                if not token_symbols:
+                    logger.warning(f"Category '{category}' has empty token list - skipping")
+                    continue
+                
+                if len(token_symbols) < count:
+                    logger.warning(f"Category '{category}': need {count} cards, but only {len(token_symbols)} available - taking all")
+                    selected_symbols = token_symbols
+                else:
+                    # Random selection without replacement
+                    selected_symbols = random.sample(token_symbols, count)
+                
+                logger.info(f"Category '{category}': selected {selected_symbols}")
+                
+                # Get card_id for each selected token
+                for symbol in selected_symbols:
+                    card_id = await self._get_card_id_by_symbol(symbol, db)
+                    if card_id:
+                        selected_card_ids.append(card_id)
+                        logger.info(f"  {symbol} → card_id {card_id}")
+                    else:
+                        logger.warning(f"  {symbol} → NOT FOUND (skipping)")
+            
+            if len(selected_card_ids) != pack_type.cards_per_pack:
+                logger.warning(
+                    f"Generated {len(selected_card_ids)} cards, expected {pack_type.cards_per_pack}"
+                )
+            
+            if not selected_card_ids:
+                raise ValueError(f"Failed to generate any cards for pack '{pack_type.name}' - check token symbols")
+            
+            logger.info(f"Final card_ids: {selected_card_ids}")
+            return selected_card_ids
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error generating cards for pack {pack_type.id}: {e}")
+            raise ValueError(f"Failed to generate cards for pack '{pack_type.name}': {str(e)}")
+
+    async def _get_card_id_by_symbol(
+        self, 
+        token_symbol: str, 
+        db: AsyncSession
+    ) -> Optional[int]:
+        """
+        Find active card by token symbol
+        Since each token has only one card, we just pick the first active one
+        """
+        try:
+            # Join Card with Token to find by symbol
+            from models.token_models import Token
+            
+            result = await db.execute(
+                select(Card.id)
+                .join(Token, Card.token_id == Token.id)
+                .where(
+                    Token.symbol == token_symbol,
+                    Token.is_active == True,
+                    Card.is_active == True
+                )
+                .limit(1)
+            )
+            
+            card_id = result.scalar_one_or_none()
+            return card_id
+            
+        except Exception as e:
+            logger.error(f"Error finding card for symbol {token_symbol}: {e}")
+            return None
+
+    async def open_pack(
+        self, 
+        user_id: int, 
+        pack_type_id: Optional[int],
+        db: AsyncSession
+    ) -> Dict:
+        """
+        Complete pack opening process
+        
+        Args:
+            user_id: User ID
+            pack_type_id: Specific pack type (if None, opens first available)
+            db: Database session
+            
+        Returns:
+            Dict with opening results
+        """
+        try:
+            async with db.begin_nested():
+                # 1. Find unopened pack
+                query = select(UserPack).where(
+                    UserPack.user_id == user_id,
+                    UserPack.is_opened == False
+                )
+                
+                if pack_type_id:
+                    query = query.where(UserPack.pack_type_id == pack_type_id)
+                
+                query = query.limit(1)
+                
+                result = await db.execute(query)
+                user_pack = result.scalar_one_or_none()
+                
+                if not user_pack:
+                    raise ValueError("No unopened packs available")
+                
+                # 2. Get pack type configuration
+                pack_type = await self.get_pack_type_details(user_pack.pack_type_id, db)
+                if not pack_type:
+                    raise ValueError(f"Pack type {user_pack.pack_type_id} not found or inactive")
+                
+                # 3. Generate cards
+                card_ids = await self.generate_cards_for_pack(pack_type, db)
+                
+                if not card_ids:
+                    raise ValueError("Failed to generate cards")
+                
+                # 4. Create pack opening record
+                pack_opening = PackOpening(
+                    user_id=user_id,
+                    pack_id=user_pack.id,
+                    opened_at=datetime.utcnow(),
+                    cards_count=len(card_ids)
+                )
+                db.add(pack_opening)
+                await db.flush()  # Get pack_opening.id
+                
+                # 5. Create user_cards
+                created_cards = []
+                for card_id in card_ids:
+                    user_card = UserCard(
+                        user_id=user_id,
+                        card_id=card_id,
+                        pack_opening_id=pack_opening.id,
+                        obtained_at=datetime.utcnow(),
+                        source="pack_opening",
+                        status="available",
+                        is_active=True
+                    )
+                    db.add(user_card)
+                    created_cards.append(user_card)
+                
+                await db.flush()  # Get user_card IDs
+                
+                # 6. Mark pack as opened
+                user_pack.is_opened = True
+                
+                await db.flush()
+                
+                # 7. Get full card details for response
+                cards_data = await self._get_cards_details(
+                    [uc.id for uc in created_cards], 
+                    db
+                )
+                
+                return {
+                    "pack_opening_id": pack_opening.id,
+                    "pack_type_name": pack_type.name,
+                    "opened_at": pack_opening.opened_at.isoformat(),
+                    "cards_received": cards_data
+                }
+                
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Error opening pack for user {user_id}: {e}")
+            raise
+
+    async def _get_cards_details(
+        self, 
+        user_card_ids: List[int], 
+        db: AsyncSession
+    ) -> List[Dict]:
+        """Get full card details for opened cards"""
+        try:
+            from sqlalchemy import text
+            
+            query = text("""
+                SELECT 
+                    uc.id as user_card_id,
+                    acs.card_id,
+                    acs.token_symbol,
+                    acs.token_name,
+                    acs.token_image_url,
+                    acs.rarity_name,
+                    acs.rarity_color,
+                    acs.design_type,
+                    acs.background_image_url
+                FROM user_cards uc
+                JOIN active_cards_with_score acs ON uc.card_id = acs.card_id
+                WHERE uc.id = ANY(:user_card_ids)
+            """)
+            
+            result = await db.execute(query, {"user_card_ids": user_card_ids})
+            rows = result.fetchall()
+            
+            cards = []
+            for row in rows:
+                cards.append({
+                    "user_card_id": row.user_card_id,
+                    "card_id": row.card_id,
+                    "token_symbol": row.token_symbol,
+                    "token_name": row.token_name,
+                    "token_image_url": row.token_image_url,
+                    "rarity_name": row.rarity_name,
+                    "rarity_color": row.rarity_color,
+                    "design_type": row.design_type,
+                    "background_image_url": row.background_image_url
+                })
+            
+            return cards
+            
+        except Exception as e:
+            logger.error(f"Error getting card details: {e}")
+            return []
+
+    async def get_pack_history(
+        self, 
+        user_id: int, 
+        limit: int, 
+        offset: int, 
+        db: AsyncSession
+    ) -> Dict:
+        """Get pack opening history"""
+        try:
+            # Count total openings
+            count_result = await db.execute(
+                select(func.count(PackOpening.id))
+                .where(PackOpening.user_id == user_id)
+            )
+            total = count_result.scalar() or 0
+            
+            # Get paginated history
+            query = select(
+                PackOpening.id,
+                PackOpening.opened_at,
+                PackOpening.cards_count,
+                PackType.name.label('pack_type_name')
+            ).join(
+                UserPack, PackOpening.pack_id == UserPack.id
+            ).join(
+                PackType, UserPack.pack_type_id == PackType.id
+            ).where(
+                PackOpening.user_id == user_id
+            ).order_by(
+                PackOpening.opened_at.desc()
+            ).limit(limit).offset(offset)
+            
+            result = await db.execute(query)
+            rows = result.all()
+            
+            openings = []
+            for row in rows:
+                openings.append({
+                    "pack_opening_id": row.id,
+                    "pack_type_name": row.pack_type_name,
+                    "opened_at": row.opened_at.isoformat(),
+                    "cards_count": row.cards_count
+                })
+            
+            return {
+                "total": total,
+                "openings": openings
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting pack history for user {user_id}: {e}")
+            return {"total": 0, "openings": []}
+
+
+# Singleton instance
+pack_opening_service = PackOpeningService()
