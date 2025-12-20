@@ -60,7 +60,10 @@ class TournamentResult(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     tournament_id = Column(Integer, ForeignKey('tournaments.id'), nullable=False)
     tournament_deck_id = Column(Integer, ForeignKey('tournament_decks.id'), nullable=False)
+    
     final_position = Column(Integer, nullable=False)
+    final_score = Column(Numeric(20, 4), nullable=False)
+    
     calculated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     
     # Relationships
