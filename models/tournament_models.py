@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
 from datetime import datetime
 from .database import Base
 class Tournament(Base):
@@ -13,6 +13,7 @@ class Tournament(Base):
     status = Column(String(20), nullable=False, default="registration")  # "registration", "ongoing", "finished"
     start_date = Column(DateTime, nullable=False)
     end_date = Column(DateTime, nullable=False)
+    gameplay_start_date = Column(DateTime, nullable=True)  # Когда начинается игра и фиксируются цены
     weight_limit = Column(Integer, nullable=False, default=30)  # Maximum deck weight limit
     
     # Timestamps
@@ -31,6 +32,16 @@ class Tournament(Base):
     def duration_days(self):
         """Calculate tournament duration in days"""
         return (self.end_date - self.start_date).days
+    
+class TournamentTokenSnapshot(Base):
+    """Snapshot цен токенов на момент старта турнира"""
+    __tablename__ = 'tournament_token_snapshots'
+    
+    id = Column(Integer, primary_key=True)
+    tournament_id = Column(Integer, ForeignKey('tournaments.id'))
+    token_id = Column(Integer, ForeignKey('tokens.id'))
+    snapshot_price = Column(Numeric(20, 8), nullable=False)
+    snapshot_time = Column(DateTime, nullable=False)
     
 class TournamentStatus:
     REGISTRATION = "registration"
