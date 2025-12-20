@@ -299,6 +299,18 @@ class PriceMonitorService:
             
             db.commit()
             logger.info(f"✅ Updated prices for {updated_count}/{len(active_tokens)} tokens")
+
+            try:
+                from services.card_score_service import card_score_service
+                from models.database import AsyncSessionLocal
+                
+                async with AsyncSessionLocal() as async_db:
+                    await card_score_service.refresh_cards_view(async_db)
+                    
+                logger.info("✅ Card scores materialized view refreshed")
+                
+            except Exception as view_error:
+                logger.error(f"❌ Failed to refresh materialized view: {view_error}")
             
         except Exception as e:
             logger.error(f"Error in price monitoring: {e}")
