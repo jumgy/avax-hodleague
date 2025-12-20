@@ -2,12 +2,15 @@ from fastapi import APIRouter, HTTPException, Header, Depends
 from pydantic import BaseModel, validator
 from typing import Optional
 import logging
+
 from services.web3_auth_service import web3_auth_service
 from services.user_card_grant_service import user_card_grant_service
+from services.user_pack_grant_service import user_pack_grant_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth")
+
 
 class NonceRequest(BaseModel):
     wallet_address: str
@@ -24,6 +27,7 @@ class NonceRequest(BaseModel):
         except ValueError:
             raise ValueError('Wallet address contains invalid characters')
         return v
+
 
 class VerifyRequest(BaseModel):
     wallet_address: str
@@ -51,12 +55,15 @@ class VerifyRequest(BaseModel):
                 raise ValueError('Nickname must be between 2 and 30 characters')
         return v
 
+
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int = 604800  # 7 дней
     user: dict
     cards_granted: Optional[int] = None  # Количество выданных карточек
+    packs_granted: Optional[int] = None  # Количество выданных паков
+
 
 def verify_jwt_dependency(authorization: str = Header(...)):
     """Verify JWT token from Authorization header"""
@@ -70,10 +77,12 @@ def verify_jwt_dependency(authorization: str = Header(...)):
             raise HTTPException(status_code=401, detail="Invalid or expired token")
         
         return payload
+
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid authorization header format")
     except Exception:
         raise HTTPException(status_code=401, detail="Authentication failed")
+
 
 @router.post("/nonce")
 async def get_nonce(request: NonceRequest):
@@ -91,6 +100,7 @@ async def get_nonce(request: NonceRequest):
         logger.error(f"Error generating nonce: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate nonce")
 
+
 @router.post("/verify", response_model=AuthResponse)
 async def verify_signature(request: VerifyRequest):
     """
@@ -102,7 +112,7 @@ async def verify_signature(request: VerifyRequest):
             request.wallet_address, 
             request.signature
         )
-
+        
         if not is_valid:
             raise HTTPException(status_code=401, detail="Invalid signature")
 
@@ -117,9 +127,11 @@ async def verify_signature(request: VerifyRequest):
         )
 
         cards_granted_count = 0
-        
-        # Выдаем карточки только новым пользователям
+        packs_granted_count = 0
+
+        # Выдаем карточки и паки только новым пользователям
         if is_new_user:
+            # Выдаем карточки
             try:
                 granted_cards = await user_card_grant_service.grant_all_active_cards_to_user(
                     user_id=user.id,
@@ -131,6 +143,19 @@ async def verify_signature(request: VerifyRequest):
                 # Если не удалось выдать карточки, не блокируем аутентификацию
                 logger.error(f"Error granting starter cards to user {user.id}: {card_error}")
                 cards_granted_count = 0
+
+            # Выдаем паки
+            try:
+                granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
+                    user_id=user.id,
+                    source="reward"  # Стартовые паки как награда
+                )
+                packs_granted_count = len(granted_packs)
+                logger.info(f"Granted {packs_granted_count} starter packs to new user {user.id}")
+            except Exception as pack_error:
+                # Если не удалось выдать паки, не блокируем аутентификацию
+                logger.error(f"Error granting starter packs to user {user.id}: {pack_error}")
+                packs_granted_count = 0
 
         access_token = web3_auth_service.create_jwt_token(user)
 
@@ -145,10 +170,11 @@ async def verify_signature(request: VerifyRequest):
                 "created_at": user.created_at.isoformat()
             }
         }
-        
-        # Добавляем информацию о выданных карточках только для новых пользователей
+
+        # Добавляем информацию о выданных карточках и паках только для новых пользователей
         if is_new_user:
             response_data["cards_granted"] = cards_granted_count
+            response_data["packs_granted"] = packs_granted_count
 
         return AuthResponse(**response_data)
 
@@ -158,6 +184,7 @@ async def verify_signature(request: VerifyRequest):
         logger.error(f"Error verifying signature: {e}")
         raise HTTPException(status_code=500, detail="Authentication failed")
 
+
 @router.get("/me")
 async def get_current_user(current_user: dict = Depends(verify_jwt_dependency)):
     """Get authenticated user information from JWT token"""
@@ -166,6 +193,7 @@ async def get_current_user(current_user: dict = Depends(verify_jwt_dependency)):
         "wallet_address": current_user["wallet_address"],  
         "nickname": current_user["nickname"]
     }
+
 
 @router.post("/test-verify")
 async def test_verify_without_signature(request: NonceRequest):
@@ -181,9 +209,11 @@ async def test_verify_without_signature(request: NonceRequest):
         )
 
         cards_granted_count = 0
-        
-        # Выдаем карточки только новым пользователям
+        packs_granted_count = 0
+
+        # Выдаем карточки и паки только новым пользователям
         if is_new_user:
+            # Выдаем карточки
             try:
                 granted_cards = await user_card_grant_service.grant_all_active_cards_to_user(
                     user_id=user.id,
@@ -194,6 +224,18 @@ async def test_verify_without_signature(request: NonceRequest):
             except Exception as card_error:
                 logger.error(f"Error granting test cards to user {user.id}: {card_error}")
                 cards_granted_count = 0
+
+            # Выдаем паки
+            try:
+                granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
+                    user_id=user.id,
+                    source="admin"  # Тестовые паки от админа
+                )
+                packs_granted_count = len(granted_packs)
+                logger.info(f"Granted {packs_granted_count} test packs to new user {user.id}")
+            except Exception as pack_error:
+                logger.error(f"Error granting test packs to user {user.id}: {pack_error}")
+                packs_granted_count = 0
 
         access_token = web3_auth_service.create_jwt_token(user)
 
@@ -208,15 +250,17 @@ async def test_verify_without_signature(request: NonceRequest):
                 "created_at": user.created_at.isoformat()
             }
         }
-        
+
         if is_new_user:
             response_data["cards_granted"] = cards_granted_count
+            response_data["packs_granted"] = packs_granted_count
 
         return AuthResponse(**response_data)
 
     except Exception as e:
         logger.error(f"Error in test verify: {e}")
         raise HTTPException(status_code=500, detail="Test authentication failed")
+
 
 # Дополнительный роут для ручной выдачи карточек (для админов)
 @router.post("/grant-cards")
@@ -239,9 +283,38 @@ async def grant_cards_to_user(
             "cards_granted": len(granted_cards),
             "message": f"Successfully granted {len(granted_cards)} cards to user {target_user_id}"
         }
-        
+
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error granting cards to user {target_user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to grant cards")
+
+
+# Дополнительный роут для ручной выдачи паков (для админов)
+@router.post("/grant-packs")
+async def grant_packs_to_user(
+    target_user_id: int,
+    current_user: dict = Depends(verify_jwt_dependency)
+):
+    """
+    Manually grant all available packs to a user
+    Requires authentication
+    """
+    try:
+        granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
+            user_id=target_user_id,
+            source="admin"
+        )
+        
+        return {
+            "success": True,
+            "packs_granted": len(granted_packs),
+            "message": f"Successfully granted {len(granted_packs)} packs to user {target_user_id}"
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error granting packs to user {target_user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to grant packs")
