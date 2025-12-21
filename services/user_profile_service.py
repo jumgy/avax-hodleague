@@ -103,6 +103,7 @@ class UserProfileService:
                 SELECT 
                     uc.id as user_card_id,
                     uc.obtained_at,
+                    uc.expires_at,    
                     uc.status,
                     acs.card_id,
                     acs.token_symbol,
@@ -146,6 +147,7 @@ class UserProfileService:
                     "market_cap": int(row.market_cap) if row.market_cap else None,
                     "change_24h": float(row.change_24h) if row.change_24h else None,
                     "obtained_at": row.obtained_at.isoformat() if row.obtained_at else None,
+                    "expires_at": row.expires_at.isoformat() if row.expires_at else None,
                     "status": row.status
                 }
                 cards.append(card_data)

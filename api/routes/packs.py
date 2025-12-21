@@ -61,6 +61,7 @@ class PackHistoryItem(BaseModel):
     pack_type_name: str
     opened_at: str
     cards_count: int
+    cards_received: List[CardReceived]
 
 class PackHistoryResponse(BaseModel):
     total: int
@@ -196,7 +197,7 @@ async def open_pack(
     "/packs/history",
     response_model=PackHistoryResponse,
     summary="Get pack opening history",
-    description="Get history of all opened packs for authenticated user"
+    description="Get history of all opened packs for authenticated user with cards received"
 )
 async def get_pack_history(
     limit: int = Query(20, ge=1, le=100, description="Number of records to return"),

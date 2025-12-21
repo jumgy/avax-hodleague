@@ -356,8 +356,10 @@ class PackOpeningService:
         offset: int, 
         db: AsyncSession
     ) -> Dict:
-        """Get pack opening history"""
+        """Get pack opening history with cards received"""
         try:
+            from sqlalchemy import func, text
+            
             # Count total openings
             count_result = await db.execute(
                 select(func.count(PackOpening.id))
@@ -386,11 +388,15 @@ class PackOpeningService:
             
             openings = []
             for row in rows:
+                # Get cards for this opening
+                cards = await self._get_opening_cards(row.id, db)
+                
                 openings.append({
                     "pack_opening_id": row.id,
                     "pack_type_name": row.pack_type_name,
                     "opened_at": row.opened_at.isoformat(),
-                    "cards_count": row.cards_count
+                    "cards_count": row.cards_count,
+                    "cards_received": cards
                 })
             
             return {
@@ -401,6 +407,55 @@ class PackOpeningService:
         except Exception as e:
             logger.error(f"Error getting pack history for user {user_id}: {e}")
             return {"total": 0, "openings": []}
+
+    async def _get_opening_cards(
+        self, 
+        pack_opening_id: int, 
+        db: AsyncSession
+    ) -> List[Dict]:
+        """Get cards received from a specific pack opening"""
+        try:
+            from sqlalchemy import text
+            
+            query = text("""
+                SELECT 
+                    uc.id as user_card_id,
+                    acs.card_id,
+                    acs.token_symbol,
+                    acs.token_name,
+                    acs.token_image_url,
+                    acs.rarity_name,
+                    acs.rarity_color,
+                    acs.design_type,
+                    acs.background_image_url
+                FROM user_cards uc
+                JOIN active_cards_with_score acs ON uc.card_id = acs.card_id
+                WHERE uc.pack_opening_id = :pack_opening_id
+                ORDER BY acs.rarity_name DESC, acs.token_symbol ASC
+            """)
+            
+            result = await db.execute(query, {"pack_opening_id": pack_opening_id})
+            rows = result.fetchall()
+            
+            cards = []
+            for row in rows:
+                cards.append({
+                    "user_card_id": row.user_card_id,
+                    "card_id": row.card_id,
+                    "token_symbol": row.token_symbol,
+                    "token_name": row.token_name,
+                    "token_image_url": row.token_image_url,
+                    "rarity_name": row.rarity_name,
+                    "rarity_color": row.rarity_color,
+                    "design_type": row.design_type,
+                    "background_image_url": row.background_image_url
+                })
+            
+            return cards
+            
+        except Exception as e:
+            logger.error(f"Error getting cards for opening {pack_opening_id}: {e}")
+            return []
 
 
 # Singleton instance
