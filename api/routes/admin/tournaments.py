@@ -14,7 +14,7 @@ class TournamentCreate(BaseModel):
     status: str = TournamentStatus.REGISTRATION
     start_date: datetime
     end_date: datetime
-    gameplay_start_date: datetime  # NEW FIELD
+    gameplay_start_date: datetime
     weight_limit: int = 30
 
     @validator('tournament_number')
