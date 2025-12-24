@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from typing import List, Optional
 from pydantic import BaseModel, validator, ConfigDict
 from datetime import datetime
 import re
 
-from models.database import get_sync_db
+from models.database import get_async_db
 from models.token_models import Token, TokenPrice
 from .auth import verify_admin_token
 from services.scheduler_service import scheduler_service
@@ -153,40 +154,64 @@ async def get_all_tokens(
     updated_to: Optional[datetime] = Query(None),
     sort_by: str = Query("weight", regex="^(id|name|symbol|weight|image_url|is_active|created_at|updated_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    query = db.query(Token)
-
+    """
+    Получить все токены с фильтрацией, сортировкой и пагинацией
+    """
+    
+    # Базовый запрос
+    query = select(Token)
+    
+    # Применяем фильтры
     if id is not None:
-        query = query.filter(Token.id == id)
-
+        query = query.where(Token.id == id)
+    
     if is_active is not None:
-        query = query.filter(Token.is_active == is_active)
+        query = query.where(Token.is_active == is_active)
+    
     if name:
-        query = query.filter(Token.name.ilike(f"%{name}%"))
+        query = query.where(Token.name.ilike(f"%{name}%"))
+    
     if symbol:
-        query = query.filter(Token.symbol.ilike(symbol.upper()))
+        query = query.where(Token.symbol.ilike(symbol.upper()))
+    
     if weight_from is not None:
-        query = query.filter(Token.weight >= weight_from)
+        query = query.where(Token.weight >= weight_from)
+    
     if weight_to is not None:
-        query = query.filter(Token.weight <= weight_to)
+        query = query.where(Token.weight <= weight_to)
+    
     if created_from:
-        query = query.filter(Token.created_at >= created_from)
+        query = query.where(Token.created_at >= created_from)
+    
     if created_to:
-        query = query.filter(Token.created_at <= created_to)
+        query = query.where(Token.created_at <= created_to)
+    
     if updated_from:
-        query = query.filter(Token.updated_at >= updated_from)
+        query = query.where(Token.updated_at >= updated_from)
+    
     if updated_to:
-        query = query.filter(Token.updated_at <= updated_to)
-
-    total = query.count()
-
+        query = query.where(Token.updated_at <= updated_to)
+    
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    # Применяем сортировку
     sort_column = getattr(Token, sort_by)
-    query = query.order_by(sort_column.desc()) if sort_order == "desc" else query.order_by(sort_column.asc())
-
-    tokens = query.offset(skip).limit(limit).all()
-
+    if sort_order == "desc":
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
+    
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    tokens = result.scalars().all()
+    
     return PaginatedTokenResponse(
         items=tokens,
         total=total,
@@ -199,12 +224,18 @@ async def get_all_tokens(
 @router.get("/{token_id}", response_model=TokenResponse)
 async def get_token(
     token_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    token = db.query(Token).filter(Token.id == token_id).first()
+    """Получить конкретный токен по ID"""
+    
+    query = select(Token).where(Token.id == token_id)
+    result = await db.execute(query)
+    token = result.scalar_one_or_none()
+    
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
+    
     return token
 
 @router.get("/{token_id}/prices", response_model=PaginatedTokenPriceResponse)
@@ -218,31 +249,52 @@ async def get_token_prices(
     timestamp_to: Optional[datetime] = Query(None),
     sort_by: str = Query("timestamp", regex="^(id|price|market_cap|change_24h|timestamp)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    token = db.query(Token).filter(Token.id == token_id).first()
+    """Получить историю цен токена"""
+    
+    # Проверяем существование токена
+    token_query = select(Token).where(Token.id == token_id)
+    token_result = await db.execute(token_query)
+    token = token_result.scalar_one_or_none()
+    
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
-
-    query = db.query(TokenPrice).filter(TokenPrice.token_id == token_id)
-
+    
+    # Базовый запрос цен
+    query = select(TokenPrice).where(TokenPrice.token_id == token_id)
+    
+    # Применяем фильтры
     if price_from is not None:
-        query = query.filter(TokenPrice.price >= price_from)
+        query = query.where(TokenPrice.price >= price_from)
+    
     if price_to is not None:
-        query = query.filter(TokenPrice.price <= price_to)
+        query = query.where(TokenPrice.price <= price_to)
+    
     if timestamp_from:
-        query = query.filter(TokenPrice.timestamp >= timestamp_from)
+        query = query.where(TokenPrice.timestamp >= timestamp_from)
+    
     if timestamp_to:
-        query = query.filter(TokenPrice.timestamp <= timestamp_to)
-
-    total = query.count()
-
+        query = query.where(TokenPrice.timestamp <= timestamp_to)
+    
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    # Применяем сортировку
     sort_column = getattr(TokenPrice, sort_by)
-    query = query.order_by(sort_column.desc()) if sort_order == "desc" else query.order_by(sort_column.asc())
-
-    prices = query.offset(skip).limit(limit).all()
-
+    if sort_order == "desc":
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
+    
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    prices = result.scalars().all()
+    
     return PaginatedTokenPriceResponse(
         items=prices,
         total=total,
@@ -255,93 +307,150 @@ async def get_token_prices(
 @router.post("/", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def create_token(
     token_data: TokenCreate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    existing = db.query(Token).filter(Token.symbol == token_data.symbol).first()
+    """Создать новый токен с проверкой уникальности символа"""
+    
+    # Проверяем уникальность символа
+    existing_query = select(Token).where(Token.symbol == token_data.symbol)
+    existing_result = await db.execute(existing_query)
+    existing = existing_result.scalar_one_or_none()
+    
     if existing:
         raise HTTPException(
             status_code=400,
             detail=f"Token with symbol '{token_data.symbol}' already exists"
         )
-
-    new_token = Token(**token_data.dict())
-    db.add(new_token)
-    db.commit()
-    db.refresh(new_token)
-
-    return new_token
+    
+    try:
+        # Создаем новый токен
+        new_token = Token(**token_data.dict())
+        
+        db.add(new_token)
+        await db.flush()
+        await db.refresh(new_token)
+        
+        return new_token
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create token: {str(e)}"
+        )
 
 @router.put("/{token_id}", response_model=TokenResponse)
 async def update_token(
     token_id: int,
     token_data: TokenUpdate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    token = db.query(Token).filter(Token.id == token_id).first()
+    """Обновить существующий токен с проверкой ограничений"""
+    
+    # Получаем существующий токен
+    query = select(Token).where(Token.id == token_id)
+    result = await db.execute(query)
+    token = result.scalar_one_or_none()
+    
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
-
+    
+    # Проверка уникальности символа если он меняется
     if token_data.symbol and token_data.symbol != token.symbol:
-        existing = db.query(Token).filter(Token.symbol == token_data.symbol).first()
+        existing_query = select(Token).where(Token.symbol == token_data.symbol)
+        existing_result = await db.execute(existing_query)
+        existing = existing_result.scalar_one_or_none()
+        
         if existing:
             raise HTTPException(
                 status_code=400,
                 detail=f"Token with symbol '{token_data.symbol}' already exists"
             )
-
-    update_data = token_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(token, field, value)
-
-    token.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(token)
-
-    return token
+    
+    try:
+        # Обновляем поля
+        update_data = token_data.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(token, field, value)
+        
+        token.updated_at = datetime.utcnow()
+        
+        await db.flush()
+        await db.refresh(token)
+        
+        return token
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update token: {str(e)}"
+        )
 
 @router.delete("/{token_id}")
 async def delete_token(
     token_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    token = db.query(Token).filter(Token.id == token_id).first()
+    """Деактивировать токен и связанные карты"""
+    
+    # Получаем токен
+    token_query = select(Token).where(Token.id == token_id)
+    token_result = await db.execute(token_query)
+    token = token_result.scalar_one_or_none()
+    
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
-
-    token.is_active = False
-    token.updated_at = datetime.utcnow()
-
-    from models.card_models import Card
-    affected_cards = db.query(Card).filter(
-        Card.token_id == token_id,
-        Card.is_active == True
-    ).all()
-
-    for card in affected_cards:
-        card.is_active = False
-        card.updated_at = datetime.utcnow()
-
-    db.commit()
-
-    return {
-        "message": f"Token ID {token_id} has been deactivated",
-        "deactivated_cards": len(affected_cards),
-        "success": True
-    }
+    
+    try:
+        # Деактивируем токен
+        token.is_active = False
+        token.updated_at = datetime.utcnow()
+        
+        # Деактивируем все связанные активные карты
+        from models.card_models import Card
+        
+        affected_cards_query = select(Card).where(
+            Card.token_id == token_id,
+            Card.is_active == True
+        )
+        affected_cards_result = await db.execute(affected_cards_query)
+        affected_cards = affected_cards_result.scalars().all()
+        
+        for card in affected_cards:
+            card.is_active = False
+            card.updated_at = datetime.utcnow()
+        
+        await db.flush()
+        
+        return {
+            "message": f"Token ID {token_id} has been deactivated",
+            "deactivated_cards": len(affected_cards),
+            "success": True
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete token: {str(e)}"
+        )
 
 @router.get("/scheduler/status", tags=["Scheduler Management"])
 async def get_scheduler_status(
     admin: dict = Depends(verify_admin_token)
 ):
+    """Получить статус планировщика мониторинга цен"""
     return scheduler_service.get_status()
 
 @router.post("/scheduler/trigger", tags=["Scheduler Management"])
 async def trigger_price_monitoring(
     admin: dict = Depends(verify_admin_token)
 ):
+    """Вручную запустить мониторинг цен токенов"""
     try:
         await scheduler_service.run_price_monitor_now()
         return {

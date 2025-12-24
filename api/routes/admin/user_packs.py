@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 
-from models.database import get_sync_db
+from models.database import get_async_db
 from models.user_pack_models import UserPack, PackOpening
 from .auth import verify_admin_token
 
@@ -61,37 +62,47 @@ async def get_user_packs(
     created_to: Optional[date] = Query(None),
     sort_by: str = Query("created_at", regex="^(id|user_id|pack_type_id|obtained_at|created_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    query = db.query(UserPack)
+    """Получить паки пользователей с фильтрацией, сортировкой и пагинацией"""
+    # Базовый запрос
+    query = select(UserPack)
 
+    # Применяем фильтры
     if user_id:
-        query = query.filter(UserPack.user_id == user_id)
+        query = query.where(UserPack.user_id == user_id)
     if pack_type_id:
-        query = query.filter(UserPack.pack_type_id == pack_type_id)
+        query = query.where(UserPack.pack_type_id == pack_type_id)
     if is_opened is not None:
-        query = query.filter(UserPack.is_opened == is_opened)
+        query = query.where(UserPack.is_opened == is_opened)
     if source:
-        query = query.filter(UserPack.source == source)
+        query = query.where(UserPack.source == source)
     if obtained_from:
-        query = query.filter(UserPack.obtained_at >= obtained_from)
+        query = query.where(UserPack.obtained_at >= obtained_from)
     if obtained_to:
-        query = query.filter(UserPack.obtained_at < obtained_to)
+        query = query.where(UserPack.obtained_at < obtained_to)
     if created_from:
-        query = query.filter(UserPack.created_at >= created_from)
+        query = query.where(UserPack.created_at >= created_from)
     if created_to:
-        query = query.filter(UserPack.created_at < created_to)
+        query = query.where(UserPack.created_at < created_to)
 
-    total = query.count()
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
 
+    # Применяем сортировку
     sort_column = getattr(UserPack, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
 
-    items = query.offset(skip).limit(limit).all()
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    items = result.scalars().all()
 
     return PaginatedUserPacksResponse(
         items=items,
@@ -105,12 +116,17 @@ async def get_user_packs(
 @router.get("/{user_pack_id}", response_model=UserPackResponse)
 async def get_user_pack(
     user_pack_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    obj = db.query(UserPack).filter(UserPack.id == user_pack_id).first()
+    """Получить конкретный пак пользователя по ID"""
+    query = select(UserPack).where(UserPack.id == user_pack_id)
+    result = await db.execute(query)
+    obj = result.scalar_one_or_none()
+    
     if not obj:
         raise HTTPException(status_code=404, detail="UserPack not found")
+    
     return obj
 
 @router.get("/openings/", response_model=PaginatedPackOpeningsResponse)
@@ -126,37 +142,47 @@ async def get_pack_openings(
     opened_to: Optional[date] = Query(None),
     sort_by: str = Query("opened_at", regex="^(id|user_id|pack_id|opened_at|cards_count)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    query = db.query(PackOpening)
+    """Получить открытия паков с фильтрацией, сортировкой и пагинацией"""
+    # Базовый запрос
+    query = select(PackOpening)
 
+    # Применяем фильтры
     if user_id:
-        query = query.filter(PackOpening.user_id == user_id)
+        query = query.where(PackOpening.user_id == user_id)
     if pack_id:
-        query = query.filter(PackOpening.pack_id == pack_id)
+        query = query.where(PackOpening.pack_id == pack_id)
     if cards_count_min is not None:
-        query = query.filter(PackOpening.cards_count >= cards_count_min)
+        query = query.where(PackOpening.cards_count >= cards_count_min)
     if cards_count_max is not None:
-        query = query.filter(PackOpening.cards_count <= cards_count_max)
+        query = query.where(PackOpening.cards_count <= cards_count_max)
     if has_transaction is True:
-        query = query.filter(PackOpening.transaction_hash.isnot(None))
+        query = query.where(PackOpening.transaction_hash.isnot(None))
     elif has_transaction is False:
-        query = query.filter(PackOpening.transaction_hash.is_(None))
+        query = query.where(PackOpening.transaction_hash.is_(None))
     if opened_from:
-        query = query.filter(PackOpening.opened_at >= opened_from)
+        query = query.where(PackOpening.opened_at >= opened_from)
     if opened_to:
-        query = query.filter(PackOpening.opened_at < opened_to)
+        query = query.where(PackOpening.opened_at < opened_to)
 
-    total = query.count()
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
 
+    # Применяем сортировку
     sort_column = getattr(PackOpening, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
 
-    items = query.offset(skip).limit(limit).all()
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    items = result.scalars().all()
 
     return PaginatedPackOpeningsResponse(
         items=items,
@@ -170,10 +196,15 @@ async def get_pack_openings(
 @router.get("/openings/{opening_id}", response_model=PackOpeningResponse)
 async def get_pack_opening(
     opening_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    obj = db.query(PackOpening).filter(PackOpening.id == opening_id).first()
+    """Получить конкретное открытие пака по ID"""
+    query = select(PackOpening).where(PackOpening.id == opening_id)
+    result = await db.execute(query)
+    obj = result.scalar_one_or_none()
+    
     if not obj:
         raise HTTPException(status_code=404, detail="PackOpening not found")
+    
     return obj

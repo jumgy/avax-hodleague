@@ -1,20 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from sqlalchemy.orm import joinedload
 from typing import List, Optional
 from pydantic import BaseModel, validator
 from decimal import Decimal
 from datetime import datetime
 
-from models.database import get_sync_db
+from models.database import get_async_db
 from models.pack_probability_models import PackRarityConfig, CardWeight
 from models.pack_models import PackType
 from models.rarity_models import Rarity
 from models.card_models import Card
 from models.token_models import Token
 from .auth import verify_admin_token
-
-# --- Pydantic models ---
 
 class PackRarityConfigCreate(BaseModel):
     pack_type_id: int
@@ -55,7 +54,6 @@ class PackRarityConfigResponse(BaseModel):
     drop_rate: Decimal
     created_at: datetime
     updated_at: datetime
-    # Связанные данные для удобства
     pack_type_name: Optional[str] = None
     rarity_name: Optional[str] = None
     rarity_color: Optional[str] = None
@@ -104,7 +102,6 @@ class CardWeightResponse(BaseModel):
     base_weight: Decimal
     current_multiplier: Decimal
     last_updated: datetime
-    # Связанные данные для удобства
     card_design_type: Optional[str] = None
     token_name: Optional[str] = None
     token_symbol: Optional[str] = None
@@ -156,7 +153,7 @@ async def get_pack_rarity_configs(
     sort_by: str = Query("id", regex="^(id|pack_type_id|rarity_id|drop_rate|created_at|updated_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """
@@ -165,46 +162,50 @@ async def get_pack_rarity_configs(
     """
     
     # Базовый запрос с эффективной загрузкой связанных данных
-    query = db.query(PackRarityConfig).options(
+    query = select(PackRarityConfig).options(
         joinedload(PackRarityConfig.pack_type),
         joinedload(PackRarityConfig.rarity)
     )
     
     # Применяем фильтры к основной таблице
     if id is not None:
-        query = query.filter(PackRarityConfig.id == id)
+        query = query.where(PackRarityConfig.id == id)
     
     if pack_type_id is not None:
-        query = query.filter(PackRarityConfig.pack_type_id == pack_type_id)
+        query = query.where(PackRarityConfig.pack_type_id == pack_type_id)
     
     if rarity_id is not None:
-        query = query.filter(PackRarityConfig.rarity_id == rarity_id)
+        query = query.where(PackRarityConfig.rarity_id == rarity_id)
     
     if drop_rate_from is not None:
-        query = query.filter(PackRarityConfig.drop_rate >= drop_rate_from)
+        query = query.where(PackRarityConfig.drop_rate >= drop_rate_from)
     
     if drop_rate_to is not None:
-        query = query.filter(PackRarityConfig.drop_rate <= drop_rate_to)
+        query = query.where(PackRarityConfig.drop_rate <= drop_rate_to)
     
     # Фильтры по датам
     if created_from:
-        query = query.filter(PackRarityConfig.created_at >= created_from)
+        query = query.where(PackRarityConfig.created_at >= created_from)
     if created_to:
-        query = query.filter(PackRarityConfig.created_at <= created_to)
+        query = query.where(PackRarityConfig.created_at <= created_to)
     if updated_from:
-        query = query.filter(PackRarityConfig.updated_at >= updated_from)
+        query = query.where(PackRarityConfig.updated_at >= updated_from)
     if updated_to:
-        query = query.filter(PackRarityConfig.updated_at <= updated_to)
+        query = query.where(PackRarityConfig.updated_at <= updated_to)
     
-    # Фильтры по связанным данным (используем уже загруженные отношения)
+    # Фильтры по связанным данным
     if pack_type_name:
-        query = query.filter(PackType.name.ilike(f"%{pack_type_name.strip()}%"))
+        query = query.join(PackType, PackRarityConfig.pack_type_id == PackType.id)
+        query = query.where(PackType.name.ilike(f"%{pack_type_name.strip()}%"))
     
     if rarity_name:
-        query = query.filter(Rarity.name.ilike(f"%{rarity_name.strip()}%"))
+        query = query.join(Rarity, PackRarityConfig.rarity_id == Rarity.id)
+        query = query.where(Rarity.name.ilike(f"%{rarity_name.strip()}%"))
     
     # Подсчитываем общее количество с учетом всех фильтров
-    total = query.count()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
     
     # Применяем сортировку
     sort_column = getattr(PackRarityConfig, sort_by)
@@ -214,10 +215,12 @@ async def get_pack_rarity_configs(
         query = query.order_by(sort_column.asc())
     
     # Применяем пагинацию и выполняем запрос
-    configs = query.offset(skip).limit(limit).all()
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    configs = result.scalars().unique().all()
     
     # Формируем результат (связанные данные уже загружены благодаря joinedload)
-    result = []
+    response_items = []
     for config in configs:
         config_data = PackRarityConfigResponse.model_validate(config)
         
@@ -229,10 +232,10 @@ async def get_pack_rarity_configs(
             config_data.rarity_name = config.rarity.name
             config_data.rarity_color = config.rarity.color
         
-        result.append(config_data)
+        response_items.append(config_data)
     
     return PaginatedPackRarityConfigResponse(
-        items=result,
+        items=response_items,
         total=total,
         skip=skip,
         limit=limit,
@@ -243,15 +246,18 @@ async def get_pack_rarity_configs(
 @router.get("/pack-rarity-configs/{config_id}", response_model=PackRarityConfigResponse)
 async def get_pack_rarity_config(
     config_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """Получить конкретную конфигурацию редкости пака по ID с связанными данными"""
     
-    config = db.query(PackRarityConfig).options(
+    query = select(PackRarityConfig).options(
         joinedload(PackRarityConfig.pack_type),
         joinedload(PackRarityConfig.rarity)
-    ).filter(PackRarityConfig.id == config_id).first()
+    ).where(PackRarityConfig.id == config_id)
+    
+    result = await db.execute(query)
+    config = result.scalar_one_or_none()
     
     if not config:
         raise HTTPException(
@@ -302,7 +308,7 @@ async def get_card_weights(
     sort_by: str = Query("id", regex="^(id|card_id|base_weight|current_multiplier|last_updated)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """
@@ -311,51 +317,58 @@ async def get_card_weights(
     """
     
     # Базовый запрос с эффективной загрузкой всех связанных данных
-    query = db.query(CardWeight).options(
+    query = select(CardWeight).options(
         joinedload(CardWeight.card).joinedload(Card.token),
         joinedload(CardWeight.card).joinedload(Card.rarity)
     )
     
     # Применяем фильтры к основной таблице
     if id is not None:
-        query = query.filter(CardWeight.id == id)
+        query = query.where(CardWeight.id == id)
     
     if card_id is not None:
-        query = query.filter(CardWeight.card_id == card_id)
+        query = query.where(CardWeight.card_id == card_id)
     
     if base_weight_from is not None:
-        query = query.filter(CardWeight.base_weight >= base_weight_from)
+        query = query.where(CardWeight.base_weight >= base_weight_from)
     
     if base_weight_to is not None:
-        query = query.filter(CardWeight.base_weight <= base_weight_to)
+        query = query.where(CardWeight.base_weight <= base_weight_to)
     
     if multiplier_from is not None:
-        query = query.filter(CardWeight.current_multiplier >= multiplier_from)
+        query = query.where(CardWeight.current_multiplier >= multiplier_from)
     
     if multiplier_to is not None:
-        query = query.filter(CardWeight.current_multiplier <= multiplier_to)
+        query = query.where(CardWeight.current_multiplier <= multiplier_to)
     
     # Фильтры по датам
     if last_updated_from:
-        query = query.filter(CardWeight.last_updated >= last_updated_from)
+        query = query.where(CardWeight.last_updated >= last_updated_from)
     if last_updated_to:
-        query = query.filter(CardWeight.last_updated <= last_updated_to)
+        query = query.where(CardWeight.last_updated <= last_updated_to)
     
     # Фильтры по связанным данным
     if design_type:
-        query = query.filter(Card.design_type.ilike(f"%{design_type.strip()}%"))
+        query = query.join(Card, CardWeight.card_id == Card.id)
+        query = query.where(Card.design_type.ilike(f"%{design_type.strip()}%"))
     
-    if token_name:
-        query = query.filter(Token.name.ilike(f"%{token_name.strip()}%"))
-    
-    if token_symbol:
-        query = query.filter(Token.symbol.ilike(f"%{token_symbol.strip()}%"))
+    if token_name or token_symbol:
+        query = query.join(Card, CardWeight.card_id == Card.id)
+        query = query.join(Token, Card.token_id == Token.id)
+        if token_name:
+            query = query.where(Token.name.ilike(f"%{token_name.strip()}%"))
+        if token_symbol:
+            query = query.where(Token.symbol.ilike(f"%{token_symbol.strip()}%"))
     
     if rarity_name:
-        query = query.filter(Rarity.name.ilike(f"%{rarity_name.strip()}%"))
+        query = query.join(Card, CardWeight.card_id == Card.id)
+        query = query.join(Rarity, Card.rarity_id == Rarity.id)
+        query = query.where(Rarity.name.ilike(f"%{rarity_name.strip()}%"))
     
     # Подсчитываем общее количество с учетом всех фильтров
-    total = query.count()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
     
     # Применяем сортировку
     sort_column = getattr(CardWeight, sort_by)
@@ -365,10 +378,12 @@ async def get_card_weights(
         query = query.order_by(sort_column.asc())
     
     # Применяем пагинацию и выполняем запрос
-    weights = query.offset(skip).limit(limit).all()
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    weights = result.scalars().unique().all()
     
     # Формируем результат (связанные данные уже загружены благодаря joinedload)
-    result = []
+    response_items = []
     for weight in weights:
         weight_data = CardWeightResponse.model_validate(weight)
         
@@ -387,10 +402,10 @@ async def get_card_weights(
                 weight_data.rarity_name = weight.card.rarity.name
                 weight_data.rarity_color = weight.card.rarity.color
         
-        result.append(weight_data)
+        response_items.append(weight_data)
     
     return PaginatedCardWeightResponse(
-        items=result,
+        items=response_items,
         total=total,
         skip=skip,
         limit=limit,
@@ -401,15 +416,18 @@ async def get_card_weights(
 @router.get("/card-weights/{weight_id}", response_model=CardWeightResponse)
 async def get_card_weight(
     weight_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """Получить конкретный вес карточки по ID с связанными данными"""
     
-    weight = db.query(CardWeight).options(
+    query = select(CardWeight).options(
         joinedload(CardWeight.card).joinedload(Card.token),
         joinedload(CardWeight.card).joinedload(Card.rarity)
-    ).filter(CardWeight.id == weight_id).first()
+    ).where(CardWeight.id == weight_id)
+    
+    result = await db.execute(query)
+    weight = result.scalar_one_or_none()
     
     if not weight:
         raise HTTPException(
@@ -437,33 +455,46 @@ async def get_card_weight(
 
 @router.get("/stats/summary")
 async def get_pack_configs_stats(
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """Получить статистику конфигураций паков"""
     
     try:
         # Статистика PackRarityConfig
-        total_pack_configs = db.query(PackRarityConfig).count()
+        total_pack_configs_query = select(func.count(PackRarityConfig.id))
+        total_pack_configs_result = await db.execute(total_pack_configs_query)
+        total_pack_configs = total_pack_configs_result.scalar()
         
         # Статистика CardWeight
-        total_card_weights = db.query(CardWeight).count()
-        configured_cards = db.query(Card).filter(
-            Card.id.in_(
-                db.query(CardWeight.card_id).subquery()
-            ),
-            Card.is_active == True
-        ).count()
+        total_card_weights_query = select(func.count(CardWeight.id))
+        total_card_weights_result = await db.execute(total_card_weights_query)
+        total_card_weights = total_card_weights_result.scalar()
         
-        total_active_cards = db.query(Card).filter(Card.is_active == True).count()
+        # Карты с настроенными весами
+        configured_cards_subquery = select(CardWeight.card_id).subquery()
+        configured_cards_query = select(func.count(Card.id)).where(
+            Card.id.in_(select(configured_cards_subquery.c.card_id)),
+            Card.is_active == True
+        )
+        configured_cards_result = await db.execute(configured_cards_query)
+        configured_cards = configured_cards_result.scalar()
+        
+        # Всего активных карт
+        total_active_cards_query = select(func.count(Card.id)).where(Card.is_active == True)
+        total_active_cards_result = await db.execute(total_active_cards_query)
+        total_active_cards = total_active_cards_result.scalar()
+        
         unconfigured_cards = total_active_cards - configured_cards
         
         # Средние значения весов
-        avg_base_weight = db.query(CardWeight.base_weight).all()
-        avg_multiplier = db.query(CardWeight.current_multiplier).all()
+        avg_base_weight_query = select(func.avg(CardWeight.base_weight))
+        avg_base_weight_result = await db.execute(avg_base_weight_query)
+        avg_base_weight_value = avg_base_weight_result.scalar() or 0
         
-        avg_base_weight_value = sum(float(w[0]) for w in avg_base_weight) / len(avg_base_weight) if avg_base_weight else 0
-        avg_multiplier_value = sum(float(m[0]) for m in avg_multiplier) / len(avg_multiplier) if avg_multiplier else 0
+        avg_multiplier_query = select(func.avg(CardWeight.current_multiplier))
+        avg_multiplier_result = await db.execute(avg_multiplier_query)
+        avg_multiplier_value = avg_multiplier_result.scalar() or 0
         
         return {
             "pack_rarity_configs": {
@@ -474,8 +505,8 @@ async def get_pack_configs_stats(
                 "configured_cards": configured_cards,
                 "unconfigured_cards": unconfigured_cards,
                 "total_active_cards": total_active_cards,
-                "avg_base_weight": round(avg_base_weight_value, 4),
-                "avg_multiplier": round(avg_multiplier_value, 4)
+                "avg_base_weight": round(float(avg_base_weight_value), 4),
+                "avg_multiplier": round(float(avg_multiplier_value), 4)
             }
         }
         

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, text, or_
 from typing import List, Optional
 from pydantic import BaseModel, validator, ConfigDict
 from datetime import datetime, timedelta
 
-from models.database import get_sync_db
+from models.database import get_async_db
 from models.user_models import User
 from .auth import verify_admin_token
 
@@ -80,54 +81,67 @@ async def get_all_users(
     days_registered_to: Optional[int] = Query(None, description="Filter users registered at most X days ago"),
     sort_by: str = Query("created_at", regex="^(id|wallet_address|nickname|referral_route|is_active|created_at|updated_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    query = db.query(User)
+    """Получить всех пользователей с фильтрацией, сортировкой и пагинацией"""
+    # Базовый запрос
+    query = select(User)
 
+    # Применяем фильтры
     if id is not None:
-        query = query.filter(User.id == id)
-
+        query = query.where(User.id == id)
     if is_active is not None:
-        query = query.filter(User.is_active == is_active)
-
+        query = query.where(User.is_active == is_active)
     if search:
         search_term = f"%{search.lower()}%"
-        query = query.filter(
-            User.nickname.ilike(search_term) | 
-            User.wallet_address.ilike(search_term) |
-            User.referral_route.ilike(search_term)
+        query = query.where(
+            or_(
+                User.nickname.ilike(search_term),
+                User.wallet_address.ilike(search_term),
+                User.referral_route.ilike(search_term)
+            )
         )
-
     if wallet_address:
-        query = query.filter(User.wallet_address.ilike(f"%{wallet_address}%"))
+        query = query.where(User.wallet_address.ilike(f"%{wallet_address}%"))
     if nickname:
-        query = query.filter(User.nickname.ilike(f"%{nickname}%"))
+        query = query.where(User.nickname.ilike(f"%{nickname}%"))
     if referral_route:
-        query = query.filter(User.referral_route.ilike(f"%{referral_route}%"))
+        query = query.where(User.referral_route.ilike(f"%{referral_route}%"))
     if created_from:
-        query = query.filter(User.created_at >= created_from)
+        query = query.where(User.created_at >= created_from)
     if created_to:
-        query = query.filter(User.created_at <= created_to)
+        query = query.where(User.created_at <= created_to)
     if updated_from:
-        query = query.filter(User.updated_at >= updated_from)
+        query = query.where(User.updated_at >= updated_from)
     if updated_to:
-        query = query.filter(User.updated_at <= updated_to)
+        query = query.where(User.updated_at <= updated_to)
     if days_registered_from is not None:
         cutoff_date = datetime.utcnow() - timedelta(days=days_registered_from)
-        query = query.filter(User.created_at <= cutoff_date)
+        query = query.where(User.created_at <= cutoff_date)
     if days_registered_to is not None:
         cutoff_date = datetime.utcnow() - timedelta(days=days_registered_to)
-        query = query.filter(User.created_at >= cutoff_date)
+        query = query.where(User.created_at >= cutoff_date)
 
-    total = query.count()
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
 
+    # Применяем сортировку
     sort_column = getattr(User, sort_by)
-    query = query.order_by(sort_column.desc()) if sort_order == "desc" else query.order_by(sort_column.asc())
+    if sort_order == "desc":
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
 
-    users = query.offset(skip).limit(limit).all()
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    users = result.scalars().all()
 
-    result = []
+    # Формируем результат
+    items = []
     for user in users:
         days_since_registration = (datetime.utcnow() - user.created_at).days
         user_dict = {
@@ -142,10 +156,10 @@ async def get_all_users(
             "wallet_short": f"{user.wallet_address[:6]}...{user.wallet_address[-4:]}",
             "days_since_registration": days_since_registration
         }
-        result.append(UserResponse(**user_dict))
+        items.append(UserResponse(**user_dict))
 
     return PaginatedUserResponse(
-        items=result,
+        items=items,
         total=total,
         skip=skip,
         limit=limit,
@@ -156,10 +170,14 @@ async def get_all_users(
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    """Получить конкретного пользователя по ID"""
+    query = select(User).where(User.id == user_id)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+    
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -183,36 +201,51 @@ async def get_user(
 async def update_user(
     user_id: int,
     user_data: UserUpdate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    user = db.query(User).filter(User.id == user_id).first()
+    """Обновить пользователя"""
+    # Получаем пользователя
+    query = select(User).where(User.id == user_id)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+    
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Проверяем уникальность nickname
     if user_data.nickname and user_data.nickname != user.nickname:
-        existing = db.query(User).filter(User.nickname == user_data.nickname).first()
+        existing_query = select(User).where(User.nickname == user_data.nickname)
+        existing_result = await db.execute(existing_query)
+        existing = existing_result.scalar_one_or_none()
+        
         if existing:
             raise HTTPException(
                 status_code=400,
                 detail=f"User with nickname '{user_data.nickname}' already exists"
             )
 
+    # Проверяем уникальность referral_route
     if user_data.referral_route and user_data.referral_route != user.referral_route:
-        existing = db.query(User).filter(User.referral_route == user_data.referral_route).first()
+        existing_query = select(User).where(User.referral_route == user_data.referral_route)
+        existing_result = await db.execute(existing_query)
+        existing = existing_result.scalar_one_or_none()
+        
         if existing:
             raise HTTPException(
                 status_code=400,
                 detail=f"Referral route '{user_data.referral_route}' already exists"
             )
 
+    # Применяем обновления
     update_data = user_data.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(user, field, value)
 
     user.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(user)
+
+    await db.commit()
+    await db.refresh(user)
 
     days_since_registration = (datetime.utcnow() - user.created_at).days
     user_dict = {
@@ -232,27 +265,44 @@ async def update_user(
 
 @router.get("/stats/summary")
 async def get_users_summary(
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    total_users = db.query(User).count()
-    active_users = db.query(User).filter(User.is_active == True).count()
+    """Получить статистику по пользователям"""
+    # Общее количество пользователей
+    total_query = select(func.count()).select_from(User)
+    total_result = await db.execute(total_query)
+    total_users = total_result.scalar()
+
+    # Активные пользователи
+    active_query = select(func.count()).select_from(User).where(User.is_active == True)
+    active_result = await db.execute(active_query)
+    active_users = active_result.scalar()
+
     inactive_users = total_users - active_users
 
+    # Регистрации за последнюю неделю
     week_ago = datetime.utcnow() - timedelta(days=7)
-    recent_registrations = db.query(User).filter(User.created_at >= week_ago).count()
+    week_query = select(func.count()).select_from(User).where(User.created_at >= week_ago)
+    week_result = await db.execute(week_query)
+    recent_registrations = week_result.scalar()
 
+    # Регистрации за последние 24 часа
     day_ago = datetime.utcnow() - timedelta(days=1)
-    daily_registrations = db.query(User).filter(User.created_at >= day_ago).count()
+    day_query = select(func.count()).select_from(User).where(User.created_at >= day_ago)
+    day_result = await db.execute(day_query)
+    daily_registrations = day_result.scalar()
 
-    popular_nickname_prefixes = db.execute("""
+    # Популярные префиксы никнеймов (сырой SQL запрос)
+    popular_prefixes_result = await db.execute(text("""
         SELECT LEFT(nickname, 3) as prefix, COUNT(*) as count 
         FROM users 
         WHERE is_active = true 
         GROUP BY LEFT(nickname, 3) 
         ORDER BY count DESC 
         LIMIT 5
-    """).fetchall()
+    """))
+    popular_nickname_prefixes = popular_prefixes_result.fetchall()
 
     return {
         "total_users": total_users,
@@ -268,10 +318,12 @@ async def get_users_summary(
 
 @router.get("/search/duplicates", tags=["User Management"])
 async def find_duplicate_patterns(
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    similar_nicknames = db.execute("""
+    """Найти паттерны дублирующихся пользователей"""
+    # Похожие никнеймы
+    similar_nicknames_result = await db.execute(text("""
         SELECT nickname, COUNT(*) as count
         FROM users 
         WHERE nickname SIMILAR TO 'Player[0-9]+' OR nickname SIMILAR TO 'TestUser[0-9]+'
@@ -279,9 +331,11 @@ async def find_duplicate_patterns(
         HAVING COUNT(*) > 1
         ORDER BY count DESC
         LIMIT 10
-    """).fetchall()
+    """))
+    similar_nicknames = similar_nicknames_result.fetchall()
 
-    suspicious_registrations = db.execute("""
+    # Подозрительные массовые регистрации
+    suspicious_registrations_result = await db.execute(text("""
         SELECT DATE_TRUNC('minute', created_at) as minute_created, 
                COUNT(*) as count,
                ARRAY_AGG(nickname) as nicknames
@@ -290,7 +344,8 @@ async def find_duplicate_patterns(
         HAVING COUNT(*) > 5
         ORDER BY count DESC
         LIMIT 5
-    """).fetchall()
+    """))
+    suspicious_registrations = suspicious_registrations_result.fetchall()
 
     return {
         "duplicate_nicknames": [

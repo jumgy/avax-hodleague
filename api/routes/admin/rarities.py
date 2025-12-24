@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from typing import List, Optional
 from pydantic import BaseModel, validator, ConfigDict
 from datetime import datetime
 import re
 
-from models.database import get_sync_db
+from models.database import get_async_db
 from models.rarity_models import Rarity
 from models.card_models import Card
 from .auth import verify_admin_token
@@ -119,6 +120,8 @@ class PaginatedRarityResponse(BaseModel):
     has_next: bool
     has_prev: bool
 
+# --- Router ---
+
 router = APIRouter(prefix="/panel/rarities")
 
 @router.get("/", response_model=PaginatedRarityResponse)
@@ -138,42 +141,67 @@ async def get_all_rarities(
     updated_to: Optional[datetime] = Query(None),
     sort_by: str = Query("name", regex="^(id|name|score_bonus|color|created_at|updated_at)$"),
     sort_order: str = Query("asc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    query = db.query(Rarity)
-
+    """
+    Получить все редкости с фильтрацией, сортировкой и пагинацией
+    """
+    
+    # Базовый запрос
+    query = select(Rarity)
+    
+    # Применяем фильтры
     if id is not None:
-        query = query.filter(Rarity.id == id)
-        
+        query = query.where(Rarity.id == id)
+    
     if is_active is not None:
-        query = query.filter(Rarity.is_active == is_active)
+        query = query.where(Rarity.is_active == is_active)
+    
     if name:
-        query = query.filter(Rarity.name.ilike(f"%{name}%"))
+        query = query.where(Rarity.name.ilike(f"%{name}%"))
+    
     if description:
-        query = query.filter(Rarity.description.ilike(f"%{description}%"))
+        query = query.where(Rarity.description.ilike(f"%{description}%"))
+    
     if color:
-        query = query.filter(Rarity.color == color.upper())
+        query = query.where(Rarity.color == color.upper())
+    
     if score_bonus_from is not None:
-        query = query.filter(Rarity.score_bonus >= score_bonus_from)
+        query = query.where(Rarity.score_bonus >= score_bonus_from)
+    
     if score_bonus_to is not None:
-        query = query.filter(Rarity.score_bonus <= score_bonus_to)
+        query = query.where(Rarity.score_bonus <= score_bonus_to)
+    
     if created_from:
-        query = query.filter(Rarity.created_at >= created_from)
+        query = query.where(Rarity.created_at >= created_from)
+    
     if created_to:
-        query = query.filter(Rarity.created_at <= created_to)
+        query = query.where(Rarity.created_at <= created_to)
+    
     if updated_from:
-        query = query.filter(Rarity.updated_at >= updated_from)
+        query = query.where(Rarity.updated_at >= updated_from)
+    
     if updated_to:
-        query = query.filter(Rarity.updated_at <= updated_to)
-
-    total = query.count()
-
+        query = query.where(Rarity.updated_at <= updated_to)
+    
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    # Применяем сортировку
     sort_column = getattr(Rarity, sort_by)
-    query = query.order_by(sort_column.desc()) if sort_order == "desc" else query.order_by(sort_column.asc())
-
-    rarities = query.offset(skip).limit(limit).all()
-
+    if sort_order == "desc":
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
+    
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    rarities = result.scalars().all()
+    
     return PaginatedRarityResponse(
         items=rarities,
         total=total,
@@ -186,118 +214,184 @@ async def get_all_rarities(
 @router.get("/{rarity_id}", response_model=RarityResponse)
 async def get_rarity(
     rarity_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    rarity = db.query(Rarity).filter(Rarity.id == rarity_id).first()
+    """Получить конкретную редкость по ID"""
+    
+    query = select(Rarity).where(Rarity.id == rarity_id)
+    result = await db.execute(query)
+    rarity = result.scalar_one_or_none()
+    
     if not rarity:
         raise HTTPException(status_code=404, detail="Rarity not found")
+    
     return rarity
 
 @router.post("/", response_model=RarityResponse, status_code=status.HTTP_201_CREATED)
 async def create_rarity(
     rarity_data: RarityCreate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    existing = db.query(Rarity).filter(Rarity.name.ilike(rarity_data.name)).first()
+    """Создать новую редкость с проверкой уникальности имени"""
+    
+    # Проверяем уникальность имени
+    existing_query = select(Rarity).where(Rarity.name.ilike(rarity_data.name))
+    existing_result = await db.execute(existing_query)
+    existing = existing_result.scalar_one_or_none()
+    
     if existing:
         raise HTTPException(
             status_code=400,
             detail=f"Rarity with name '{rarity_data.name}' already exists"
         )
-
-    new_rarity = Rarity(
-        name=rarity_data.name,
-        description=rarity_data.description,
-        score_bonus=rarity_data.score_bonus,
-        color=rarity_data.color,
-        is_active=rarity_data.is_active
-    )
-
-    db.add(new_rarity)
-    db.commit()
-    db.refresh(new_rarity)
-    return new_rarity
+    
+    try:
+        # Создаем новую редкость
+        new_rarity = Rarity(
+            name=rarity_data.name,
+            description=rarity_data.description,
+            score_bonus=rarity_data.score_bonus,
+            color=rarity_data.color,
+            is_active=rarity_data.is_active
+        )
+        
+        db.add(new_rarity)
+        await db.flush()
+        await db.refresh(new_rarity)
+        
+        return new_rarity
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create rarity: {str(e)}"
+        )
 
 @router.put("/{rarity_id}", response_model=RarityResponse)
 async def update_rarity(
     rarity_id: int,
     rarity_data: RarityUpdate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    rarity = db.query(Rarity).filter(Rarity.id == rarity_id).first()
+    """Обновить существующую редкость с проверкой ограничений"""
+    
+    # Получаем существующую редкость
+    query = select(Rarity).where(Rarity.id == rarity_id)
+    result = await db.execute(query)
+    rarity = result.scalar_one_or_none()
+    
     if not rarity:
         raise HTTPException(status_code=404, detail="Rarity not found")
-
+    
+    # Проверка уникальности имени если оно меняется
     if rarity_data.name and rarity_data.name.lower() != rarity.name.lower():
-        existing = db.query(Rarity).filter(Rarity.name.ilike(rarity_data.name)).first()
+        existing_query = select(Rarity).where(Rarity.name.ilike(rarity_data.name))
+        existing_result = await db.execute(existing_query)
+        existing = existing_result.scalar_one_or_none()
+        
         if existing:
             raise HTTPException(
                 status_code=400,
                 detail=f"Rarity with name '{rarity_data.name}' already exists"
             )
-
+    
+    # Проверка при деактивации - нельзя деактивировать если есть активные карты
     if rarity_data.is_active is False and rarity.is_active:
-        active_cards_count = db.query(Card).filter(
+        active_cards_query = select(func.count(Card.id)).where(
             Card.rarity_id == rarity_id,
             Card.is_active == True
-        ).count()
+        )
+        active_cards_result = await db.execute(active_cards_query)
+        active_cards_count = active_cards_result.scalar()
+        
         if active_cards_count > 0:
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot deactivate rarity '{rarity.name}'. It is currently used by {active_cards_count} active card(s). Please deactivate or change rarity of all cards first."
             )
-
-    update_data = rarity_data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(rarity, field, value)
-
-    rarity.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(rarity)
-    return rarity
+    
+    try:
+        # Обновляем поля
+        update_data = rarity_data.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(rarity, field, value)
+        
+        rarity.updated_at = datetime.utcnow()
+        
+        await db.flush()
+        await db.refresh(rarity)
+        
+        return rarity
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update rarity: {str(e)}"
+        )
 
 @router.get("/stats/summary")
 async def get_rarities_summary(
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    from sqlalchemy import func
+    """Получить статистику редкостей"""
     
-    total_rarities = db.query(Rarity).count()
-    active_rarities = db.query(Rarity).filter(Rarity.is_active == True).count()
-    inactive_rarities = total_rarities - active_rarities
-
-    score_stats = db.query(
-        func.avg(Rarity.score_bonus).label('avg_score'),
-        func.max(Rarity.score_bonus).label('max_score')
-    ).filter(Rarity.is_active == True).first()
-
-    avg_score_bonus = float(score_stats.avg_score) if score_stats.avg_score else 0
-    max_score_bonus = score_stats.max_score if score_stats.max_score else 0
-
-    recent_rarities = db.query(Rarity).order_by(
-        Rarity.created_at.desc()
-    ).limit(5).all()
-
-    return {
-        "total_rarities": total_rarities,
-        "active_rarities": active_rarities,
-        "inactive_rarities": inactive_rarities,
-        "score_bonus_stats": {
-            "average": round(avg_score_bonus, 2),
-            "maximum": max_score_bonus
-        },
-        "recent_rarities": [
-            {
-                "id": r.id,
-                "name": r.name,
-                "score_bonus": r.score_bonus,
-                "color": r.color,
-                "is_active": r.is_active,
-                "created_at": r.created_at
-            } for r in recent_rarities
-        ]
-    }
+    try:
+        # Общее количество редкостей
+        total_query = select(func.count(Rarity.id))
+        total_result = await db.execute(total_query)
+        total_rarities = total_result.scalar()
+        
+        # Активные редкости
+        active_query = select(func.count(Rarity.id)).where(Rarity.is_active == True)
+        active_result = await db.execute(active_query)
+        active_rarities = active_result.scalar()
+        
+        inactive_rarities = total_rarities - active_rarities
+        
+        # Статистика по score_bonus
+        score_stats_query = select(
+            func.avg(Rarity.score_bonus).label('avg_score'),
+            func.max(Rarity.score_bonus).label('max_score')
+        ).where(Rarity.is_active == True)
+        score_stats_result = await db.execute(score_stats_query)
+        score_stats = score_stats_result.one()
+        
+        avg_score_bonus = float(score_stats.avg_score) if score_stats.avg_score else 0
+        max_score_bonus = score_stats.max_score if score_stats.max_score else 0
+        
+        # Недавно созданные редкости
+        recent_query = select(Rarity).order_by(Rarity.created_at.desc()).limit(5)
+        recent_result = await db.execute(recent_query)
+        recent_rarities = recent_result.scalars().all()
+        
+        return {
+            "total_rarities": total_rarities,
+            "active_rarities": active_rarities,
+            "inactive_rarities": inactive_rarities,
+            "score_bonus_stats": {
+                "average": round(avg_score_bonus, 2),
+                "maximum": max_score_bonus
+            },
+            "recent_rarities": [
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "score_bonus": r.score_bonus,
+                    "color": r.color,
+                    "is_active": r.is_active,
+                    "created_at": r.created_at
+                } for r in recent_rarities
+            ]
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch rarities summary: {str(e)}"
+        )

@@ -1,11 +1,14 @@
+# admin/routes/cards.py
+
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, or_, and_
+from sqlalchemy.orm import joinedload
 from typing import List, Optional
 from pydantic import BaseModel, validator
 from datetime import datetime
 
-from models.database import get_sync_db
+from models.database import get_async_db
 from models.card_models import Card
 from models.token_models import Token
 from models.rarity_models import Rarity
@@ -147,7 +150,7 @@ async def get_all_cards(
     sort_by: str = Query("created_at", regex="^(id|token_id|rarity_id|design_type|is_active|created_at|updated_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """
@@ -156,55 +159,56 @@ async def get_all_cards(
     """
     
     # Базовый запрос с эффективной загрузкой связанных данных
-    query = db.query(Card).options(
+    query = select(Card).options(
         joinedload(Card.token),
         joinedload(Card.rarity)
     )
     
     # Применяем фильтры к основной таблице
     if id is not None:
-        query = query.filter(Card.id == id)
+        query = query.where(Card.id == id)
     
     if token_id is not None:
-        query = query.filter(Card.token_id == token_id)
+        query = query.where(Card.token_id == token_id)
     
     if rarity_id is not None:
-        query = query.filter(Card.rarity_id == rarity_id)
+        query = query.where(Card.rarity_id == rarity_id)
     
     if design_type:
-        query = query.filter(Card.design_type.ilike(f"%{design_type.strip()}%"))
+        query = query.where(Card.design_type.ilike(f"%{design_type.strip()}%"))
     
     if background_image_url:
-        query = query.filter(Card.background_image_url.ilike(f"%{background_image_url.strip()}%"))
+        query = query.where(Card.background_image_url.ilike(f"%{background_image_url.strip()}%"))
     
     if is_active is not None:
-        query = query.filter(Card.is_active == is_active)
+        query = query.where(Card.is_active == is_active)
     
     # Фильтры по датам
     if created_from:
-        query = query.filter(Card.created_at >= created_from)
+        query = query.where(Card.created_at >= created_from)
     if created_to:
-        query = query.filter(Card.created_at <= created_to)
+        query = query.where(Card.created_at <= created_to)
     if updated_from:
-        query = query.filter(Card.updated_at >= updated_from)
+        query = query.where(Card.updated_at >= updated_from)
     if updated_to:
-        query = query.filter(Card.updated_at <= updated_to)
+        query = query.where(Card.updated_at <= updated_to)
     
-    # Фильтры по связанным данным (избегаем дублирующих JOIN-ов)
-    needs_token_join = bool(token_name or token_symbol)
-    needs_rarity_join = bool(rarity_name)
-    
-    if needs_token_join:
+    # Фильтры по связанным данным
+    if token_name or token_symbol:
+        query = query.join(Token, Card.token_id == Token.id)
         if token_name:
-            query = query.filter(Token.name.ilike(f"%{token_name.strip()}%"))
+            query = query.where(Token.name.ilike(f"%{token_name.strip()}%"))
         if token_symbol:
-            query = query.filter(Token.symbol.ilike(f"%{token_symbol.strip()}%"))
+            query = query.where(Token.symbol.ilike(f"%{token_symbol.strip()}%"))
     
-    if needs_rarity_join:
-        query = query.filter(Rarity.name.ilike(f"%{rarity_name.strip()}%"))
+    if rarity_name:
+        query = query.join(Rarity, Card.rarity_id == Rarity.id)
+        query = query.where(Rarity.name.ilike(f"%{rarity_name.strip()}%"))
     
     # Подсчитываем общее количество с учетом всех фильтров
-    total = query.count()
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
     
     # Применяем сортировку
     sort_column = getattr(Card, sort_by)
@@ -214,10 +218,12 @@ async def get_all_cards(
         query = query.order_by(sort_column.asc())
     
     # Применяем пагинацию и выполняем запрос
-    cards = query.offset(skip).limit(limit).all()
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    cards = result.scalars().unique().all()
     
     # Формируем результат (связанные данные уже загружены благодаря joinedload)
-    result = []
+    response_items = []
     for card in cards:
         card_data = CardResponse.model_validate(card)
         
@@ -230,10 +236,10 @@ async def get_all_cards(
             card_data.rarity_name = card.rarity.name
             card_data.rarity_color = card.rarity.color
         
-        result.append(card_data)
+        response_items.append(card_data)
     
     return PaginatedCardsResponse(
-        items=result,
+        items=response_items,
         total=total,
         skip=skip,
         limit=limit,
@@ -244,15 +250,18 @@ async def get_all_cards(
 @router.get("/{card_id}", response_model=CardResponse)
 async def get_card(
     card_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """Получить конкретную карточку по ID с связанными данными"""
     
-    card = db.query(Card).options(
+    query = select(Card).options(
         joinedload(Card.token),
         joinedload(Card.rarity)
-    ).filter(Card.id == card_id).first()
+    ).where(Card.id == card_id)
+    
+    result = await db.execute(query)
+    card = result.scalar_one_or_none()
     
     if not card:
         raise HTTPException(
@@ -276,16 +285,19 @@ async def get_card(
 @router.post("/", response_model=CardResponse, status_code=status.HTTP_201_CREATED)
 async def create_card(
     card_data: CardCreate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """Создать новую карточку с проверкой активности связанных сущностей и уникальности"""
     
     # Проверяем что токен существует и активен
-    token = db.query(Token).filter(
+    token_query = select(Token).where(
         Token.id == card_data.token_id,
         Token.is_active == True
-    ).first()
+    )
+    token_result = await db.execute(token_query)
+    token = token_result.scalar_one_or_none()
+    
     if not token:
         raise HTTPException(
             status_code=400,
@@ -294,10 +306,13 @@ async def create_card(
         )
     
     # Проверяем что редкость существует и активна
-    rarity = db.query(Rarity).filter(
+    rarity_query = select(Rarity).where(
         Rarity.id == card_data.rarity_id,
         Rarity.is_active == True
-    ).first()
+    )
+    rarity_result = await db.execute(rarity_query)
+    rarity = rarity_result.scalar_one_or_none()
+    
     if not rarity:
         raise HTTPException(
             status_code=400,
@@ -306,12 +321,15 @@ async def create_card(
         )
     
     # Проверяем уникальность комбинации token_id + rarity_id + design_type
-    existing_card = db.query(Card).filter(
+    existing_query = select(Card).where(
         Card.token_id == card_data.token_id,
         Card.rarity_id == card_data.rarity_id,
         Card.design_type == card_data.design_type,
         Card.is_active == True
-    ).first()
+    )
+    existing_result = await db.execute(existing_query)
+    existing_card = existing_result.scalar_one_or_none()
+    
     if existing_card:
         raise HTTPException(
             status_code=400,
@@ -327,8 +345,8 @@ async def create_card(
         new_card.updated_at = datetime.utcnow()
         
         db.add(new_card)
-        db.commit()
-        db.refresh(new_card)
+        await db.flush()
+        await db.refresh(new_card)
         
         # Формируем ответ с связанными данными
         card_response = CardResponse.model_validate(new_card)
@@ -340,7 +358,7 @@ async def create_card(
         return card_response
         
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to create card: {str(e)}"
@@ -350,12 +368,15 @@ async def create_card(
 async def update_card(
     card_id: int,
     card_data: CardUpdate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """Обновить существующую карточку с проверкой активности связанных сущностей и уникальности"""
     
-    card = db.query(Card).filter(Card.id == card_id).first()
+    query = select(Card).where(Card.id == card_id)
+    result = await db.execute(query)
+    card = result.scalar_one_or_none()
+    
     if not card:
         raise HTTPException(
             status_code=404, 
@@ -364,10 +385,13 @@ async def update_card(
     
     # Проверяем токен если он обновляется
     if card_data.token_id is not None and card_data.token_id != card.token_id:
-        token = db.query(Token).filter(
+        token_query = select(Token).where(
             Token.id == card_data.token_id,
             Token.is_active == True
-        ).first()
+        )
+        token_result = await db.execute(token_query)
+        token = token_result.scalar_one_or_none()
+        
         if not token:
             raise HTTPException(
                 status_code=400,
@@ -377,10 +401,13 @@ async def update_card(
     
     # Проверяем редкость если она обновляется
     if card_data.rarity_id is not None and card_data.rarity_id != card.rarity_id:
-        rarity = db.query(Rarity).filter(
+        rarity_query = select(Rarity).where(
             Rarity.id == card_data.rarity_id,
             Rarity.is_active == True
-        ).first()
+        )
+        rarity_result = await db.execute(rarity_query)
+        rarity = rarity_result.scalar_one_or_none()
+        
         if not rarity:
             raise HTTPException(
                 status_code=400,
@@ -394,13 +421,15 @@ async def update_card(
         check_rarity_id = card_data.rarity_id if card_data.rarity_id is not None else card.rarity_id
         check_design_type = card_data.design_type if card_data.design_type is not None else card.design_type
         
-        existing_card = db.query(Card).filter(
-            Card.id != card_id,  # Исключаем текущую карточку
+        existing_query = select(Card).where(
+            Card.id != card_id,
             Card.token_id == check_token_id,
             Card.rarity_id == check_rarity_id,
             Card.design_type == check_design_type,
             Card.is_active == True
-        ).first()
+        )
+        existing_result = await db.execute(existing_query)
+        existing_card = existing_result.scalar_one_or_none()
         
         if existing_card:
             raise HTTPException(
@@ -418,14 +447,14 @@ async def update_card(
         
         card.updated_at = datetime.utcnow()
         
-        db.commit()
-        db.refresh(card)
+        await db.flush()
+        await db.refresh(card)
         
         # Возвращаем обновленную карту с связанными данными
         return await get_card(card_id, db, admin)
         
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to update card: {str(e)}"
@@ -433,17 +462,21 @@ async def update_card(
 
 @router.get("/reference/options")
 async def get_card_options(
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """Получить доступные опции для создания карточек"""
     
     try:
         # Получаем активные токены
-        tokens = db.query(Token).filter(Token.is_active == True).order_by(Token.name).all()
+        tokens_query = select(Token).where(Token.is_active == True).order_by(Token.name)
+        tokens_result = await db.execute(tokens_query)
+        tokens = tokens_result.scalars().all()
         
         # Получаем активные редкости
-        rarities = db.query(Rarity).filter(Rarity.is_active == True).order_by(Rarity.name).all()
+        rarities_query = select(Rarity).where(Rarity.is_active == True).order_by(Rarity.name)
+        rarities_result = await db.execute(rarities_query)
+        rarities = rarities_result.scalars().all()
         
         return {
             "design_types": VALID_DESIGN_TYPES,
@@ -465,39 +498,48 @@ async def get_card_options(
 
 @router.get("/stats/summary")
 async def get_cards_stats(
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """Получить статистику карточек"""
     
     try:
-        total_cards = db.query(Card).count()
-        active_cards = db.query(Card).filter(Card.is_active == True).count()
+        # Общее количество карточек
+        total_query = select(func.count(Card.id))
+        total_result = await db.execute(total_query)
+        total_cards = total_result.scalar()
+        
+        # Активные карточки
+        active_query = select(func.count(Card.id)).where(Card.is_active == True)
+        active_result = await db.execute(active_query)
+        active_cards = active_result.scalar()
         
         # Статистика по редкостям (только активные карточки)
-        rarity_stats = db.query(Card.rarity_id, Rarity.name)\
+        rarity_query = select(Card.rarity_id, Rarity.name)\
             .join(Rarity, Card.rarity_id == Rarity.id)\
-            .filter(Card.is_active == True)\
-            .all()
+            .where(Card.is_active == True)
+        rarity_result = await db.execute(rarity_query)
+        rarity_stats = rarity_result.all()
         
         rarity_counts = {}
         for card_rarity_id, rarity_name in rarity_stats:
             rarity_counts[rarity_name] = rarity_counts.get(rarity_name, 0) + 1
         
         # Статистика по токенам (только активные карточки)
-        token_stats = db.query(Card.token_id, Token.symbol)\
+        token_query = select(Card.token_id, Token.symbol)\
             .join(Token, Card.token_id == Token.id)\
-            .filter(Card.is_active == True)\
-            .all()
+            .where(Card.is_active == True)
+        token_result = await db.execute(token_query)
+        token_stats = token_result.all()
         
         token_counts = {}
         for card_token_id, token_symbol in token_stats:
             token_counts[token_symbol] = token_counts.get(token_symbol, 0) + 1
         
         # Статистика по типам дизайна
-        design_stats = db.query(Card.design_type)\
-            .filter(Card.is_active == True)\
-            .all()
+        design_query = select(Card.design_type).where(Card.is_active == True)
+        design_result = await db.execute(design_query)
+        design_stats = design_result.all()
         
         design_counts = {}
         for (design_type,) in design_stats:

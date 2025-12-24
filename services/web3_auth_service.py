@@ -9,7 +9,10 @@ from eth_account.messages import encode_defunct
 from eth_account import Account
 import jwt
 import logging
-from models.database import get_sync_db
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from models.database import get_async_db
 from models.user_models import User
 from config import Config
 
@@ -24,6 +27,7 @@ class Web3AuthService:
     def generate_nonce(self, wallet_address: str) -> str:
         """Генерируем nonce для подписи"""
         wallet_address = wallet_address.lower()
+        
         # Генерируем случайную строку
         nonce = secrets.token_hex(16)
         timestamp = int(time.time())
@@ -53,7 +57,7 @@ class Web3AuthService:
         if wallet_address not in self.nonce_storage:
             logger.warning(f"No nonce found for wallet: {wallet_address[:10]}...")
             return False
-
+        
         nonce_data = self.nonce_storage[wallet_address]
         
         # Проверяем, не истек ли nonce
@@ -61,7 +65,7 @@ class Web3AuthService:
             logger.warning(f"Nonce expired for wallet: {wallet_address[:10]}...")
             del self.nonce_storage[wallet_address]
             return False
-
+        
         try:
             # Кодируем сообщение для верификации
             message = nonce_data['message']
@@ -79,58 +83,73 @@ class Web3AuthService:
                 del self.nonce_storage[wallet_address]
             else:
                 logger.warning(f"Invalid signature for wallet: {wallet_address[:10]}...")
-                
+            
             return is_valid
             
         except Exception as e:
             logger.error(f"Error verifying signature: {e}")
             return False
 
-    def get_user_by_wallet(self, wallet_address: str) -> Optional[User]:
+    async def get_user_by_wallet(self, wallet_address: str, db: AsyncSession) -> Optional[User]:
         """Получаем пользователя по wallet address"""
-        db = next(get_sync_db())
         try:
             wallet_address = wallet_address.lower()
-            user = db.query(User).filter(User.wallet_address == wallet_address).first()
+            query = select(User).where(User.wallet_address == wallet_address)
+            result = await db.execute(query)
+            user = result.scalar_one_or_none()
             return user
         except Exception as e:
             logger.error(f"Error getting user by wallet: {e}")
             return None
-        finally:
-            db.close()
 
-    def create_or_get_user(self, wallet_address: str, nickname: str = None, avatar_url: str = None) -> User:
+    async def create_or_get_user(
+        self, 
+        wallet_address: str, 
+        db: AsyncSession,
+        nickname: str = None, 
+        avatar_url: str = None
+    ) -> User:
         """Создаем или получаем пользователя"""
-        db = next(get_sync_db())
         try:
             wallet_address = wallet_address.lower()
             
             # Ищем существующего пользователя
-            existing_user = db.query(User).filter(User.wallet_address == wallet_address).first()
+            existing_query = select(User).where(User.wallet_address == wallet_address)
+            existing_result = await db.execute(existing_query)
+            existing_user = existing_result.scalar_one_or_none()
+            
             if existing_user:
                 logger.info(f"Existing user login: {existing_user.nickname}")
                 return existing_user
-            
+
             # Создаем нового пользователя
             if not nickname:
                 nickname = f"Player{wallet_address[2:8].upper()}"
-            
+
             # Проверяем уникальность nickname
             counter = 1
             original_nickname = nickname
-            while db.query(User).filter(User.nickname == nickname).first():
+            while True:
+                check_query = select(User).where(User.nickname == nickname)
+                check_result = await db.execute(check_query)
+                if check_result.scalar_one_or_none() is None:
+                    break
                 nickname = f"{original_nickname}{counter}"
                 counter += 1
-            
+
             # Генерируем referral_route на основе nickname
             referral_route = f"{nickname}{secrets.randbelow(9999):04d}"
-            while db.query(User).filter(User.referral_route == referral_route).first():
+            while True:
+                check_query = select(User).where(User.referral_route == referral_route)
+                check_result = await db.execute(check_query)
+                if check_result.scalar_one_or_none() is None:
+                    break
                 referral_route = f"{nickname}{secrets.randbelow(9999):04d}"
-            
+
             # Дефолтный avatar
             if not avatar_url:
                 avatar_url = f"https://api.dicebear.com/7.x/avataaars/svg?seed={wallet_address}"
-            
+
             # Создаем пользователя
             new_user = User(
                 wallet_address=wallet_address,
@@ -138,20 +157,18 @@ class Web3AuthService:
                 referral_route=referral_route,
                 avatar_url=avatar_url
             )
-            
+
             db.add(new_user)
-            db.commit()
-            db.refresh(new_user)
-            
+            await db.commit()
+            await db.refresh(new_user)
+
             logger.info(f"New user created: {new_user.nickname} ({wallet_address[:10]}...)")
             return new_user
-            
+
         except Exception as e:
             logger.error(f"Error creating/getting user: {e}")
-            db.rollback()
+            await db.rollback()
             raise
-        finally:
-            db.close()
 
     def create_jwt_token(self, user: User) -> str:
         """Создаем JWT токен для пользователя"""
@@ -189,7 +206,7 @@ class Web3AuthService:
         
         for wallet in expired_wallets:
             del self.nonce_storage[wallet]
-            
+        
         if expired_wallets:
             logger.info(f"Cleaned up {len(expired_wallets)} expired nonces")
 

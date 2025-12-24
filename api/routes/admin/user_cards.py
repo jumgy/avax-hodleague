@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime, date
 
-from models.database import get_sync_db
+from models.database import get_async_db
 from models.user_card_models import UserCard
 from .auth import verify_admin_token
 
@@ -51,45 +51,55 @@ async def get_user_cards(
     has_transaction: Optional[bool] = Query(None),
     sort_by: str = Query("created_at", regex="^(id|user_id|card_id|obtained_at|created_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    query = db.query(UserCard)
+    """Получить карточки пользователей с фильтрацией, сортировкой и пагинацией"""
+    # Базовый запрос
+    query = select(UserCard)
 
+    # Применяем фильтры
     if user_id:
-        query = query.filter(UserCard.user_id == user_id)
+        query = query.where(UserCard.user_id == user_id)
     if card_id:
-        query = query.filter(UserCard.card_id == card_id)
+        query = query.where(UserCard.card_id == card_id)
     if pack_opening_id:
-        query = query.filter(UserCard.pack_opening_id == pack_opening_id)
+        query = query.where(UserCard.pack_opening_id == pack_opening_id)
     if status:
-        query = query.filter(UserCard.status == status)
+        query = query.where(UserCard.status == status)
     if source:
-        query = query.filter(UserCard.source == source)
+        query = query.where(UserCard.source == source)
     if is_active is not None:
-        query = query.filter(UserCard.is_active == is_active)
+        query = query.where(UserCard.is_active == is_active)
     if obtained_from:
-        query = query.filter(UserCard.obtained_at >= obtained_from)
+        query = query.where(UserCard.obtained_at >= obtained_from)
     if obtained_to:
-        query = query.filter(UserCard.obtained_at < obtained_to)
+        query = query.where(UserCard.obtained_at < obtained_to)
     if created_from:
-        query = query.filter(UserCard.created_at >= created_from)
+        query = query.where(UserCard.created_at >= created_from)
     if created_to:
-        query = query.filter(UserCard.created_at < created_to)
+        query = query.where(UserCard.created_at < created_to)
     if has_transaction is True:
-        query = query.filter(UserCard.transaction_hash.isnot(None))
+        query = query.where(UserCard.transaction_hash.isnot(None))
     elif has_transaction is False:
-        query = query.filter(UserCard.transaction_hash.is_(None))
+        query = query.where(UserCard.transaction_hash.is_(None))
 
-    total = query.count()
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
 
+    # Применяем сортировку
     sort_column = getattr(UserCard, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
 
-    items = query.offset(skip).limit(limit).all()
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    items = result.scalars().all()
 
     return PaginatedUserCardsResponse(
         items=items,
@@ -103,10 +113,15 @@ async def get_user_cards(
 @router.get("/{user_card_id}", response_model=UserCardResponse)
 async def get_user_card(
     user_card_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    obj = db.query(UserCard).filter(UserCard.id == user_card_id).first()
+    """Получить конкретную карточку пользователя по ID"""
+    query = select(UserCard).where(UserCard.id == user_card_id)
+    result = await db.execute(query)
+    obj = result.scalar_one_or_none()
+    
     if not obj:
         raise HTTPException(status_code=404, detail="UserCard not found")
+    
     return obj

@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from typing import List, Optional
 from pydantic import BaseModel, validator, ConfigDict
 from datetime import datetime, timedelta
 
-from models.database import get_sync_db
-from models.tournament_models import Tournament, TournamentStatus
+from models.database import get_async_db
+from models.tournament_models import Tournament, TournamentStatus, TournamentTokenSnapshot
 from services.card_score_service import card_score_service
 from .auth import verify_admin_token
 
@@ -84,7 +85,7 @@ class TournamentUpdate(BaseModel):
     status: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    gameplay_start_date: Optional[datetime] = None  # NEW FIELD
+    gameplay_start_date: Optional[datetime] = None
     weight_limit: Optional[int] = None
 
     @validator('tournament_number')
@@ -122,7 +123,7 @@ class TournamentResponse(BaseModel):
     status: str
     start_date: datetime
     end_date: datetime
-    gameplay_start_date: Optional[datetime]  # NEW FIELD
+    gameplay_start_date: Optional[datetime]
     weight_limit: int
     created_at: datetime
     updated_at: datetime
@@ -170,71 +171,67 @@ async def get_all_tournaments(
     updated_to: Optional[datetime] = Query(None),
     sort_by: str = Query("tournament_number", regex="^(id|tournament_number|status|start_date|end_date|weight_limit|created_at|updated_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    query = db.query(Tournament)
+    """Получить все турниры с фильтрацией, сортировкой и пагинацией"""
+    # Базовый запрос
+    query = select(Tournament)
 
+    # Применяем фильтры
     if id is not None:
-        query = query.filter(Tournament.id == id)
+        query = query.where(Tournament.id == id)
     if tournament_number is not None:
-        query = query.filter(Tournament.tournament_number == tournament_number)
+        query = query.where(Tournament.tournament_number == tournament_number)
     if status_filter:
         if not TournamentStatus.is_valid(status_filter):
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid status filter. Must be one of: {', '.join(TournamentStatus.ALL_STATUSES)}"
             )
-        query = query.filter(Tournament.status == status_filter)
+        query = query.where(Tournament.status == status_filter)
     if is_active is not None:
-        query = query.filter(Tournament.is_active == is_active)
+        query = query.where(Tournament.is_active == is_active)
     if weight_limit_from is not None:
-        query = query.filter(Tournament.weight_limit >= weight_limit_from)
+        query = query.where(Tournament.weight_limit >= weight_limit_from)
     if weight_limit_to is not None:
-        query = query.filter(Tournament.weight_limit <= weight_limit_to)
+        query = query.where(Tournament.weight_limit <= weight_limit_to)
     if start_date_from:
-        query = query.filter(Tournament.start_date >= start_date_from)
+        query = query.where(Tournament.start_date >= start_date_from)
     if start_date_to:
-        query = query.filter(Tournament.start_date <= start_date_to)
+        query = query.where(Tournament.start_date <= start_date_to)
     if end_date_from:
-        query = query.filter(Tournament.end_date >= end_date_from)
+        query = query.where(Tournament.end_date >= end_date_from)
     if end_date_to:
-        query = query.filter(Tournament.end_date <= end_date_to)
+        query = query.where(Tournament.end_date <= end_date_to)
     if created_from:
-        query = query.filter(Tournament.created_at >= created_from)
+        query = query.where(Tournament.created_at >= created_from)
     if created_to:
-        query = query.filter(Tournament.created_at <= created_to)
+        query = query.where(Tournament.created_at <= created_to)
     if updated_from:
-        query = query.filter(Tournament.updated_at >= updated_from)
+        query = query.where(Tournament.updated_at >= updated_from)
     if updated_to:
-        query = query.filter(Tournament.updated_at <= updated_to)
+        query = query.where(Tournament.updated_at <= updated_to)
 
-    total = query.count()
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
 
+    # Применяем сортировку
     sort_column = getattr(Tournament, sort_by)
-    query = query.order_by(sort_column.desc()) if sort_order == "desc" else query.order_by(sort_column.asc())
+    if sort_order == "desc":
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
 
-    tournaments = query.offset(skip).limit(limit).all()
-
-    result = []
-    for t in tournaments:
-        tournament_dict = {
-            "id": t.id,
-            "tournament_number": t.tournament_number,
-            "status": t.status,
-            "start_date": t.start_date,
-            "end_date": t.end_date,
-            "gameplay_start_date": t.gameplay_start_date,  # NEW FIELD
-            "weight_limit": t.weight_limit,
-            "created_at": t.created_at,
-            "updated_at": t.updated_at,
-            "is_active": t.is_active,
-            "duration_days": t.duration_days
-        }
-        result.append(TournamentResponse(**tournament_dict))
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    items = result.scalars().all()
 
     return PaginatedTournamentResponse(
-        items=result,
+        items=items,
         total=total,
         skip=skip,
         limit=limit,
@@ -246,106 +243,103 @@ async def get_all_tournaments(
 @router.get("/{tournament_id}", response_model=TournamentResponse)
 async def get_tournament(
     tournament_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    tournament = db.query(Tournament).filter(Tournament.id == tournament_id).first()
+    """Получить конкретный турнир по ID"""
+    query = select(Tournament).where(Tournament.id == tournament_id)
+    result = await db.execute(query)
+    tournament = result.scalar_one_or_none()
+    
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
-    tournament_dict = {
-        "id": tournament.id,
-        "tournament_number": tournament.tournament_number,
-        "status": tournament.status,
-        "start_date": tournament.start_date,
-        "end_date": tournament.end_date,
-        "gameplay_start_date": tournament.gameplay_start_date,  # NEW FIELD
-        "weight_limit": tournament.weight_limit,
-        "created_at": tournament.created_at,
-        "updated_at": tournament.updated_at,
-        "is_active": tournament.is_active,
-        "duration_days": tournament.duration_days
-    }
-    return TournamentResponse(**tournament_dict)
+    return tournament
 
 
 @router.post("/", response_model=TournamentResponse, status_code=status.HTTP_201_CREATED)
 async def create_tournament(
     tournament_data: TournamentCreate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    existing = db.query(Tournament).filter(
+    """Создать новый турнир"""
+    # Проверяем существование турнира с таким номером
+    existing_query = select(Tournament).where(
         Tournament.tournament_number == tournament_data.tournament_number
-    ).first()
+    )
+    existing_result = await db.execute(existing_query)
+    existing = existing_result.scalar_one_or_none()
+    
     if existing:
         raise HTTPException(
             status_code=400,
             detail=f"Tournament with number {tournament_data.tournament_number} already exists"
         )
 
+    # Проверяем наличие активных турниров
     if tournament_data.status in [TournamentStatus.REGISTRATION, TournamentStatus.ONGOING]:
-        active_tournament = db.query(Tournament).filter(Tournament.status.in_([
+        active_query = select(Tournament).where(Tournament.status.in_([
             TournamentStatus.REGISTRATION,
             TournamentStatus.ONGOING
-        ])).first()
+        ]))
+        active_result = await db.execute(active_query)
+        active_tournament = active_result.scalar_one_or_none()
+        
         if active_tournament:
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot create active tournament. Tournament #{active_tournament.tournament_number} is already active"
             )
 
+    # Создаем новый турнир
     new_tournament = Tournament(
         tournament_number=tournament_data.tournament_number,
         status=tournament_data.status,
         start_date=tournament_data.start_date,
         end_date=tournament_data.end_date,
-        gameplay_start_date=tournament_data.gameplay_start_date,  # NEW FIELD
+        gameplay_start_date=tournament_data.gameplay_start_date,
         weight_limit=tournament_data.weight_limit
     )
 
     db.add(new_tournament)
-    db.commit()
-    db.refresh(new_tournament)
+    await db.commit()
+    await db.refresh(new_tournament)
 
-    tournament_dict = {
-        "id": new_tournament.id,
-        "tournament_number": new_tournament.tournament_number,
-        "status": new_tournament.status,
-        "start_date": new_tournament.start_date,
-        "end_date": new_tournament.end_date,
-        "gameplay_start_date": new_tournament.gameplay_start_date,  # NEW FIELD
-        "weight_limit": new_tournament.weight_limit,
-        "created_at": new_tournament.created_at,
-        "updated_at": new_tournament.updated_at,
-        "is_active": new_tournament.is_active,
-        "duration_days": new_tournament.duration_days
-    }
-    return TournamentResponse(**tournament_dict)
+    return new_tournament
 
 
 @router.put("/{tournament_id}", response_model=TournamentResponse)
 async def update_tournament(
     tournament_id: int,
     tournament_data: TournamentUpdate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    tournament = db.query(Tournament).filter(Tournament.id == tournament_id).first()
+    """Обновить существующий турнир"""
+    # Получаем турнир
+    query = select(Tournament).where(Tournament.id == tournament_id)
+    result = await db.execute(query)
+    tournament = result.scalar_one_or_none()
+    
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
+    # Проверяем уникальность номера турнира
     if tournament_data.tournament_number and tournament_data.tournament_number != tournament.tournament_number:
-        existing = db.query(Tournament).filter(
+        existing_query = select(Tournament).where(
             Tournament.tournament_number == tournament_data.tournament_number
-        ).first()
+        )
+        existing_result = await db.execute(existing_query)
+        existing = existing_result.scalar_one_or_none()
+        
         if existing:
             raise HTTPException(
                 status_code=400,
                 detail=f"Tournament with number {tournament_data.tournament_number} already exists"
             )
 
-    # NEW: Protection - Cannot change gameplay_start_date if it's in the past
+    # Защита - нельзя изменить gameplay_start_date если она в прошлом
     if tournament_data.gameplay_start_date is not None:
         if tournament.gameplay_start_date and tournament.gameplay_start_date <= datetime.utcnow():
             raise HTTPException(
@@ -353,7 +347,7 @@ async def update_tournament(
                 detail="Cannot change gameplay_start_date - it's already in the past"
             )
 
-    # NEW: Validate date chronology with gameplay_start_date
+    # Валидация хронологии дат
     new_start_date = tournament_data.start_date or tournament.start_date
     new_end_date = tournament_data.end_date or tournament.end_date
     new_gameplay_start = tournament_data.gameplay_start_date or tournament.gameplay_start_date
@@ -376,7 +370,7 @@ async def update_tournament(
             detail="End date must be after start date"
         )
 
-    # NEW: Protection - Cannot set status to 'registration' if gameplay_start_date passed
+    # Защита - нельзя установить статус 'registration' если gameplay_start_date прошла
     if tournament_data.status == TournamentStatus.REGISTRATION:
         if new_gameplay_start and new_gameplay_start <= datetime.utcnow():
             raise HTTPException(
@@ -384,50 +378,46 @@ async def update_tournament(
                 detail="Cannot set status to 'registration' - gameplay_start_date has already passed"
             )
 
+    # Проверка активных турниров
     if tournament_data.status:
         if tournament_data.status in [TournamentStatus.REGISTRATION, TournamentStatus.ONGOING]:
-            active_tournament = db.query(Tournament).filter(
+            active_query = select(Tournament).where(
                 Tournament.id != tournament_id,
                 Tournament.status.in_([TournamentStatus.REGISTRATION, TournamentStatus.ONGOING])
-            ).first()
+            )
+            active_result = await db.execute(active_query)
+            active_tournament = active_result.scalar_one_or_none()
+            
             if active_tournament:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Cannot set tournament to active status. Tournament #{active_tournament.tournament_number} is already active"
                 )
 
+    # Применяем обновления
     update_data = tournament_data.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(tournament, field, value)
 
     tournament.updated_at = datetime.utcnow()
 
-    db.commit()
-    db.refresh(tournament)
+    await db.commit()
+    await db.refresh(tournament)
 
-    tournament_dict = {
-        "id": tournament.id,
-        "tournament_number": tournament.tournament_number,
-        "status": tournament.status,
-        "start_date": tournament.start_date,
-        "end_date": tournament.end_date,
-        "gameplay_start_date": tournament.gameplay_start_date,  # NEW FIELD
-        "weight_limit": tournament.weight_limit,
-        "created_at": tournament.created_at,
-        "updated_at": tournament.updated_at,
-        "is_active": tournament.is_active,
-        "duration_days": tournament.duration_days
-    }
-    return TournamentResponse(**tournament_dict)
+    return tournament
 
 
 @router.delete("/{tournament_id}")
 async def delete_tournament(
     tournament_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    tournament = db.query(Tournament).filter(Tournament.id == tournament_id).first()
+    """Деактивировать турнир (мягкое удаление)"""
+    query = select(Tournament).where(Tournament.id == tournament_id)
+    result = await db.execute(query)
+    tournament = result.scalar_one_or_none()
+    
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
@@ -441,7 +431,7 @@ async def delete_tournament(
     tournament.is_active = False
     tournament.updated_at = datetime.utcnow()
 
-    db.commit()
+    await db.commit()
 
     return {
         "message": f"Tournament #{tournament.tournament_number} has been deactivated",
@@ -452,20 +442,41 @@ async def delete_tournament(
 
 @router.get("/stats/summary")
 async def get_tournaments_summary(
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    from sqlalchemy import func
+    """Получить статистику по турнирам"""
+    # Общее количество турниров
+    total_query = select(func.count()).select_from(Tournament)
+    total_result = await db.execute(total_query)
+    total_tournaments = total_result.scalar()
 
-    total_tournaments = db.query(Tournament).count()
-    registration_count = db.query(Tournament).filter(Tournament.status == TournamentStatus.REGISTRATION).count()
-    ongoing_count = db.query(Tournament).filter(Tournament.status == TournamentStatus.ONGOING).count()
-    finished_count = db.query(Tournament).filter(Tournament.status == TournamentStatus.FINISHED).count()
+    # Количество по статусам
+    registration_query = select(func.count()).select_from(Tournament).where(
+        Tournament.status == TournamentStatus.REGISTRATION
+    )
+    registration_result = await db.execute(registration_query)
+    registration_count = registration_result.scalar()
 
-    current_tournament = db.query(Tournament).filter(Tournament.status.in_([
+    ongoing_query = select(func.count()).select_from(Tournament).where(
+        Tournament.status == TournamentStatus.ONGOING
+    )
+    ongoing_result = await db.execute(ongoing_query)
+    ongoing_count = ongoing_result.scalar()
+
+    finished_query = select(func.count()).select_from(Tournament).where(
+        Tournament.status == TournamentStatus.FINISHED
+    )
+    finished_result = await db.execute(finished_query)
+    finished_count = finished_result.scalar()
+
+    # Текущий активный турнир
+    current_query = select(Tournament).where(Tournament.status.in_([
         TournamentStatus.REGISTRATION,
         TournamentStatus.ONGOING
-    ])).first()
+    ]))
+    current_result = await db.execute(current_query)
+    current_tournament = current_result.scalar_one_or_none()
 
     return {
         "total_tournaments": total_tournaments,
@@ -482,33 +493,30 @@ async def get_tournaments_summary(
         } if current_tournament else None
     }
 
+
 @router.post("/{tournament_id}/snapshot", response_model=SnapshotResponse)
 async def create_tournament_snapshot(
     tournament_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
     """
-    Manually create price snapshot for tournament (Admin only)
+    Вручную создать снапшот цен для турнира (только для администраторов)
     
-    This endpoint allows manual snapshot creation.
-    Typically snapshots are created automatically by the tournament management service
-    when gameplay_start_date is reached.
+    Обычно снапшоты создаются автоматически сервисом управления турнирами
+    когда наступает gameplay_start_date.
     """
-    tournament = db.query(Tournament).filter(Tournament.id == tournament_id).first()
+    # Проверяем существование турнира
+    query = select(Tournament).where(Tournament.id == tournament_id)
+    result = await db.execute(query)
+    tournament = result.scalar_one_or_none()
+    
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
-    # Note: card_score_service uses async, we need async wrapper
-    import asyncio
-    from models.database import AsyncSessionLocal
-    
-    async def create_snapshot():
-        async with AsyncSessionLocal() as async_db:
-            return await card_score_service.create_tournament_snapshot(tournament_id, async_db)
-    
     try:
-        success = asyncio.run(create_snapshot())
+        # Вызываем асинхронный сервис создания снапшота
+        success = await card_score_service.create_tournament_snapshot(tournament_id, db)
         
         if not success:
             raise HTTPException(
@@ -516,13 +524,12 @@ async def create_tournament_snapshot(
                 detail="Failed to create tournament snapshot"
             )
 
-        # Count created snapshots
-        from models.tournament_models import TournamentTokenSnapshot
-        from sqlalchemy import func
-        
-        tokens_count = db.query(func.count()).select_from(TournamentTokenSnapshot).filter(
+        # Подсчитываем созданные снапшоты
+        count_query = select(func.count()).select_from(TournamentTokenSnapshot).where(
             TournamentTokenSnapshot.tournament_id == tournament_id
-        ).scalar() or 0
+        )
+        count_result = await db.execute(count_query)
+        tokens_count = count_result.scalar() or 0
 
         return SnapshotResponse(
             tournament_id=tournament_id,

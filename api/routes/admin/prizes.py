@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from sqlalchemy.orm import joinedload
 from typing import List, Optional
 from pydantic import BaseModel, validator, ConfigDict
 from decimal import Decimal
 from datetime import datetime
 
-from models.database import get_sync_db
+from models.database import get_async_db
 from models.tournament_models import Tournament
 from models.tournament_deck_models import TournamentPrizeConfig
 from models.reward_models import RewardType
@@ -38,10 +40,10 @@ class TournamentPrizeConfigCreate(BaseModel):
         return v
 
 class TournamentPrizeConfigUpdate(BaseModel):
-    position_from: Optional[int]
-    position_to: Optional[int]
-    reward_type_id: Optional[int]
-    reward_amount: Optional[Decimal]
+    position_from: Optional[int] = None
+    position_to: Optional[int] = None
+    reward_type_id: Optional[int] = None
+    reward_amount: Optional[Decimal] = None
 
     @validator('position_from', 'position_to')
     def positions_valid(cls, v):
@@ -81,6 +83,8 @@ class PaginatedTournamentPrizeConfigResponse(BaseModel):
     has_next: bool
     has_prev: bool
 
+# --- Router ---
+
 router = APIRouter(prefix="/panel/tournament-prizes")
 
 @router.get("/", response_model=PaginatedTournamentPrizeConfigResponse)
@@ -98,43 +102,64 @@ async def get_tournament_prize_configs(
     created_to: Optional[datetime] = Query(None),
     sort_by: str = Query("position_from", regex="^(id|tournament_id|position_from|position_to|reward_type_id|reward_amount|created_at)$"),
     sort_order: str = Query("asc", regex="^(asc|desc)$"),
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    query = db.query(TournamentPrizeConfig).options(
+    """
+    Получить конфигурации призов турниров с фильтрацией, сортировкой и пагинацией
+    """
+    
+    # Базовый запрос с загрузкой связанных данных
+    query = select(TournamentPrizeConfig).options(
         joinedload(TournamentPrizeConfig.tournament),
         joinedload(TournamentPrizeConfig.reward_type)
     )
-
+    
+    # Применяем фильтры
     if id is not None:
-        query = query.filter(TournamentPrizeConfig.id == id)
+        query = query.where(TournamentPrizeConfig.id == id)
+    
     if tournament_id is not None:
-        query = query.filter(TournamentPrizeConfig.tournament_id == tournament_id)
+        query = query.where(TournamentPrizeConfig.tournament_id == tournament_id)
+    
     if position_from is not None:
-        query = query.filter(TournamentPrizeConfig.position_from >= position_from)
+        query = query.where(TournamentPrizeConfig.position_from >= position_from)
+    
     if position_to is not None:
-        query = query.filter(TournamentPrizeConfig.position_to <= position_to)
+        query = query.where(TournamentPrizeConfig.position_to <= position_to)
+    
     if reward_type_id is not None:
-        query = query.filter(TournamentPrizeConfig.reward_type_id == reward_type_id)
+        query = query.where(TournamentPrizeConfig.reward_type_id == reward_type_id)
+    
     if reward_amount_from is not None:
-        query = query.filter(TournamentPrizeConfig.reward_amount >= reward_amount_from)
+        query = query.where(TournamentPrizeConfig.reward_amount >= reward_amount_from)
+    
     if reward_amount_to is not None:
-        query = query.filter(TournamentPrizeConfig.reward_amount <= reward_amount_to)
+        query = query.where(TournamentPrizeConfig.reward_amount <= reward_amount_to)
+    
     if created_from is not None:
-        query = query.filter(TournamentPrizeConfig.created_at >= created_from)
+        query = query.where(TournamentPrizeConfig.created_at >= created_from)
+    
     if created_to is not None:
-        query = query.filter(TournamentPrizeConfig.created_at <= created_to)
-
-    total = query.count()
-
+        query = query.where(TournamentPrizeConfig.created_at <= created_to)
+    
+    # Подсчитываем общее количество
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar()
+    
+    # Применяем сортировку
     sort_column = getattr(TournamentPrizeConfig, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
-
-    results = query.offset(skip).limit(limit).all()
-
+    
+    # Применяем пагинацию и выполняем запрос
+    query = query.offset(skip).limit(limit)
+    result = await db.execute(query)
+    results = result.scalars().unique().all()
+    
     return PaginatedTournamentPrizeConfigResponse(
         items=results,
         total=total,
@@ -147,110 +172,169 @@ async def get_tournament_prize_configs(
 @router.get("/{prize_id}", response_model=TournamentPrizeConfigResponse)
 async def get_tournament_prize_config(
     prize_id: int,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    obj = db.query(TournamentPrizeConfig).options(
+    """Получить конкретную конфигурацию приза по ID"""
+    
+    query = select(TournamentPrizeConfig).options(
         joinedload(TournamentPrizeConfig.tournament),
         joinedload(TournamentPrizeConfig.reward_type)
-    ).filter(TournamentPrizeConfig.id == prize_id).first()
-
+    ).where(TournamentPrizeConfig.id == prize_id)
+    
+    result = await db.execute(query)
+    obj = result.scalar_one_or_none()
+    
     if not obj:
         raise HTTPException(status_code=404, detail="TournamentPrizeConfig not found")
+    
     return obj
 
 @router.post("/", response_model=TournamentPrizeConfigResponse, status_code=status.HTTP_201_CREATED)
 async def create_tournament_prize_config(
     data: TournamentPrizeConfigCreate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    tournament = db.query(Tournament).filter(Tournament.id == data.tournament_id).first()
+    """Создать новую конфигурацию приза с проверкой ограничений"""
+    
+    # Проверяем существование турнира
+    tournament_query = select(Tournament).where(Tournament.id == data.tournament_id)
+    tournament_result = await db.execute(tournament_query)
+    tournament = tournament_result.scalar_one_or_none()
+    
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
     
     if tournament.status != "registration":
-        raise HTTPException(status_code=409, detail="Cannot add prizes for tournaments that have started or finished.")
+        raise HTTPException(
+            status_code=409, 
+            detail="Cannot add prizes for tournaments that have started or finished."
+        )
     
-    reward_type = db.query(RewardType).filter(
+    # Проверяем тип награды
+    reward_type_query = select(RewardType).where(
         RewardType.id == data.reward_type_id,
         RewardType.is_active == True
-    ).first()
+    )
+    reward_type_result = await db.execute(reward_type_query)
+    reward_type = reward_type_result.scalar_one_or_none()
+    
     if not reward_type:
         raise HTTPException(status_code=404, detail="Reward type not found or inactive")
-
-    existing_prize = db.query(TournamentPrizeConfig).filter(
+    
+    # Проверяем пересечение диапазонов позиций
+    existing_prize_query = select(TournamentPrizeConfig).where(
         TournamentPrizeConfig.tournament_id == data.tournament_id,
         TournamentPrizeConfig.position_from <= data.position_to,
         TournamentPrizeConfig.position_to >= data.position_from
-    ).first()
+    )
+    existing_prize_result = await db.execute(existing_prize_query)
+    existing_prize = existing_prize_result.scalar_one_or_none()
     
     if existing_prize:
         raise HTTPException(
             status_code=400, 
             detail=f"Position range {data.position_from}-{data.position_to} overlaps with existing prize configuration"
         )
-
-    obj = TournamentPrizeConfig(
-        tournament_id=data.tournament_id,
-        position_from=data.position_from,
-        position_to=data.position_to,
-        reward_type_id=data.reward_type_id,
-        reward_amount=data.reward_amount,
-    )
-
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
-    return obj
+    
+    try:
+        # Создаем новый приз
+        obj = TournamentPrizeConfig(
+            tournament_id=data.tournament_id,
+            position_from=data.position_from,
+            position_to=data.position_to,
+            reward_type_id=data.reward_type_id,
+            reward_amount=data.reward_amount,
+        )
+        
+        db.add(obj)
+        await db.flush()
+        await db.refresh(obj)
+        
+        return obj
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create tournament prize config: {str(e)}"
+        )
 
 @router.put("/{prize_id}", response_model=TournamentPrizeConfigResponse)
 async def update_tournament_prize_config(
     prize_id: int,
     data: TournamentPrizeConfigUpdate,
-    db: Session = Depends(get_sync_db),
+    db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    obj = db.query(TournamentPrizeConfig).options(
+    """Обновить существующую конфигурацию приза с проверкой ограничений"""
+    
+    # Получаем существующий приз
+    query = select(TournamentPrizeConfig).options(
         joinedload(TournamentPrizeConfig.tournament),
         joinedload(TournamentPrizeConfig.reward_type)
-    ).filter(TournamentPrizeConfig.id == prize_id).first()
+    ).where(TournamentPrizeConfig.id == prize_id)
+    
+    result = await db.execute(query)
+    obj = result.scalar_one_or_none()
     
     if not obj:
         raise HTTPException(status_code=404, detail="TournamentPrizeConfig not found")
-
+    
+    # Проверяем статус турнира
     if not obj.tournament or obj.tournament.status != "registration":
-        raise HTTPException(status_code=409, detail="Can edit prizes only when tournament in registration state")
-
+        raise HTTPException(
+            status_code=409, 
+            detail="Can edit prizes only when tournament in registration state"
+        )
+    
+    # Проверяем тип награды если обновляется
     if data.reward_type_id:
-        reward_type = db.query(RewardType).filter(
+        reward_type_query = select(RewardType).where(
             RewardType.id == data.reward_type_id,
             RewardType.is_active == True
-        ).first()
+        )
+        reward_type_result = await db.execute(reward_type_query)
+        reward_type = reward_type_result.scalar_one_or_none()
+        
         if not reward_type:
             raise HTTPException(status_code=404, detail="Reward type not found or inactive")
-
+    
+    # Проверяем пересечение диапазонов позиций если они обновляются
     if data.position_from is not None or data.position_to is not None:
-        new_position_from = data.position_from or obj.position_from
-        new_position_to = data.position_to or obj.position_to
+        new_position_from = data.position_from if data.position_from is not None else obj.position_from
+        new_position_to = data.position_to if data.position_to is not None else obj.position_to
         
-        existing_prize = db.query(TournamentPrizeConfig).filter(
+        existing_prize_query = select(TournamentPrizeConfig).where(
             TournamentPrizeConfig.tournament_id == obj.tournament_id,
             TournamentPrizeConfig.id != prize_id,
             TournamentPrizeConfig.position_from <= new_position_to,
             TournamentPrizeConfig.position_to >= new_position_from
-        ).first()
+        )
+        existing_prize_result = await db.execute(existing_prize_query)
+        existing_prize = existing_prize_result.scalar_one_or_none()
         
         if existing_prize:
             raise HTTPException(
                 status_code=400, 
                 detail=f"Position range {new_position_from}-{new_position_to} overlaps with existing prize configuration"
             )
-
-    update_data = data.dict(exclude_unset=True)
-    for field, value in update_data.items():
-        setattr(obj, field, value)
-
-    db.commit()
-    db.refresh(obj)
-    return obj
+    
+    try:
+        # Обновляем поля
+        update_data = data.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(obj, field, value)
+        
+        await db.flush()
+        await db.refresh(obj)
+        
+        return obj
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update tournament prize config: {str(e)}"
+        )
