@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
-from datetime import datetime
+from datetime import datetime, timezone
 from .database import Base
 class Tournament(Base):
     """
@@ -11,14 +11,25 @@ class Tournament(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     tournament_number = Column(Integer, nullable=False, unique=True)  # Sequential tournament number
     status = Column(String(20), nullable=False, default="registration")  # "registration", "ongoing", "finished"
-    start_date = Column(DateTime, nullable=False)
-    end_date = Column(DateTime, nullable=False)
-    gameplay_start_date = Column(DateTime, nullable=True)  # Когда начинается игра и фиксируются цены
+
+    start_date = Column(DateTime(timezone=True), nullable=False)
+    end_date = Column(DateTime(timezone=True), nullable=False)
+    gameplay_start_date = Column(DateTime(timezone=True), nullable=True)  # Когда начинается игра и фиксируются цены
+
     weight_limit = Column(Integer, nullable=False, default=30)  # Maximum deck weight limit
     
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(
+        DateTime(timezone=True), 
+        nullable=False, 
+        default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        DateTime(timezone=True), 
+        nullable=False, 
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
     
     def __repr__(self):
         return f"<Tournament(id={self.id}, number={self.tournament_number}, status='{self.status}', weight_limit={self.weight_limit})>"
@@ -41,7 +52,7 @@ class TournamentTokenSnapshot(Base):
     tournament_id = Column(Integer, ForeignKey('tournaments.id'))
     token_id = Column(Integer, ForeignKey('tokens.id'))
     snapshot_price = Column(Numeric(20, 8), nullable=False)
-    snapshot_time = Column(DateTime, nullable=False)
+    snapshot_time = Column(DateTime(timezone=True), nullable=False)
     
 class TournamentStatus:
     REGISTRATION = "registration"

@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List, Optional
 from pydantic import BaseModel, validator, ConfigDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from models.database import get_async_db
 from models.tournament_models import Tournament, TournamentStatus, TournamentTokenSnapshot
@@ -75,7 +75,7 @@ class TournamentCreate(BaseModel):
     def validate_status_for_gameplay_date(cls, v, values):
         """Cannot set status to 'registration' if gameplay_start_date already passed"""
         if v == TournamentStatus.REGISTRATION and 'gameplay_start_date' in values:
-            if values['gameplay_start_date'] <= datetime.utcnow():
+            if values['gameplay_start_date'] <= datetime.now(timezone.utc):
                 raise ValueError("Cannot create tournament with 'registration' status if gameplay_start_date is in the past")
         return v
 
@@ -341,7 +341,7 @@ async def update_tournament(
 
     # Защита - нельзя изменить gameplay_start_date если она в прошлом
     if tournament_data.gameplay_start_date is not None:
-        if tournament.gameplay_start_date and tournament.gameplay_start_date <= datetime.utcnow():
+        if tournament.gameplay_start_date and tournament.gameplay_start_date <= datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=400,
                 detail="Cannot change gameplay_start_date - it's already in the past"
@@ -372,7 +372,7 @@ async def update_tournament(
 
     # Защита - нельзя установить статус 'registration' если gameplay_start_date прошла
     if tournament_data.status == TournamentStatus.REGISTRATION:
-        if new_gameplay_start and new_gameplay_start <= datetime.utcnow():
+        if new_gameplay_start and new_gameplay_start <= datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=400,
                 detail="Cannot set status to 'registration' - gameplay_start_date has already passed"
@@ -399,7 +399,7 @@ async def update_tournament(
     for field, value in update_data.items():
         setattr(tournament, field, value)
 
-    tournament.updated_at = datetime.utcnow()
+    tournament.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(tournament)
@@ -429,7 +429,7 @@ async def delete_tournament(
         )
 
     tournament.is_active = False
-    tournament.updated_at = datetime.utcnow()
+    tournament.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
 

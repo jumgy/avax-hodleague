@@ -88,7 +88,7 @@ class PaginatedTournamentsResponse(BaseModel):
 @router.get("",
            response_model=PaginatedTournamentsResponse,
            summary="Get tournaments list",
-           description="Get list of tournaments with pagination and filters")
+           description="Get list of tournaments with pagination and filters, optinal auth")
 async def get_tournaments_list(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
