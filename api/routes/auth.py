@@ -4,6 +4,8 @@ from pydantic import BaseModel, validator
 from typing import Optional
 import logging
 
+from models.database import get_async_db 
+from sqlalchemy.ext.asyncio import AsyncSession
 from services.web3_auth_service import web3_auth_service
 from services.user_card_grant_service import user_card_grant_service
 from services.user_pack_grant_service import user_pack_grant_service
@@ -106,7 +108,10 @@ async def get_nonce(request: NonceRequest):
 
 
 @router.post("/verify", response_model=AuthResponse)
-async def verify_signature(request: VerifyRequest):
+async def verify_signature(
+    request: VerifyRequest,
+    db: AsyncSession = Depends(get_async_db)
+):
     """
     Verify wallet signature and authenticate user
     Validates the signed message and returns JWT access token.
@@ -121,13 +126,17 @@ async def verify_signature(request: VerifyRequest):
             raise HTTPException(status_code=401, detail="Invalid signature")
 
         # Проверяем, существует ли уже пользователь
-        existing_user = web3_auth_service.get_user_by_wallet(request.wallet_address)
+        existing_user = await web3_auth_service.get_user_by_wallet(
+            request.wallet_address, 
+            db
+        )
         is_new_user = existing_user is None
 
-        user = web3_auth_service.create_or_get_user(
+        user = await web3_auth_service.create_or_get_user(
             wallet_address=request.wallet_address,
             nickname=request.nickname,
-            avatar_url=request.avatar_url
+            avatar_url=request.avatar_url,
+            db=db
         )
 
         cards_granted_count = 0
@@ -200,16 +209,23 @@ async def get_current_user(current_user: dict = Depends(verify_jwt_dependency)):
 
 
 @router.post("/test-verify")
-async def test_verify_without_signature(request: NonceRequest):
+async def test_verify_without_signature(
+    request: NonceRequest,
+    db: AsyncSession = Depends(get_async_db)  # AsyncSession
+):
     """TEST ONLY: Create user and JWT without signature verification"""
     try:
         # Проверяем, существует ли уже пользователь
-        existing_user = web3_auth_service.get_user_by_wallet(request.wallet_address)
+        existing_user = await web3_auth_service.get_user_by_wallet(
+            request.wallet_address,
+            db
+        )
         is_new_user = existing_user is None
 
-        user = web3_auth_service.create_or_get_user(
+        user = await web3_auth_service.create_or_get_user(
             wallet_address=request.wallet_address,
-            nickname=f"TestUser{request.wallet_address[2:8]}"
+            nickname=f"TestUser{request.wallet_address[2:8]}",
+            db=db
         )
 
         cards_granted_count = 0

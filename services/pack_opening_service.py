@@ -2,7 +2,7 @@
 
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import random
 import logging
 from datetime import datetime
@@ -407,6 +407,73 @@ class PackOpeningService:
         except Exception as e:
             logger.error(f"Error getting pack history for user {user_id}: {e}")
             return {"total": 0, "openings": []}
+    
+    async def get_pack_opening_by_id(
+        self,
+        pack_opening_id: int,
+        user_id: int,
+        db: AsyncSession
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get specific pack opening by ID
+        Returns None if not found or user doesn't have access
+        """
+        from models.user_pack_models import PackOpening, UserPack  # Исправленный импорт
+        from models.user_card_models import UserCard
+        from models.card_models import Card
+        from models.token_models import Token
+        from models.rarity_models import Rarity
+        from models.pack_models import PackType
+        
+        # Get pack opening with verification that it belongs to user
+        result = await db.execute(
+            select(PackOpening, UserPack, PackType)
+            .join(UserPack, PackOpening.pack_id == UserPack.id)
+            .join(PackType, UserPack.pack_type_id == PackType.id)
+            .where(
+                PackOpening.id == pack_opening_id,
+                PackOpening.user_id == user_id
+            )
+        )
+        pack_data = result.first()
+        
+        if not pack_data:
+            return None
+        
+        pack_opening, user_pack, pack_type = pack_data
+        
+        # Get cards from this opening
+        result = await db.execute(
+            select(UserCard, Card, Token, Rarity)
+            .join(Card, UserCard.card_id == Card.id)
+            .join(Token, Card.token_id == Token.id)
+            .join(Rarity, Card.rarity_id == Rarity.id)
+            .where(UserCard.pack_opening_id == pack_opening_id)
+            .order_by(UserCard.id)
+        )
+        cards_data = result.all()
+        
+        # Format cards
+        cards_received = []
+        for user_card, card, token, rarity in cards_data:
+            cards_received.append({
+                "user_card_id": user_card.id,
+                "card_id": card.id,
+                "token_symbol": token.symbol,
+                "token_name": token.name,
+                "token_image_url": token.image_url,
+                "rarity_name": rarity.name,
+                "rarity_color": rarity.color,
+                "design_type": card.design_type,
+                "background_image_url": card.background_image_url
+            })
+        
+        return {
+            "pack_opening_id": pack_opening.id,
+            "pack_type_name": pack_type.name,
+            "opened_at": pack_opening.opened_at.isoformat(),
+            "cards_received": cards_received
+        }
 
     async def _get_opening_cards(
         self, 

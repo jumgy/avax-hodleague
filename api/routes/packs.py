@@ -191,6 +191,48 @@ async def open_pack(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to open pack"
         )
+    
+@router.get(
+    "/packs/openings/{pack_opening_id}",
+    response_model=OpenPackResponse,
+    summary="Get specific pack opening",
+    description="Get details of a specific pack opening by ID"
+)
+async def get_pack_opening(
+    pack_opening_id: int,
+    current_user: dict = Depends(verify_jwt_dependency),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get specific pack opening details with cards received
+    Requires JWT authentication
+    - **pack_opening_id**: ID of the pack opening to retrieve
+    """
+    try:
+        user_id = current_user["user_id"]
+        
+        result = await pack_opening_service.get_pack_opening_by_id(
+            pack_opening_id=pack_opening_id,
+            user_id=user_id,
+            db=db
+        )
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pack opening not found or access denied"
+            )
+        
+        return OpenPackResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting pack opening {pack_opening_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve pack opening"
+        )
 
 
 @router.get(
