@@ -3,8 +3,8 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from typing import List, Optional
+from sqlalchemy import select, func, text
+from typing import List, Optional, Union
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 import logging
@@ -12,28 +12,25 @@ import logging
 from models.database import get_async_db
 from models.tournament_models import Tournament, TournamentStatus
 from models.tournament_deck_models import TournamentDeck
+from models.user_card_models import UserCard
+from models.card_models import Card
+from models.rarity_models import Rarity
+from models.token_models import Token
 from services.web3_auth_service import web3_auth_service
+from services.tournament_registration_service import TournamentRegistrationService
 
 logger = logging.getLogger(__name__)
 
-# Create router with prefix
 router = APIRouter(prefix="/tournaments")
-
-# Security for optional JWT
 security_optional = HTTPBearer(auto_error=False)
 
-# ==================== Optional Auth Dependency ====================
+# ==================== Auth Dependencies ====================
 
 def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
 ) -> Optional[dict]:
-    """
-    Optional JWT authentication - returns user data if token present, None otherwise
-    Does not raise errors if token is missing or invalid
-    """
     if not credentials:
         return None
-    
     try:
         token = credentials.credentials
         payload = web3_auth_service.verify_jwt_token(token)
@@ -42,7 +39,51 @@ def get_current_user_optional(
         logger.debug(f"Optional auth failed (this is OK): {e}")
         return None
 
+def get_current_user_required(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
+) -> dict:
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required"
+        )
+    try:
+        token = credentials.credentials
+        payload = web3_auth_service.verify_jwt_token(token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        return payload
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Auth error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed"
+        )
+
 # ==================== Pydantic Models ====================
+
+class CardInDeckInfo(BaseModel):
+    """Полная информация о карте в деке"""
+    user_card_id: int
+    card_id: int
+    token_symbol: str
+    token_name: str
+    token_image_url: str
+    token_weight: int
+    rarity_name: str
+    rarity_color: str
+    rarity_score_bonus: int
+    design_type: str
+    background_image_url: str
+    current_price: Optional[float]
+    market_cap: Optional[int]
+    change_24h: Optional[float]
+    calculated_score: float
 
 class TournamentListItem(BaseModel):
     id: int
@@ -54,7 +95,6 @@ class TournamentListItem(BaseModel):
     weight_limit: int
     participants_count: int
     is_registered: bool = False
-
     model_config = ConfigDict(from_attributes=True)
 
 class TournamentDetail(BaseModel):
@@ -69,10 +109,9 @@ class TournamentDetail(BaseModel):
     is_active: bool
     duration_days: int
     is_registered: bool = False
-    my_deck: Optional[List[int]] = None
+    my_deck: Optional[Union[List[int], List[CardInDeckInfo]]] = None
     created_at: datetime
     updated_at: datetime
-
     model_config = ConfigDict(from_attributes=True)
 
 class PaginatedTournamentsResponse(BaseModel):
@@ -83,12 +122,37 @@ class PaginatedTournamentsResponse(BaseModel):
     has_next: bool
     has_prev: bool
 
+# ==================== Registration Models ====================
+
+class DeckRegisterRequest(BaseModel):
+    deck_composition: List[int]
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "deck_composition": [1, 2, 3, 4, 5]
+            }
+        }
+    )
+
+class CardInDeckResponse(BaseModel):
+    user_card_id: int
+    card_name: str
+    rarity: str
+    weight: float
+
+class DeckRegisterResponse(BaseModel):
+    deck_id: int
+    deck_hash: str
+    total_weight: float
+    cards: List[CardInDeckResponse]
+    message: str
+
 # ==================== Endpoints ====================
 
 @router.get("",
            response_model=PaginatedTournamentsResponse,
            summary="Get tournaments list",
-           description="Get list of tournaments with pagination and filters, optinal auth")
+           description="Get list of tournaments with pagination and filters, optional auth")
 async def get_tournaments_list(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
@@ -96,49 +160,30 @@ async def get_tournaments_list(
     current_user: Optional[dict] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    Get list of tournaments with pagination and filters
-    - **page**: Page number (starts from 1)
-    - **limit**: Items per page (max 100)
-    - **status_filter**: Filter by tournament status
-    
-    Returns tournaments sorted by tournament_number descending (newest first)
-    If user is authenticated, shows registration status for each tournament
-    """
     try:
-        # Validate status filter
         if status_filter and not TournamentStatus.is_valid(status_filter):
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid status. Must be one of: {', '.join(TournamentStatus.ALL_STATUSES)}"
             )
 
-        # Build query - БЕЗ фильтра is_active в базовом запросе
         query = select(Tournament)
-        
         if status_filter:
             query = query.where(Tournament.status == status_filter)
 
-        # Get total count
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(count_query)
         total = total_result.scalar()
 
-        # Calculate offset
         offset = (page - 1) * limit
-
-        # Get tournaments with pagination
         query = query.order_by(Tournament.tournament_number.desc()).offset(offset).limit(limit)
         result = await db.execute(query)
         tournaments = result.scalars().all()
 
-        # Get user_id if authenticated
         user_id = current_user.get('user_id') if current_user else None
 
-        # Build response
         items = []
         for tournament in tournaments:
-            # Count participants
             participants_count_query = select(func.count()).select_from(TournamentDeck).where(
                 TournamentDeck.tournament_id == tournament.id,
                 TournamentDeck.is_active == True
@@ -146,7 +191,6 @@ async def get_tournaments_list(
             participants_result = await db.execute(participants_count_query)
             participants_count = participants_result.scalar() or 0
 
-            # Check if user is registered
             is_registered = False
             if user_id:
                 deck_query = select(TournamentDeck).where(
@@ -191,16 +235,19 @@ async def get_tournaments_list(
 @router.get("/{tournament_id}",
            response_model=TournamentDetail,
            summary="Get tournament details",
-           description="Get detailed information about a specific tournament")
+           description="Get detailed information about a specific tournament with optional full deck info")
 async def get_tournament_details(
     tournament_id: int,
+    include_deck: bool = Query(False, description="Include full card details for user's deck"),
     current_user: Optional[dict] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_async_db)
 ):
     """
     Get detailed information about a specific tournament
-    - Shows tournament details
-    - Shows participant count
+    
+    - **tournament_id**: Tournament ID
+    - **include_deck**: If true, returns full card information instead of just IDs
+    - Shows tournament details and participant count
     - If authenticated: shows if user is registered and their deck
     """
     try:
@@ -208,7 +255,7 @@ async def get_tournament_details(
         query = select(Tournament).where(Tournament.id == tournament_id)
         result = await db.execute(query)
         tournament = result.scalar_one_or_none()
-        
+
         if not tournament:
             raise HTTPException(
                 status_code=404, 
@@ -236,10 +283,70 @@ async def get_tournament_details(
             )
             deck_result = await db.execute(deck_query)
             deck = deck_result.scalar_one_or_none()
-            
+
             if deck:
                 is_registered = True
-                my_deck = deck.deck_composition if isinstance(deck.deck_composition, list) else None
+                deck_composition = deck.deck_composition if isinstance(deck.deck_composition, list) else None
+
+                if deck_composition:
+                    if include_deck:
+                        # Получаем полную информацию о картах через материализованное представление
+                        cards_query = text("""
+                            SELECT 
+                                uc.id as user_card_id,
+                                ac.card_id,
+                                ac.token_symbol,
+                                ac.token_name,
+                                ac.token_image_url,
+                                ac.token_weight,
+                                ac.rarity_name,
+                                ac.rarity_color,
+                                ac.rarity_score_bonus,
+                                ac.design_type,
+                                ac.background_image_url,
+                                ac.current_price,
+                                ac.market_cap,
+                                ac.change_24h,
+                                ac.calculated_score
+                            FROM user_cards uc
+                            JOIN active_cards_with_score ac ON uc.card_id = ac.card_id
+                            WHERE uc.id = ANY(:user_card_ids)
+                              AND uc.is_active = true
+                              AND ac.is_active = true
+                        """)
+                        
+                        cards_result = await db.execute(
+                            cards_query, 
+                            {"user_card_ids": deck_composition}
+                        )
+                        cards_rows = cards_result.fetchall()
+
+                        # Создаем словарь для сохранения порядка карт
+                        cards_dict = {}
+                        for row in cards_rows:
+                            cards_dict[row.user_card_id] = CardInDeckInfo(
+                                user_card_id=row.user_card_id,
+                                card_id=row.card_id,
+                                token_symbol=row.token_symbol,
+                                token_name=row.token_name,
+                                token_image_url=row.token_image_url,
+                                token_weight=row.token_weight,
+                                rarity_name=row.rarity_name,
+                                rarity_color=row.rarity_color,
+                                rarity_score_bonus=row.rarity_score_bonus,
+                                design_type=row.design_type,
+                                background_image_url=row.background_image_url,
+                                current_price=float(row.current_price) if row.current_price else None,
+                                market_cap=int(row.market_cap) if row.market_cap else None,
+                                change_24h=float(row.change_24h) if row.change_24h else None,
+                                calculated_score=float(row.calculated_score) if row.calculated_score else 0.0
+                            )
+
+                        # Возвращаем карты в правильном порядке
+                        my_deck = [cards_dict[card_id] for card_id in deck_composition if card_id in cards_dict]
+                    else:
+                        # Возвращаем только ID карт
+                        my_deck = deck_composition
 
         return TournamentDetail(
             id=tournament.id,
@@ -265,4 +372,66 @@ async def get_tournament_details(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve tournament details: {str(e)}"
+        )
+
+@router.post("/{tournament_id}/register",
+            response_model=DeckRegisterResponse,
+            summary="Register for tournament",
+            description="Register for a tournament with a deck of 5 cards")
+async def register_for_tournament(
+    tournament_id: int,
+    request: DeckRegisterRequest,
+    current_user: dict = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_async_db)
+):
+    try:
+        user_id = current_user.get('user_id')
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user data in token"
+            )
+
+        tournament_deck = await TournamentRegistrationService.validate_and_register_deck(
+            db=db,
+            tournament_id=tournament_id,
+            user_id=user_id,
+            deck_composition=request.deck_composition
+        )
+
+        cards_query = select(UserCard, Card, Token, Rarity).join(
+            Card, UserCard.card_id == Card.id
+        ).join(
+            Token, Card.token_id == Token.id
+        ).join(
+            Rarity, Card.rarity_id == Rarity.id
+        ).where(UserCard.id.in_(request.deck_composition))
+
+        cards_result = (await db.execute(cards_query)).all()
+
+        cards_info = [
+            CardInDeckResponse(
+                user_card_id=user_card.id,
+                card_name=token.name,
+                rarity=rarity.name,
+                weight=float(token.weight)
+            )
+            for user_card, card, token, rarity in cards_result
+        ]
+
+        return DeckRegisterResponse(
+            deck_id=tournament_deck.id,
+            deck_hash=tournament_deck.deck_hash,
+            total_weight=tournament_deck.total_weight,
+            cards=cards_info,
+            message="Successfully registered for tournament. Your cards are now locked."
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error registering for tournament {tournament_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to register for tournament: {str(e)}"
         )

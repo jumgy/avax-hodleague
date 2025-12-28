@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text, Numeric, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -14,6 +14,7 @@ class TournamentDeck(Base):
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     deck_composition = Column(JSON, nullable=False)
     deck_hash = Column(String(64), nullable=False)
+    total_weight = Column(Float, nullable=False)
     submitted_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     is_valid = Column(Boolean, nullable=False, default=True)
     is_active = Column(Boolean, nullable=False, default=True)
