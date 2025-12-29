@@ -95,6 +95,7 @@ class TournamentListItem(BaseModel):
     weight_limit: int
     participants_count: int
     is_registered: bool = False
+
     model_config = ConfigDict(from_attributes=True)
 
 class TournamentDetail(BaseModel):
@@ -112,6 +113,7 @@ class TournamentDetail(BaseModel):
     my_deck: Optional[Union[List[int], List[CardInDeckInfo]]] = None
     created_at: datetime
     updated_at: datetime
+
     model_config = ConfigDict(from_attributes=True)
 
 class PaginatedTournamentsResponse(BaseModel):
@@ -124,27 +126,74 @@ class PaginatedTournamentsResponse(BaseModel):
 
 # ==================== Registration Models ====================
 
-class DeckRegisterRequest(BaseModel):
-    deck_composition: List[int]
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "deck_composition": [1, 2, 3, 4, 5]
-            }
-        }
-    )
-
 class CardInDeckResponse(BaseModel):
     user_card_id: int
     card_name: str
     rarity: str
     weight: float
 
-class DeckRegisterResponse(BaseModel):
-    deck_id: int
+class DeckValidateRequest(BaseModel):
+    """Запрос на пре-валидацию деки"""
+    deck_composition: List[int]
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "deck_composition": [210, 211, 212, 213, 214]
+            }
+        }
+    )
+
+class DeckValidateResponse(BaseModel):
+    """Ответ пре-валидации с deck_hash для контракта"""
+    valid: bool
     deck_hash: str
     total_weight: float
+    weight_limit: float
     cards: List[CardInDeckResponse]
+    message: str
+
+class DeckRegisterRequest(BaseModel):
+    """Запрос на финальную регистрацию с tx_hash"""
+    deck_composition: List[int]
+    tx_hash: str
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "deck_composition": [210, 211, 212, 213, 214],
+                "tx_hash": "0x1234567890abcdef..."
+            }
+        }
+    )
+
+class DeckRegisterResponse(BaseModel):
+    """Ответ успешной регистрации"""
+    success: bool
+    deck_id: int
+    deck_hash: str
+    tx_hash: str
+    total_weight: float
+    cards: List[CardInDeckResponse]
+    message: str
+
+class DeckUnregisterRequest(BaseModel):
+    """Запрос на отмену регистрации"""
+    tx_hash: str
+    
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "tx_hash": "0xabcdef1234567890..."
+            }
+        }
+    )
+
+class DeckUnregisterResponse(BaseModel):
+    """Ответ отмены регистрации"""
+    success: bool
+    cards_unlocked: int
+    tx_hash: str
     message: str
 
 # ==================== Endpoints ====================
@@ -177,6 +226,7 @@ async def get_tournaments_list(
 
         offset = (page - 1) * limit
         query = query.order_by(Tournament.tournament_number.desc()).offset(offset).limit(limit)
+
         result = await db.execute(query)
         tournaments = result.scalars().all()
 
@@ -244,7 +294,6 @@ async def get_tournament_details(
 ):
     """
     Get detailed information about a specific tournament
-    
     - **tournament_id**: Tournament ID
     - **include_deck**: If true, returns full card information instead of just IDs
     - Shows tournament details and participant count
@@ -314,7 +363,7 @@ async def get_tournament_details(
                               AND uc.is_active = true
                               AND ac.is_active = true
                         """)
-                        
+
                         cards_result = await db.execute(
                             cards_query, 
                             {"user_card_ids": deck_composition}
@@ -344,6 +393,7 @@ async def get_tournament_details(
 
                         # Возвращаем карты в правильном порядке
                         my_deck = [cards_dict[card_id] for card_id in deck_composition if card_id in cards_dict]
+
                     else:
                         # Возвращаем только ID карт
                         my_deck = deck_composition
@@ -374,16 +424,27 @@ async def get_tournament_details(
             detail=f"Failed to retrieve tournament details: {str(e)}"
         )
 
-@router.post("/{tournament_id}/register",
-            response_model=DeckRegisterResponse,
-            summary="Register for tournament",
-            description="Register for a tournament with a deck of 5 cards")
-async def register_for_tournament(
+# ==================== NEW: Blockchain-Verified Registration ====================
+
+@router.post("/{tournament_id}/validate-deck",
+            response_model=DeckValidateResponse,
+            summary="Validate deck before registration (Pre-validation)",
+            description="Validates deck composition and returns deck_hash for smart contract call")
+async def validate_deck_for_registration(
     tournament_id: int,
-    request: DeckRegisterRequest,
+    request: DeckValidateRequest,
     current_user: dict = Depends(get_current_user_required),
     db: AsyncSession = Depends(get_async_db)
 ):
+    """
+    ШАГ 1: Пре-валидация деки БЕЗ записи в БД
+    
+    Фронтенд должен:
+    1. Вызвать этот эндпоинт
+    2. Получить deck_hash
+    3. Вызвать контракт: registerDeck(tournamentId, deck_hash)
+    4. После успеха контракта вызвать POST /register с tx_hash
+    """
     try:
         user_id = current_user.get('user_id')
         if not user_id:
@@ -391,14 +452,82 @@ async def register_for_tournament(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid user data in token"
             )
-
-        tournament_deck = await TournamentRegistrationService.validate_and_register_deck(
+        
+        # Пре-валидация без записи в БД
+        validation_result = await TournamentRegistrationService.validate_deck_preview(
             db=db,
             tournament_id=tournament_id,
             user_id=user_id,
             deck_composition=request.deck_composition
         )
+        
+        # Форматируем ответ
+        cards_info = [
+            CardInDeckResponse(
+                user_card_id=card["user_card_id"],
+                card_name=card["card_name"],
+                rarity=card["rarity"],
+                weight=card["weight"]
+            )
+            for card in validation_result["cards"]
+        ]
+        
+        return DeckValidateResponse(
+            valid=validation_result["valid"],
+            deck_hash=validation_result["deck_hash"],
+            total_weight=validation_result["total_weight"],
+            weight_limit=validation_result["weight_limit"],
+            cards=cards_info,
+            message=validation_result["message"]
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error validating deck for tournament {tournament_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to validate deck: {str(e)}"
+        )
 
+
+@router.post("/{tournament_id}/register",
+            response_model=DeckRegisterResponse,
+            summary="Register for tournament with blockchain verification",
+            description="Finalizes registration after smart contract transaction is confirmed")
+async def register_for_tournament(
+    tournament_id: int,
+    request: DeckRegisterRequest,
+    current_user: dict = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    ШАГ 2: Финальная регистрация с проверкой блокчейн-транзакции
+    
+    Вызывается ПОСЛЕ того как юзер успешно вызвал registerDeck в контракте.
+    Проверяет транзакцию, блокирует карты, сохраняет в БД.
+    """
+    try:
+        user_id = current_user.get('user_id')
+        user_wallet = current_user.get('wallet_address')
+        
+        if not user_id or not user_wallet:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user data in token. Missing user_id or wallet_address"
+            )
+        
+        # Финальная регистрация с проверкой транзакции
+        tournament_deck = await TournamentRegistrationService.register_deck_with_verification(
+            db=db,
+            tournament_id=tournament_id,
+            user_id=user_id,
+            user_wallet=user_wallet,
+            deck_composition=request.deck_composition,
+            tx_hash=request.tx_hash
+        )
+        
+        # Получаем информацию о картах для ответа
         cards_query = select(UserCard, Card, Token, Rarity).join(
             Card, UserCard.card_id == Card.id
         ).join(
@@ -406,9 +535,9 @@ async def register_for_tournament(
         ).join(
             Rarity, Card.rarity_id == Rarity.id
         ).where(UserCard.id.in_(request.deck_composition))
-
+        
         cards_result = (await db.execute(cards_query)).all()
-
+        
         cards_info = [
             CardInDeckResponse(
                 user_card_id=user_card.id,
@@ -418,15 +547,17 @@ async def register_for_tournament(
             )
             for user_card, card, token, rarity in cards_result
         ]
-
+        
         return DeckRegisterResponse(
+            success=True,
             deck_id=tournament_deck.id,
             deck_hash=tournament_deck.deck_hash,
-            total_weight=tournament_deck.total_weight,
+            tx_hash=tournament_deck.transaction_hash,
+            total_weight=float(tournament_deck.total_weight),
             cards=cards_info,
             message="Successfully registered for tournament. Your cards are now locked."
         )
-
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -434,4 +565,58 @@ async def register_for_tournament(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to register for tournament: {str(e)}"
+        )
+
+
+@router.delete("/{tournament_id}/unregister",
+              response_model=DeckUnregisterResponse,
+              summary="Unregister from tournament with blockchain verification",
+              description="Cancels registration after smart contract unregister transaction")
+async def unregister_from_tournament(
+    tournament_id: int,
+    request: DeckUnregisterRequest,
+    current_user: dict = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Отмена регистрации с проверкой блокчейн-транзакции
+    
+    Юзер должен:
+    1. Вызвать контракт: unregisterDeck(tournamentId)
+    2. Вызвать этот эндпоинт с tx_hash
+    3. Карты разблокируются после проверки транзакции
+    """
+    try:
+        user_id = current_user.get('user_id')
+        user_wallet = current_user.get('wallet_address')
+        
+        if not user_id or not user_wallet:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user data in token"
+            )
+        
+        # Отмена регистрации с проверкой транзакции
+        result = await TournamentRegistrationService.unregister_deck_with_verification(
+            db=db,
+            tournament_id=tournament_id,
+            user_id=user_id,
+            user_wallet=user_wallet,
+            tx_hash=request.tx_hash
+        )
+        
+        return DeckUnregisterResponse(
+            success=result["success"],
+            cards_unlocked=result["cards_unlocked"],
+            tx_hash=result["tx_hash"],
+            message=result["message"]
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unregistering from tournament {tournament_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unregister from tournament: {str(e)}"
         )
