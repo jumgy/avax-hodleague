@@ -9,8 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем проект
 COPY . .
 
-# Порт 6000
-EXPOSE 6000
+ARG PORT=8000
+ENV PORT=${PORT}
+EXPOSE ${PORT}
 
-# Запуск вашего мейна
-CMD ["python", "main.py"]
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT} --log-level info

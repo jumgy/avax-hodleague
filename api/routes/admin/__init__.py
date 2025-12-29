@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from .auth import router as auth_router
 from .tokens import router as tokens_router
 from .cards import router as cards_router
+from .upload import router as upload_router
 from .rarities import router as rarities_router
 from .pack_types import router as pack_types_router
 from .drop_rates import router as drop_rates_router
@@ -22,6 +23,7 @@ admin_router = APIRouter()
 admin_router.include_router(auth_router, tags=["Admin - Auth"])
 admin_router.include_router(tokens_router, tags=["Admin - Tokens"])
 admin_router.include_router(cards_router, tags=["Admin - Cards"])
+admin_router.include_router(upload_router, tags=["Admin - Upload"])
 admin_router.include_router(rarities_router, tags=["Admin - Rarities"])
 admin_router.include_router(reward_router, tags=["Admin - Rewards"])
 admin_router.include_router(pack_types_router, tags=["Admin - Pack types"])

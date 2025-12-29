@@ -1,5 +1,3 @@
-# admin/routes/cards.py
-
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
@@ -20,7 +18,7 @@ class CardCreate(BaseModel):
     token_id: int
     rarity_id: int
     design_type: str
-    background_image_url: str
+    template_image_url: str
     is_active: bool = True
 
     @validator('token_id')
@@ -44,21 +42,22 @@ class CardCreate(BaseModel):
             raise ValueError(f'Design type must be one of: {", ".join(VALID_DESIGN_TYPES)}')
         return v
 
-    @validator('background_image_url')
-    def validate_background_image_url(cls, v):
+    @validator('template_image_url')
+    def validate_template_image_url(cls, v):
         if not v or not v.strip():
-            raise ValueError('Background image URL is required')
+            raise ValueError('Template image URL is required')
         v = v.strip()
         if not v.startswith(('http://', 'https://')):
-            raise ValueError('Background image URL must start with http:// or https://')
+            raise ValueError('Template image URL must start with http:// or https://')
         return v
 
 class CardUpdate(BaseModel):
     token_id: Optional[int] = None
     rarity_id: Optional[int] = None
     design_type: Optional[str] = None
-    background_image_url: Optional[str] = None
+    template_image_url: Optional[str] = None
     is_active: Optional[bool] = None
+    # background_image_url намеренно исключен - его заполняет только бэкэнд после рендера
 
     @validator('token_id')
     def validate_token_id(cls, v):
@@ -83,14 +82,14 @@ class CardUpdate(BaseModel):
             return v
         return v
 
-    @validator('background_image_url')
-    def validate_background_image_url(cls, v):
+    @validator('template_image_url')
+    def validate_template_image_url(cls, v):
         if v is not None:
             if not v or not v.strip():
-                raise ValueError('Background image URL cannot be empty')
+                raise ValueError('Template image URL cannot be empty')
             v = v.strip()
             if not v.startswith(('http://', 'https://')):
-                raise ValueError('Background image URL must start with http:// or https://')
+                raise ValueError('Template image URL must start with http:// or https://')
             return v
         return v
 
@@ -99,7 +98,9 @@ class CardResponse(BaseModel):
     token_id: int
     rarity_id: int
     design_type: str
-    background_image_url: str
+    template_image_url: str
+    background_image_url: Optional[str] = None
+    last_rendered_at: Optional[datetime] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -132,14 +133,18 @@ async def get_all_cards(
     token_id: Optional[int] = Query(None, description="Filter by token ID"),
     rarity_id: Optional[int] = Query(None, description="Filter by rarity ID"),
     design_type: Optional[str] = Query(None, description="Filter by design type (partial match)"),
+    template_image_url: Optional[str] = Query(None, description="Filter by template image URL (partial match)"),
     background_image_url: Optional[str] = Query(None, description="Filter by background image URL (partial match)"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    has_rendered: Optional[bool] = Query(None, description="Filter by render status (has background_image_url)"),
     
     # Диапазоны дат
     created_from: Optional[datetime] = Query(None, description="Filter cards created after this date"),
     created_to: Optional[datetime] = Query(None, description="Filter cards created before this date"),
     updated_from: Optional[datetime] = Query(None, description="Filter cards updated after this date"),
     updated_to: Optional[datetime] = Query(None, description="Filter cards updated before this date"),
+    rendered_from: Optional[datetime] = Query(None, description="Filter cards rendered after this date"),
+    rendered_to: Optional[datetime] = Query(None, description="Filter cards rendered before this date"),
     
     # Фильтрация по связанным данным
     token_name: Optional[str] = Query(None, description="Filter by token name (partial match)"),
@@ -147,7 +152,7 @@ async def get_all_cards(
     rarity_name: Optional[str] = Query(None, description="Filter by rarity name (partial match)"),
     
     # Сортировка
-    sort_by: str = Query("created_at", regex="^(id|token_id|rarity_id|design_type|is_active|created_at|updated_at)$"),
+    sort_by: str = Query("created_at", regex="^(id|token_id|rarity_id|design_type|is_active|created_at|updated_at|last_rendered_at)$"),
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     
     db: AsyncSession = Depends(get_async_db),
@@ -177,11 +182,21 @@ async def get_all_cards(
     if design_type:
         query = query.where(Card.design_type.ilike(f"%{design_type.strip()}%"))
     
+    if template_image_url:
+        query = query.where(Card.template_image_url.ilike(f"%{template_image_url.strip()}%"))
+    
     if background_image_url:
         query = query.where(Card.background_image_url.ilike(f"%{background_image_url.strip()}%"))
     
     if is_active is not None:
         query = query.where(Card.is_active == is_active)
+    
+    # Фильтр по статусу рендера
+    if has_rendered is not None:
+        if has_rendered:
+            query = query.where(Card.background_image_url.isnot(None))
+        else:
+            query = query.where(Card.background_image_url.is_(None))
     
     # Фильтры по датам
     if created_from:
@@ -192,6 +207,10 @@ async def get_all_cards(
         query = query.where(Card.updated_at >= updated_from)
     if updated_to:
         query = query.where(Card.updated_at <= updated_to)
+    if rendered_from:
+        query = query.where(Card.last_rendered_at >= rendered_from)
+    if rendered_to:
+        query = query.where(Card.last_rendered_at <= rendered_to)
     
     # Фильтры по связанным данным
     if token_name or token_symbol:
@@ -339,10 +358,11 @@ async def create_card(
         )
     
     try:
-        # Создаем карточку
+        # Создаем карточку (background_image_url и last_rendered_at будут NULL)
         new_card = Card(**card_data.dict())
         new_card.created_at = datetime.utcnow()
         new_card.updated_at = datetime.utcnow()
+        # background_image_url и last_rendered_at останутся None до рендера
         
         db.add(new_card)
         await db.flush()
@@ -447,6 +467,11 @@ async def update_card(
         
         card.updated_at = datetime.utcnow()
         
+        # Если обновляется template_image_url, сбрасываем rendered данные
+        if 'template_image_url' in update_data:
+            card.background_image_url = None
+            card.last_rendered_at = None
+        
         await db.flush()
         await db.refresh(card)
         
@@ -514,6 +539,22 @@ async def get_cards_stats(
         active_result = await db.execute(active_query)
         active_cards = active_result.scalar()
         
+        # Карточки с отрендеренным background
+        rendered_query = select(func.count(Card.id)).where(
+            Card.is_active == True,
+            Card.background_image_url.isnot(None)
+        )
+        rendered_result = await db.execute(rendered_query)
+        rendered_cards = rendered_result.scalar()
+        
+        # Карточки без рендера
+        not_rendered_query = select(func.count(Card.id)).where(
+            Card.is_active == True,
+            Card.background_image_url.is_(None)
+        )
+        not_rendered_result = await db.execute(not_rendered_query)
+        not_rendered_cards = not_rendered_result.scalar()
+        
         # Статистика по редкостям (только активные карточки)
         rarity_query = select(Card.rarity_id, Rarity.name)\
             .join(Rarity, Card.rarity_id == Rarity.id)\
@@ -549,6 +590,8 @@ async def get_cards_stats(
             "total_cards": total_cards,
             "active_cards": active_cards,
             "inactive_cards": total_cards - active_cards,
+            "rendered_cards": rendered_cards,
+            "not_rendered_cards": not_rendered_cards,
             "cards_by_rarity": rarity_counts,
             "cards_by_token": token_counts,
             "cards_by_design": design_counts

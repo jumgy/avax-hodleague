@@ -4,7 +4,6 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from api.routes import router as api_router
 from api.routes.admin import admin_router
 from services.scheduler_service import scheduler_service
@@ -16,13 +15,13 @@ logging.basicConfig(
     level=getattr(logging, Config.LOG_LEVEL),
     format='%(asctime)s %(levelname)s %(name)s %(message)s'
 )
+
 logger = logging.getLogger(__name__)
 
 # Startup/shutdown events
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager - handles startup and shutdown"""
-    
     # STARTUP
     logger.info("🚀 Hodleague starting up...")
     
@@ -32,7 +31,6 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Database tables created/verified")
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}", exc_info=True)
-        # Don't raise - allow app to start even if DB fails (for debugging)
     
     # Start scheduler
     try:
@@ -168,18 +166,3 @@ async def database_info():
         return {"error": "Debug endpoints disabled in production"}
     
     return get_database_info()
-
-# Run configuration for development
-if __name__ == "__main__":
-    import uvicorn
-    
-    logger.info("🚀 Starting Hodleague API in development mode...")
-    
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=6000,
-        reload=True,
-        log_level=Config.LOG_LEVEL.lower(),
-        access_log=True
-    )
