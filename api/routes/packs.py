@@ -48,7 +48,7 @@ class CardReceived(BaseModel):
     rarity_name: str
     rarity_color: str
     design_type: str
-    background_image_url: str
+    rendered_image_url: str
 
 class OpenPackResponse(BaseModel):
     pack_opening_id: int

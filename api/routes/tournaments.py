@@ -79,7 +79,7 @@ class CardInDeckInfo(BaseModel):
     rarity_color: str
     rarity_score_bonus: int
     design_type: str
-    background_image_url: str
+    rendered_image_url: str
     current_price: Optional[float]
     market_cap: Optional[int]
     change_24h: Optional[float]
@@ -352,7 +352,7 @@ async def get_tournament_details(
                                 ac.rarity_color,
                                 ac.rarity_score_bonus,
                                 ac.design_type,
-                                ac.background_image_url,
+                                ac.rendered_image_url,
                                 ac.current_price,
                                 ac.market_cap,
                                 ac.change_24h,
@@ -384,7 +384,7 @@ async def get_tournament_details(
                                 rarity_color=row.rarity_color,
                                 rarity_score_bonus=row.rarity_score_bonus,
                                 design_type=row.design_type,
-                                background_image_url=row.background_image_url,
+                                rendered_image_url=row.rendered_image_url,
                                 current_price=float(row.current_price) if row.current_price else None,
                                 market_cap=int(row.market_cap) if row.market_cap else None,
                                 change_24h=float(row.change_24h) if row.change_24h else None,

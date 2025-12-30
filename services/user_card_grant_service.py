@@ -118,7 +118,7 @@ class UserCardGrantService:
                         "token_id": user_card.card.token_id,
                         "rarity_id": user_card.card.rarity_id,
                         "design_type": user_card.card.design_type,
-                        "background_image_url": user_card.card.background_image_url,
+                        "rendered_image_url": user_card.card.rendered_image_url,
                         "obtained_at": user_card.obtained_at.isoformat(),
                         "source": user_card.source,
                         "status": user_card.status

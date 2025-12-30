@@ -67,7 +67,7 @@ def get_tokens_and_rarity(session):
         return [], None
 
 def generate_background_placeholder(token_symbol):
-    """Generate placeholder background URL for token card"""
+    """Generate placeholder template URL for token card"""
     # Different placeholder styles based on token
     colors = {
         'BTC': 'f7931a/ffffff',  # Bitcoin orange
@@ -90,19 +90,19 @@ def generate_background_placeholder(token_symbol):
 def insert_card_with_sql(session, token_id, token_symbol, rarity_id):
     """Insert card using raw SQL"""
     try:
-        background_url = generate_background_placeholder(token_symbol)
+        template_url = generate_background_placeholder(token_symbol)
         design_type = "classic"
         
         sql = text("""
-            INSERT INTO cards (token_id, rarity_id, design_type, background_image_url, is_active, created_at, updated_at)
-            VALUES (:token_id, :rarity_id, :design_type, :background_image_url, :is_active, :created_at, :updated_at)
+            INSERT INTO cards (token_id, rarity_id, design_type, template_image_url, is_active, created_at, updated_at)
+            VALUES (:token_id, :rarity_id, :design_type, :template_image_url, :is_active, :created_at, :updated_at)
         """)
         
         session.execute(sql, {
             'token_id': token_id,
             'rarity_id': rarity_id,
             'design_type': design_type,
-            'background_image_url': background_url,
+            'template_image_url': template_url,
             'is_active': True,
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow()
@@ -187,7 +187,7 @@ def verify_cards_table(session):
         # Show sample cards with token and rarity info
         sample_result = session.execute(text("""
             SELECT c.id, t.symbol, t.name, r.name as rarity_name, c.design_type, 
-                   c.background_image_url
+                   c.template_image_url
             FROM cards c
             JOIN tokens t ON c.token_id = t.id
             JOIN rarities r ON c.rarity_id = r.id

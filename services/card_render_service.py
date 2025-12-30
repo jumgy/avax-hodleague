@@ -241,7 +241,7 @@ class CardRenderService:
                 rendered_url = f"{base_url}/static/card_renders/{output_filename}"
                 
                 # Update card in database
-                card.background_image_url = rendered_url
+                card.rendered_image_url = rendered_url
                 card.last_rendered_at = datetime.utcnow()
                 await db.commit()
                 

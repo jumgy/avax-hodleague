@@ -30,7 +30,7 @@ class UserCard(BaseModel):
     rarity_name: str
     rarity_color: str
     design_type: str
-    background_image_url: str
+    rendered_image_url: str
     calculated_score: float
     current_price: Optional[float]
     market_cap: Optional[int]

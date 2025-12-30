@@ -320,7 +320,7 @@ class PackOpeningService:
                     acs.rarity_name,
                     acs.rarity_color,
                     acs.design_type,
-                    acs.background_image_url
+                    acs.rendered_image_url
                 FROM user_cards uc
                 JOIN active_cards_with_score acs ON uc.card_id = acs.card_id
                 WHERE uc.id = ANY(:user_card_ids)
@@ -340,7 +340,7 @@ class PackOpeningService:
                     "rarity_name": row.rarity_name,
                     "rarity_color": row.rarity_color,
                     "design_type": row.design_type,
-                    "background_image_url": row.background_image_url
+                    "rendered_image_url": row.rendered_image_url
                 })
             
             return cards
@@ -465,7 +465,7 @@ class PackOpeningService:
                 "rarity_name": rarity.name,
                 "rarity_color": rarity.color,
                 "design_type": card.design_type,
-                "background_image_url": card.background_image_url
+                "rendered_image_url": card.rendered_image_url
             })
         
         return {
@@ -494,7 +494,7 @@ class PackOpeningService:
                     acs.rarity_name,
                     acs.rarity_color,
                     acs.design_type,
-                    acs.background_image_url
+                    acs.rendered_image_url
                 FROM user_cards uc
                 JOIN active_cards_with_score acs ON uc.card_id = acs.card_id
                 WHERE uc.pack_opening_id = :pack_opening_id
@@ -515,7 +515,7 @@ class PackOpeningService:
                     "rarity_name": row.rarity_name,
                     "rarity_color": row.rarity_color,
                     "design_type": row.design_type,
-                    "background_image_url": row.background_image_url
+                    "rendered_image_url": row.rendered_image_url
                 })
             
             return cards

@@ -57,7 +57,7 @@ class CardUpdate(BaseModel):
     design_type: Optional[str] = None
     template_image_url: Optional[str] = None
     is_active: Optional[bool] = None
-    # background_image_url намеренно исключен - его заполняет только бэкэнд после рендера
+    # rendered_image_url намеренно исключен - его заполняет только бэкэнд после рендера
 
     @validator('token_id')
     def validate_token_id(cls, v):
@@ -99,7 +99,7 @@ class CardResponse(BaseModel):
     rarity_id: int
     design_type: str
     template_image_url: str
-    background_image_url: Optional[str] = None
+    rendered_image_url: Optional[str] = None
     last_rendered_at: Optional[datetime] = None
     is_active: bool
     created_at: datetime
@@ -134,9 +134,9 @@ async def get_all_cards(
     rarity_id: Optional[int] = Query(None, description="Filter by rarity ID"),
     design_type: Optional[str] = Query(None, description="Filter by design type (partial match)"),
     template_image_url: Optional[str] = Query(None, description="Filter by template image URL (partial match)"),
-    background_image_url: Optional[str] = Query(None, description="Filter by background image URL (partial match)"),
+    rendered_image_url: Optional[str] = Query(None, description="Filter by rendered image URL (partial match)"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
-    has_rendered: Optional[bool] = Query(None, description="Filter by render status (has background_image_url)"),
+    has_rendered: Optional[bool] = Query(None, description="Filter by render status (has rendered_image_url)"),
     
     # Диапазоны дат
     created_from: Optional[datetime] = Query(None, description="Filter cards created after this date"),
@@ -185,8 +185,8 @@ async def get_all_cards(
     if template_image_url:
         query = query.where(Card.template_image_url.ilike(f"%{template_image_url.strip()}%"))
     
-    if background_image_url:
-        query = query.where(Card.background_image_url.ilike(f"%{background_image_url.strip()}%"))
+    if rendered_image_url:
+        query = query.where(Card.rendered_image_url.ilike(f"%{rendered_image_url.strip()}%"))
     
     if is_active is not None:
         query = query.where(Card.is_active == is_active)
@@ -194,9 +194,9 @@ async def get_all_cards(
     # Фильтр по статусу рендера
     if has_rendered is not None:
         if has_rendered:
-            query = query.where(Card.background_image_url.isnot(None))
+            query = query.where(Card.rendered_image_url.isnot(None))
         else:
-            query = query.where(Card.background_image_url.is_(None))
+            query = query.where(Card.rendered_image_url.is_(None))
     
     # Фильтры по датам
     if created_from:
@@ -358,11 +358,11 @@ async def create_card(
         )
     
     try:
-        # Создаем карточку (background_image_url и last_rendered_at будут NULL)
+        # Создаем карточку (rendered_image_url и last_rendered_at будут NULL)
         new_card = Card(**card_data.dict())
         new_card.created_at = datetime.utcnow()
         new_card.updated_at = datetime.utcnow()
-        # background_image_url и last_rendered_at останутся None до рендера
+        # rendered_image_url и last_rendered_at останутся None до рендера
         
         db.add(new_card)
         await db.flush()
@@ -469,7 +469,7 @@ async def update_card(
         
         # Если обновляется template_image_url, сбрасываем rendered данные
         if 'template_image_url' in update_data:
-            card.background_image_url = None
+            card.rendered_image_url = None
             card.last_rendered_at = None
         
         await db.flush()
@@ -542,7 +542,7 @@ async def get_cards_stats(
         # Карточки с отрендеренным background
         rendered_query = select(func.count(Card.id)).where(
             Card.is_active == True,
-            Card.background_image_url.isnot(None)
+            Card.rendered_image_url.isnot(None)
         )
         rendered_result = await db.execute(rendered_query)
         rendered_cards = rendered_result.scalar()
@@ -550,7 +550,7 @@ async def get_cards_stats(
         # Карточки без рендера
         not_rendered_query = select(func.count(Card.id)).where(
             Card.is_active == True,
-            Card.background_image_url.is_(None)
+            Card.rendered_image_url.is_(None)
         )
         not_rendered_result = await db.execute(not_rendered_query)
         not_rendered_cards = not_rendered_result.scalar()
