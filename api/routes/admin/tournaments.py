@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from models.database import get_async_db
 from models.tournament_models import Tournament, TournamentStatus, TournamentTokenSnapshot
-from services.card_score_service import card_score_service
+from services.tournament_service import tournament_service
 from .auth import verify_admin_token
 
 class TournamentCreate(BaseModel):
@@ -516,7 +516,7 @@ async def create_tournament_snapshot(
 
     try:
         # Вызываем асинхронный сервис создания снапшота
-        success = await card_score_service.create_tournament_snapshot(tournament_id, db)
+        success = await tournament_service.create_tournament_snapshot(tournament_id, db)
         
         if not success:
             raise HTTPException(

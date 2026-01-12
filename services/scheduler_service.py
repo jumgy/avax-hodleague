@@ -1,14 +1,22 @@
+# services/scheduler_service.py
+
 import asyncio
 import logging
-from datetime import datetime, timedelta 
+from datetime import datetime, timezone, timedelta 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import select, and_
+
 from services.price_monitor_service import PriceMonitorService
 from services.card_render_service import card_render_service
+from services.tournament_service import tournament_service
+from models.tournament_models import Tournament, TournamentStatus
+from models.database import AsyncSessionLocal
 from config import Config
 
 logger = logging.getLogger(__name__)
+
 
 class SchedulerService:
     def __init__(self):
@@ -35,7 +43,7 @@ class SchedulerService:
                 max_instances=1,
                 misfire_grace_time=300
             )
-            
+
             # Job 2: Card rendering (every day at 3 AM)
             self.scheduler.add_job(
                 func=self._render_cards_job,
@@ -46,7 +54,29 @@ class SchedulerService:
                 max_instances=1,
                 misfire_grace_time=600
             )
-            
+
+            # Job 3: Check tournaments to start (every 1 minute)
+            self.scheduler.add_job(
+                func=self._check_tournaments_to_start,
+                trigger=IntervalTrigger(minutes=1),
+                id='tournament_start_checker',
+                name='Tournament Start Checker',
+                replace_existing=True,
+                max_instances=1,
+                misfire_grace_time=60
+            )
+
+            # Job 4: Check tournaments to finish (every 1 minute)
+            self.scheduler.add_job(
+                func=self._check_tournaments_to_finish,
+                trigger=IntervalTrigger(minutes=1),
+                id='tournament_finish_checker',
+                name='Tournament Finish Checker',
+                replace_existing=True,
+                max_instances=1,
+                misfire_grace_time=60
+            )
+
             self.scheduler.start()
             self._started = True
 
@@ -63,6 +93,10 @@ class SchedulerService:
             
             logger.info("🚀 Running initial card rendering...")
             await self._render_cards_job()
+            
+            logger.info("🚀 Running initial tournament checks...")
+            await self._check_tournaments_to_start()
+            await self._check_tournaments_to_finish()
 
         except Exception as e:
             logger.error(f"Failed to start scheduler: {e}")
@@ -86,34 +120,139 @@ class SchedulerService:
     async def _monitor_prices_job(self):
         """Job function for price monitoring"""
         job_start = datetime.now()
-        logger.info(f"🚀 Starting scheduled price monitoring job at {job_start.strftime('%H:%M:%S')}")
-
+        logger.info(f"💰 Starting price monitoring at {job_start.strftime('%H:%M:%S')}")
+        
         try:
             async with self.price_monitor:
                 await self.price_monitor.monitor_and_update_prices()
-
-            duration = (datetime.now() - job_start).total_seconds()
-            logger.info(f"✅ Price monitoring job completed in {duration:.2f} seconds")
-
-        except Exception as e:
-            logger.error(f"❌ Price monitoring job failed: {e}")
-    
-    async def _render_cards_job(self):  # <-- ДОБАВЬ
-        """Job function for card rendering"""
-        job_start = datetime.now()
-        logger.info(f"🎨 Starting scheduled card rendering job at {job_start.strftime('%H:%M:%S')}")
-
-        try:
-            result = await card_render_service.render_all_active_cards()
             
             duration = (datetime.now() - job_start).total_seconds()
+            logger.info(f"✅ Price monitoring completed in {duration:.2f}s")
+        except Exception as e:
+            logger.error(f"❌ Price monitoring job failed: {e}", exc_info=True)
+
+    async def _render_cards_job(self):
+        """Job function for card rendering"""
+        job_start = datetime.now()
+        logger.info(f"🎨 Starting card rendering at {job_start.strftime('%H:%M:%S')}")
+        
+        try:
+            result = await card_render_service.render_all_active_cards()
+            duration = (datetime.now() - job_start).total_seconds()
             logger.info(
-                f"✅ Card rendering job completed in {duration:.2f} seconds. "
+                f"✅ Card rendering completed in {duration:.2f}s. "
                 f"Success: {result['success']}, Failed: {result['failed']}"
             )
-
         except Exception as e:
             logger.error(f"❌ Card rendering job failed: {e}", exc_info=True)
+
+
+    async def _check_tournaments_to_start(self):
+        """Check if any tournaments should be started"""
+        try:
+            # Сначала найдем какие турниры надо стартовать
+            async with AsyncSessionLocal() as db:
+                now = datetime.now(timezone.utc)
+                
+                result = await db.execute(
+                    select(Tournament).where(
+                        and_(
+                            Tournament.status == TournamentStatus.REGISTRATION,
+                            Tournament.gameplay_start_date <= now
+                        )
+                    )
+                )
+                tournaments = result.scalars().all()
+            
+            if not tournaments:
+                return
+            
+            logger.info(f"🏁 Found {len(tournaments)} tournament(s) ready to start")
+            
+            # Каждый турнир обрабатываем в ОТДЕЛЬНОЙ сессии
+            for tournament in tournaments:
+                try:
+                    logger.info(
+                        f"▶️  Starting tournament #{tournament.tournament_number} "
+                        f"(scheduled: {tournament.gameplay_start_date.strftime('%Y-%m-%d %H:%M:%S')}, "
+                        f"now: {now.strftime('%Y-%m-%d %H:%M:%S')})"
+                    )
+                    
+                    # Создаем новую сессию для этого турнира
+                    async with AsyncSessionLocal() as db:
+                        await tournament_service.start_tournament(tournament.id, db)
+                    
+                    logger.info(f"✅ Tournament #{tournament.tournament_number} started successfully")
+                except Exception as e:
+                    logger.error(
+                        f"❌ Failed to start tournament #{tournament.tournament_number}: {e}",
+                        exc_info=True
+                    )
+                    
+        except Exception as e:
+            logger.error(f"❌ Tournament start checker failed: {e}", exc_info=True)
+
+
+    async def _check_tournaments_to_finish(self):
+        """Check if any tournaments should be finished"""
+        try:
+            # Сначала найдем какие турниры надо финишировать
+            async with AsyncSessionLocal() as db:
+                now = datetime.now(timezone.utc)
+                
+                result = await db.execute(
+                    select(Tournament).where(
+                        and_(
+                            Tournament.status == TournamentStatus.ONGOING,
+                            Tournament.end_date <= now
+                        )
+                    )
+                )
+                tournaments = result.scalars().all()
+            
+            if not tournaments:
+                return
+            
+            logger.info(f"🏆 Found {len(tournaments)} tournament(s) ready to finish")
+            
+            # Каждый турнир обрабатываем в ОТДЕЛЬНОЙ сессии
+            for tournament in tournaments:
+                try:
+                    logger.info(
+                        f"🏁 Finishing tournament #{tournament.tournament_number} "
+                        f"(scheduled: {tournament.end_date.strftime('%Y-%m-%d %H:%M:%S')}, "
+                        f"now: {now.strftime('%Y-%m-%d %H:%M:%S')})"
+                    )
+                    
+                    # Создаем новую сессию для этого турнира
+                    async with AsyncSessionLocal() as db:
+                        await tournament_service.finish_tournament(tournament.id, db)
+                    
+                    logger.info(f"✅ Tournament #{tournament.tournament_number} finished successfully")
+                except Exception as e:
+                    logger.error(
+                        f"❌ Failed to finish tournament #{tournament.tournament_number}: {e}",
+                        exc_info=True
+                    )
+                    
+        except Exception as e:
+            logger.error(f"❌ Tournament finish checker failed: {e}", exc_info=True)
+
+    async def run_price_monitor_now(self):
+        """Manually trigger price monitoring"""
+        logger.info("🔄 Manually triggering price monitoring...")
+        await self._monitor_prices_job()
+
+    async def run_card_render_now(self):
+        """Manually trigger card rendering"""
+        logger.info("🔄 Manually triggering card rendering...")
+        await self._render_cards_job()
+
+    async def run_tournament_checks_now(self):
+        """Manually trigger tournament checks"""
+        logger.info("🔄 Manually triggering tournament checks...")
+        await self._check_tournaments_to_start()
+        await self._check_tournaments_to_finish()
 
     def get_status(self):
         """Get scheduler status"""
@@ -134,15 +273,5 @@ class SchedulerService:
             "jobs": jobs_info
         }
 
-    async def run_price_monitor_now(self):
-        """Manually trigger price monitoring"""
-        logger.info("🔄 Manually triggering price monitoring...")
-        await self._monitor_prices_job()
-    
-    async def run_card_render_now(self):  # <-- ДОБАВЬ
-        """Manually trigger card rendering"""
-        logger.info("🔄 Manually triggering card rendering...")
-        await self._render_cards_job()
 
-# Singleton instance
 scheduler_service = SchedulerService()

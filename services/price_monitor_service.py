@@ -300,13 +300,6 @@ class PriceMonitorService:
                 await db.commit()
                 logger.info(f"✅ Updated prices for {updated_count}/{len(active_tokens)} tokens")
 
-                # Обновляем materialized view
-                try:
-                    from services.card_score_service import card_score_service
-                    await card_score_service.refresh_cards_view(db)
-                    logger.info("✅ Card scores materialized view refreshed")
-                except Exception as view_error:
-                    logger.error(f"❌ Failed to refresh materialized view: {view_error}")
 
             except Exception as e:
                 logger.error(f"Error in price monitoring: {e}")
