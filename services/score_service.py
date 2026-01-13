@@ -29,8 +29,6 @@ class ScoreService:
         tournament = await self._get_tournament(tournament_id)
         if not tournament:
             raise ValueError(f"Tournament {tournament_id} not found")
-        if tournament.status != "ongoing":
-            raise ValueError(f"Tournament {tournament_id} is not in ONGOING status (current: {tournament.status})")
 
         # Get all active tokens with their current prices and snapshots
         token_data = await self._get_token_data_for_tournament(tournament_id)
@@ -128,6 +126,67 @@ class ScoreService:
 
         return len(scores_to_insert)
 
+    async def calculate_and_store_zero_scores(self) -> int:
+        """
+        Write zero scores for all active tokens when no tournament is active.
+        Used between tournaments to keep score history continuous.
+        """
+        # Get all active tokens with their latest prices
+        latest_price_subq = (
+            select(
+                TokenPrice.token_id,
+                func.max(TokenPrice.timestamp).label('max_timestamp')
+            )
+            .group_by(TokenPrice.token_id)
+            .subquery()
+        )
+        
+        query = (
+            select(
+                Token.id.label('token_id'),
+                TokenPrice.price.label('current_price')
+            )
+            .join(
+                latest_price_subq,
+                Token.id == latest_price_subq.c.token_id
+            )
+            .join(
+                TokenPrice,
+                and_(
+                    TokenPrice.token_id == latest_price_subq.c.token_id,
+                    TokenPrice.timestamp == latest_price_subq.c.max_timestamp
+                )
+            )
+            .where(Token.is_active == True)
+        )
+        
+        result = await self.db.execute(query)
+        token_data = result.all()
+        
+        if not token_data:
+            return 0
+        
+        calculated_at = datetime.now(timezone.utc)
+        scores_to_insert = []
+        
+        for row in token_data:
+            token_score = TokenScore(
+                tournament_id=None,
+                token_id=row.token_id,
+                calculated_score=Decimal('0'),  # Zero score between tournaments
+                current_price=row.current_price,
+                snapshot_price=row.current_price,  # Same as current (no tournament)
+                price_change_percent=Decimal('0'),
+                calculated_at=calculated_at
+            )
+            scores_to_insert.append(token_score)
+        
+        if scores_to_insert:
+            self.db.add_all(scores_to_insert)
+            await self.db.commit()
+            await self.refresh_active_cards_view()
+        
+        return len(scores_to_insert)
 
     async def refresh_active_cards_view(self) -> None:
         """

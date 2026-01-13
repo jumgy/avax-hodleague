@@ -14,7 +14,7 @@ class TokenScore(Base):
     __tablename__ = 'token_scores'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tournament_id = Column(Integer, ForeignKey('tournaments.id'), nullable=False)
+    tournament_id = Column(Integer, ForeignKey('tournaments.id'), nullable=True)
     token_id = Column(Integer, ForeignKey('tokens.id'), nullable=False)
     
     # Score calculation
