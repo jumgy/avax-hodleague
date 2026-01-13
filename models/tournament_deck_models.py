@@ -76,6 +76,7 @@ class TournamentResult(Base):
     tournament_deck_id = Column(Integer, ForeignKey('tournament_decks.id'), nullable=False)
     final_position = Column(Integer, nullable=False)
     final_score = Column(Numeric(20, 4), nullable=False)
+    card_scores = Column(JSON, nullable=True)
     calculated_at = Column(
         DateTime(timezone=True), 
         nullable=False, 
@@ -85,7 +86,6 @@ class TournamentResult(Base):
     # Relationships
     tournament = relationship("Tournament")
     tournament_deck = relationship("TournamentDeck", back_populates="result")
-    
     user_reward = relationship("UserReward", back_populates="tournament_result", uselist=False)
 
     def __repr__(self):

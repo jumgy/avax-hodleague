@@ -136,7 +136,7 @@ class TournamentService:
         """
         try:
             logger.info(f"🔍 Starting calculate_results for tournament {tournament_id}")
-            
+
             # Шаг 1: Получаем деки
             logger.info(f"Step 1: Fetching valid decks...")
             decks_result = await db.execute(
@@ -150,40 +150,40 @@ class TournamentService:
                 )
             )
             decks = decks_result.scalars().all()
-            
+
             if not decks:
                 logger.warning(f"⚠️ No valid participants in tournament {tournament_id}")
                 return 0
-            
+
             logger.info(f"✅ Found {len(decks)} valid decks")
-            
+
             deck_scores = []
-            
+
             # Шаг 2: Считаем скоры для каждого дека
             for idx, deck in enumerate(decks, start=1):
                 logger.info(f"Step 2.{idx}: Processing deck {deck.id} for user {deck.user_id}")
-                
                 deck_composition = deck.deck_composition
                 logger.info(f"  Deck composition: {deck_composition}")
                 logger.info(f"  Deck composition type: {type(deck_composition)}")
-                
+
                 total_score = 0.0
-                
+                card_scores_array = []  # ⭐ NEW: Собираем скоры карт
+
                 for card_idx, card_entry in enumerate(deck_composition, start=1):
                     # Поддержка двух форматов:
                     # 1. [265, 266, 267] - просто массив card_id
                     # 2. [{"card_id": 265}, {"card_id": 266}] - массив объектов
-                    
                     if isinstance(card_entry, dict):
                         card_id = card_entry.get('card_id')
                     elif isinstance(card_entry, int):
                         card_id = card_entry
                     else:
                         logger.error(f"  ❌ Unknown card_entry format: {type(card_entry)} = {card_entry}")
+                        card_scores_array.append(0.0)  # ⭐ Добавляем 0 для неизвестного формата
                         continue
-                    
+
                     logger.info(f"  Processing card {card_idx}/{len(deck_composition)}: card_id={card_id}")
-                    
+
                     try:
                         score_query = text("""
                             SELECT calculated_score 
@@ -191,53 +191,58 @@ class TournamentService:
                             WHERE card_id = :card_id 
                             AND active_tournament_id = :tournament_id
                         """)
-                        
                         score_result = await db.execute(
                             score_query, 
                             {"card_id": card_id, "tournament_id": tournament_id}
                         )
                         score_row = score_result.first()
-                        
+
                         if score_row:
                             card_score = float(score_row[0] or 0)
                             logger.info(f"    ✅ Card {card_id} score: {card_score}")
                             total_score += card_score
+                            card_scores_array.append(card_score)  # ⭐ Добавляем скор в массив
                         else:
                             logger.warning(f"    ⚠️ No score found for card {card_id} in view")
-                            
+                            card_scores_array.append(0.0)  # ⭐ Добавляем 0 если не найден
+
                     except Exception as card_error:
                         logger.error(f"    ❌ Error getting score for card {card_id}: {card_error}", exc_info=True)
+                        card_scores_array.append(0.0)  # ⭐ Добавляем 0 при ошибке
                         raise
-                
+
                 logger.info(f"  Total score for deck {deck.id}: {total_score}")
-                
+                logger.info(f"  Card scores array: {card_scores_array}")  # ⭐ Логируем массив
+
                 deck_scores.append({
                     'deck_id': deck.id,
                     'user_id': deck.user_id,
-                    'total_score': total_score
+                    'total_score': total_score,
+                    'card_scores': card_scores_array  # ⭐ Сохраняем массив скоров
                 })
-            
+
             # Шаг 3: Сортируем по скору
             logger.info(f"Step 3: Sorting {len(deck_scores)} decks by score...")
             deck_scores.sort(key=lambda x: x['total_score'], reverse=True)
             logger.info(f"✅ Sorting complete. Top score: {deck_scores[0]['total_score'] if deck_scores else 0}")
-            
+
             # Шаг 4: Сохраняем результаты
             logger.info(f"Step 4: Saving results to database...")
             for position, deck_info in enumerate(deck_scores, start=1):
                 logger.info(f"  Position {position}: deck_id={deck_info['deck_id']}, score={deck_info['total_score']}")
-                
+
                 existing_result = await db.execute(
                     select(TournamentResult).where(
                         TournamentResult.tournament_deck_id == deck_info['deck_id']
                     )
                 )
                 existing = existing_result.scalar_one_or_none()
-                
+
                 if existing:
                     logger.info(f"    Updating existing result...")
                     existing.final_position = position
                     existing.final_score = deck_info['total_score']
+                    existing.card_scores = deck_info['card_scores']  # ⭐ Обновляем массив скоров
                     existing.calculated_at = datetime.now(timezone.utc)
                 else:
                     logger.info(f"    Creating new result...")
@@ -246,15 +251,17 @@ class TournamentService:
                         tournament_deck_id=deck_info['deck_id'],
                         final_position=position,
                         final_score=deck_info['total_score'],
+                        card_scores=deck_info['card_scores'],  # ⭐ Сохраняем массив скоров
                         calculated_at=datetime.now(timezone.utc)
                     )
                     db.add(tournament_result)
-            
+
             logger.info("Step 5: Committing results...")
             await db.commit()
+
             logger.info(f"✅ Results calculated for {len(deck_scores)} participants")
             return len(deck_scores)
-            
+
         except Exception as e:
             await db.rollback()
             logger.error(f"❌ Error calculating results: {e}", exc_info=True)
