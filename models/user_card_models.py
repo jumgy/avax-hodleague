@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from .database import Base
 
 class UserCard(Base):
@@ -13,15 +13,17 @@ class UserCard(Base):
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     card_id = Column(Integer, ForeignKey('cards.id'), nullable=False)
     pack_opening_id = Column(Integer, ForeignKey('pack_openings.id'), nullable=True)
-    obtained_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    expires_at = Column(DateTime, nullable=True)
+    obtained_at = Column(DateTime(timezone=True), nullable=False, 
+                    default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(20), nullable=False, default="pack_opening")
     status = Column(String(20), nullable=False, default="available")
     is_active = Column(Boolean, nullable=False, default=True)
     transaction_hash = Column(String(66), nullable=True)
     
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user = relationship("User")

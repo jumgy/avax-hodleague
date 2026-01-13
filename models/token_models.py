@@ -1,7 +1,7 @@
 # models/token_models.py
 from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Numeric, BigInteger
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from .database import Base
 
 class Token(Base):
@@ -19,8 +19,11 @@ class Token(Base):
     is_active = Column(Boolean, nullable=False, default=True)  # Active in game
     
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, 
+                    default=lambda: datetime.now(timezone.utc),
+                    onupdate=lambda: datetime.now(timezone.utc))
     
     prices = relationship("TokenPrice", back_populates="token", cascade="all, delete-orphan")
     
@@ -44,7 +47,8 @@ class TokenPrice(Base):
     
     # Metadata о источниках
     sources_count = Column(Integer, nullable=False, default=1)  # Количество источников
-    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow) 
+    timestamp = Column(DateTime(timezone=True), nullable=False, 
+                  default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     token = relationship("Token", back_populates="prices")

@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text
-from datetime import datetime
+from datetime import datetime, timezone
 from .database import Base
 
 class Rarity(Base):
@@ -16,8 +16,11 @@ class Rarity(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, 
+                    default=lambda: datetime.now(timezone.utc),
+                    onupdate=lambda: datetime.now(timezone.utc))
     
     def __repr__(self):
         return f"<Rarity(id={self.id}, name='{self.name}', score_bonus={self.score_bonus})>"

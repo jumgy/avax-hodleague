@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Numeric, JSON
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from .database import Base
 
 class PackType(Base):
@@ -18,14 +18,17 @@ class PackType(Base):
     price = Column(Numeric(10, 2), nullable=False, default=0.00)
     currency = Column(String(20), nullable=False, default="USD")
     supply = Column(Integer, nullable=True)
-    available_from = Column(DateTime, nullable=True)
-    available_until = Column(DateTime, nullable=True)
+    available_from = Column(DateTime(timezone=True), nullable=True)
+    available_until = Column(DateTime(timezone=True), nullable=True)
     guaranteed_slots = Column(JSON, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, 
+                    default=lambda: datetime.now(timezone.utc),
+                    onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     rarity_configs = relationship("PackRarityConfig", back_populates="pack_type", cascade="all, delete-orphan")

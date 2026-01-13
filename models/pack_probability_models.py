@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, DateTime, ForeignKey, Numeric
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from .database import Base
 
 class PackRarityConfig(Base):
@@ -15,8 +15,12 @@ class PackRarityConfig(Base):
     drop_rate = Column(Numeric(5, 4), nullable=False, default=0.0000)
     
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc))
+    
+    updated_at = Column(DateTime(timezone=True), nullable=False, 
+                    default=lambda: datetime.now(timezone.utc),
+                    onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     pack_type = relationship("PackType", back_populates="rarity_configs")
@@ -35,7 +39,8 @@ class CardWeight(Base):
     card_id = Column(Integer, ForeignKey('cards.id'), nullable=False)
     base_weight = Column(Numeric(8, 4), nullable=False, default=1.0000)
     current_multiplier = Column(Numeric(6, 4), nullable=False, default=1.0000)
-    last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_updated = Column(DateTime(timezone=True), nullable=False, 
+                     default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     card = relationship("Card")

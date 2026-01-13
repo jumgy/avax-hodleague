@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from .database import Base
 
 class UserPack(Base):
@@ -12,12 +12,14 @@ class UserPack(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     pack_type_id = Column(Integer, ForeignKey('pack_types.id'), nullable=False)
-    obtained_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    obtained_at = Column(DateTime(timezone=True), nullable=False, 
+                    default=lambda: datetime.now(timezone.utc))
     is_opened = Column(Boolean, nullable=False, default=False)
     source = Column(String(20), nullable=False, default="purchase")
     
     # Timestamps
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user = relationship("User")
@@ -36,7 +38,8 @@ class PackOpening(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     pack_id = Column(Integer, ForeignKey('user_packs.id'), nullable=False)
-    opened_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    opened_at = Column(DateTime(timezone=True), nullable=False, 
+                  default=lambda: datetime.now(timezone.utc))
     cards_count = Column(Integer, nullable=False, default=0)
     transaction_hash = Column(String(66), nullable=True)
     

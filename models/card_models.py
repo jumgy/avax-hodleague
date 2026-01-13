@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from .database import Base
 
 class Card(Base):
@@ -18,13 +18,16 @@ class Card(Base):
     # Изображения
     template_image_url = Column(String(500), nullable=False)  # Базовый шаблон БЕЗ текста
     rendered_image_url = Column(String(500), nullable=True)  # Финальная картинка С текстом
-    last_rendered_at = Column(DateTime, nullable=True)  # Когда последний раз рендерили
+    last_rendered_at = Column(DateTime(timezone=True), nullable=True)
     
     is_active = Column(Boolean, nullable=False, default=True)
     
     # Timestamps  
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc),
+                   onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     token = relationship("Token")
