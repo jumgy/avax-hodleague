@@ -11,6 +11,8 @@ COPY . .
 
 ARG PORT=8000
 ENV PORT=${PORT}
+ENV PYTHONUNBUFFERED=1
+
 EXPOSE ${PORT}
 
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT} --log-level info
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT} --no-access-log

@@ -1,6 +1,7 @@
 # main.py
 
 import logging
+import sys
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,12 +11,51 @@ from services.scheduler_service import scheduler_service
 from config import Config
 from models.database import init_database, close_database
 
-# Setup logging first
-logging.basicConfig(
-    level=getattr(logging, Config.LOG_LEVEL),
-    format='%(asctime)s %(levelname)s %(name)s %(message)s'
-)
-
+_logging_configured = False
+def setup_logging():
+    """Настройка логирования без дублирования"""
+    global _logging_configured
+    
+    if _logging_configured:
+        return
+    
+    # Получаем root logger
+    root_logger = logging.getLogger()
+    
+    # ПОЛНОСТЬЮ очищаем все handlers
+    root_logger.handlers.clear()
+    
+    # Настраиваем уровень
+    log_level = getattr(logging, Config.LOG_LEVEL, logging.INFO)
+    root_logger.setLevel(log_level)
+    
+    # Создаем ОДИН консольный обработчик
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    
+    # Форматтер
+    formatter = logging.Formatter(
+        '%(asctime)s %(levelname)s %(name)s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+    
+    # Отключаем SQLAlchemy логи если DB_ECHO=False
+    if not Config.DB_ECHO:
+        logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+        logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
+        logging.getLogger('sqlalchemy.dialects').setLevel(logging.WARNING)
+    
+    # Очищаем uvicorn handlers и отключаем propagation
+    for logger_name in ['uvicorn', 'uvicorn.access', 'uvicorn.error']:
+        uvicorn_logger = logging.getLogger(logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+    
+    _logging_configured = True
+# Вызываем настройку
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # Startup/shutdown events

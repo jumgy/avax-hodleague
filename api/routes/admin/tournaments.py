@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from typing import List, Optional
 from pydantic import BaseModel, validator, ConfigDict
 from datetime import datetime, timedelta, timezone
@@ -264,6 +264,7 @@ async def create_tournament(
     admin: dict = Depends(verify_admin_token)
 ):
     """Создать новый турнир"""
+    
     # Проверяем существование турнира с таким номером
     existing_query = select(Tournament).where(
         Tournament.tournament_number == tournament_data.tournament_number
@@ -276,22 +277,33 @@ async def create_tournament(
             status_code=400,
             detail=f"Tournament with number {tournament_data.tournament_number} already exists"
         )
-
-    # Проверяем наличие активных турниров
+    
+    # ⭐ NEW: Проверяем пересечение по датам gameplay (только для REGISTRATION/ONGOING)
     if tournament_data.status in [TournamentStatus.REGISTRATION, TournamentStatus.ONGOING]:
-        active_query = select(Tournament).where(Tournament.status.in_([
-            TournamentStatus.REGISTRATION,
-            TournamentStatus.ONGOING
-        ]))
-        active_result = await db.execute(active_query)
-        active_tournament = active_result.scalar_one_or_none()
+        # Ищем турниры, у которых период gameplay пересекается с новым турниром
+        overlap_query = select(Tournament).where(
+            and_(
+                Tournament.status.in_([
+                    TournamentStatus.REGISTRATION,
+                    TournamentStatus.ONGOING
+                ]),
+                # Пересечение: новый.gameplay_start <= существующий.end AND новый.end >= существующий.gameplay_start
+                Tournament.end_date >= tournament_data.gameplay_start_date,
+                Tournament.gameplay_start_date <= tournament_data.end_date
+            )
+        )
+        overlap_result = await db.execute(overlap_query)
+        overlapping_tournament = overlap_result.scalar_one_or_none()
         
-        if active_tournament:
+        if overlapping_tournament:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot create active tournament. Tournament #{active_tournament.tournament_number} is already active"
+                detail=(
+                    f"Cannot create tournament. Time conflict with tournament #{overlapping_tournament.tournament_number} "
+                    f"(gameplay: {overlapping_tournament.gameplay_start_date} - {overlapping_tournament.end_date})"
+                )
             )
-
+    
     # Создаем новый турнир
     new_tournament = Tournament(
         tournament_number=tournament_data.tournament_number,
@@ -301,11 +313,11 @@ async def create_tournament(
         gameplay_start_date=tournament_data.gameplay_start_date,
         weight_limit=tournament_data.weight_limit
     )
-
+    
     db.add(new_tournament)
     await db.commit()
     await db.refresh(new_tournament)
-
+    
     return new_tournament
 
 

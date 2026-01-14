@@ -37,7 +37,7 @@ class SchedulerService:
             # Job 1: Price monitoring (every 30 minutes)
             self.scheduler.add_job(
                 func=self._price_and_score_job,
-                trigger=IntervalTrigger(minutes=5),
+                trigger=IntervalTrigger(minutes=1),
                 id='price_and_score',
                 name='Price Update & Score Calculation',
                 replace_existing=True,

@@ -1,7 +1,7 @@
 # services/score_service.py
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, distinct
+from sqlalchemy import select, and_, func, distinct, text
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Optional, List, Dict, Tuple
@@ -46,7 +46,6 @@ class ScoreService:
                 data['token_id'],
                 tournament.start_date
             )
-
             scored_tokens.append({
                 'token_id': data['token_id'],
                 'current_price': data['current_price'],
@@ -58,16 +57,15 @@ class ScoreService:
 
         all_zero_change = all(t['period_change'] == 0 for t in scored_tokens)
         all_zero_activity = all(t['activity'] == 0 for t in scored_tokens)
-        
         calculated_at = datetime.now(timezone.utc)
         scores_to_insert = []
-        
+
         if all_zero_change and all_zero_activity:
             for token in scored_tokens:
                 token_score = TokenScore(
                     tournament_id=tournament_id,
                     token_id=token['token_id'],
-                    calculated_score=Decimal('0'),  # Everyone gets 0 at start
+                    calculated_score=Decimal('0'),
                     current_price=token['current_price'],
                     snapshot_price=token['snapshot_price'],
                     price_change_percent=token['period_change'],
@@ -76,15 +74,11 @@ class ScoreService:
                 scores_to_insert.append(token_score)
         else:
             # Normal scoring logic
-            # Rank tokens
             scored_tokens = self._rank_tokens(scored_tokens)
-
-            # Calculate market cap factors
             all_market_caps = [t['market_cap'] for t in scored_tokens]
-
-            # Calculate raw scores
             total_tokens = len(scored_tokens)
             raw_scores = []
+
             for token in scored_tokens:
                 mc_factor = self._calculate_mc_factor(token['market_cap'], all_market_caps)
                 weekly_points = total_tokens - token['change_rank'] + 1
@@ -100,12 +94,11 @@ class ScoreService:
 
             for token in scored_tokens:
                 if range_raw == 0:
-                    final_score = 0  # All equal → 0 score
+                    final_score = 0
                 else:
                     normalized = (token['raw_score'] - min_raw) / range_raw
                     final_score = min(int(1000 * (normalized ** 0.7)), 1000)
 
-                # Create TokenScore record
                 token_score = TokenScore(
                     tournament_id=tournament_id,
                     token_id=token['token_id'],
@@ -117,19 +110,17 @@ class ScoreService:
                 )
                 scores_to_insert.append(token_score)
 
-        # Bulk insert
+        # Bulk insert + refresh view + commit
         if scores_to_insert:
             self.db.add_all(scores_to_insert)
+            await self.refresh_active_cards_view() 
             await self.db.commit()
-            
-            await self.refresh_active_cards_view()
 
         return len(scores_to_insert)
 
     async def calculate_and_store_zero_scores(self) -> int:
         """
         Write zero scores for all active tokens when no tournament is active.
-        Used between tournaments to keep score history continuous.
         """
         # Get all active tokens with their latest prices
         latest_price_subq = (
@@ -140,7 +131,7 @@ class ScoreService:
             .group_by(TokenPrice.token_id)
             .subquery()
         )
-        
+
         query = (
             select(
                 Token.id.label('token_id'),
@@ -159,33 +150,33 @@ class ScoreService:
             )
             .where(Token.is_active == True)
         )
-        
+
         result = await self.db.execute(query)
         token_data = result.all()
-        
+
         if not token_data:
             return 0
-        
+
         calculated_at = datetime.now(timezone.utc)
         scores_to_insert = []
-        
+
         for row in token_data:
             token_score = TokenScore(
                 tournament_id=None,
                 token_id=row.token_id,
-                calculated_score=Decimal('0'),  # Zero score between tournaments
+                calculated_score=Decimal('0'),
                 current_price=row.current_price,
-                snapshot_price=row.current_price,  # Same as current (no tournament)
+                snapshot_price=row.current_price,
                 price_change_percent=Decimal('0'),
                 calculated_at=calculated_at
             )
             scores_to_insert.append(token_score)
-        
+
         if scores_to_insert:
             self.db.add_all(scores_to_insert)
-            await self.db.commit()
             await self.refresh_active_cards_view()
-        
+            await self.db.commit()
+
         return len(scores_to_insert)
 
     async def refresh_active_cards_view(self) -> None:
@@ -193,20 +184,17 @@ class ScoreService:
         Refresh materialized view after updating token scores.
         Tries CONCURRENTLY first, falls back to blocking refresh if needed.
         """
-        from sqlalchemy import text
         
         try:
             await self.db.execute(
                 text("REFRESH MATERIALIZED VIEW CONCURRENTLY active_cards_with_score")
             )
-            await self.db.commit()
         except Exception as e:
             # Fallback to non-concurrent refresh
             await self.db.rollback()
             await self.db.execute(
                 text("REFRESH MATERIALIZED VIEW active_cards_with_score")
             )
-            await self.db.commit()
     
     def _calculate_period_change(self, current_price: Decimal, snapshot_price: Decimal) -> Decimal:
         """

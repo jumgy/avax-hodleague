@@ -103,7 +103,7 @@ class UserProfileService:
                 SELECT 
                     uc.id as user_card_id,
                     uc.obtained_at,
-                    uc.expires_at,    
+                    uc.expires_at,
                     uc.status,
                     acs.card_id,
                     acs.token_symbol,
@@ -122,8 +122,8 @@ class UserProfileService:
                     acs.tournament_status
                 FROM user_cards uc
                 JOIN active_cards_with_score acs ON uc.card_id = acs.card_id
-                WHERE uc.user_id = :user_id 
-                  AND uc.is_active = true
+                WHERE uc.user_id = :user_id
+                AND uc.is_active = true
                 ORDER BY acs.rarity_name DESC, acs.token_symbol ASC
             """)
             

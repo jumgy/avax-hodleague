@@ -4,6 +4,7 @@ import os
 from typing import AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import text
 from config import Config
 import logging
 
@@ -22,11 +23,17 @@ if "asyncpg" not in DATABASE_URL:
 async_engine = create_async_engine(
     DATABASE_URL,
     echo=Config.DB_ECHO,
-    pool_size=20,              # Увеличил для concurrent запросов
-    max_overflow=10,           # Уменьшил overflow
-    pool_pre_ping=True,        # Проверка соединения перед использованием
-    pool_recycle=3600,         # Пересоздавать соединения каждый час
-    pool_timeout=30,           # Таймаут ожидания соединения из пула
+    pool_size=20,
+    max_overflow=10,
+    pool_pre_ping=False,
+    pool_recycle=3600,
+    pool_timeout=30,
+
+    connect_args={
+        "server_settings": {
+            "application_name": "crypto_tournament_api"
+        }
+    }
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -117,7 +124,7 @@ async def check_database_connection() -> bool:
     """
     try:
         async with AsyncSessionLocal() as session:
-            await session.execute("SELECT 1")
+            await session.execute(text("SELECT 1"))
         logger.info("✅ Database connection check: OK")
         return True
     except Exception as e:
@@ -242,7 +249,7 @@ if __name__ == "__main__":
             # Test session creation
             try:
                 async with DatabaseSession() as db:
-                    result = await db.execute("SELECT version()")
+                    result = await db.execute(text("SELECT version()"))
                     version = result.scalar()
                     print(f"📦 PostgreSQL version: {version}")
             except Exception as e:
