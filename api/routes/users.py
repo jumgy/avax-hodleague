@@ -34,7 +34,7 @@ class UserCard(BaseModel):
     calculated_score: float
     current_price: Optional[float]
     market_cap: Optional[int]
-    change_24h: Optional[float]
+    tournament_change: Optional[float]
     obtained_at: Optional[str]
     status: str
 

@@ -83,7 +83,7 @@ class CardInDeckInfo(BaseModel):
     rendered_image_url: str
     current_price: Optional[float]
     market_cap: Optional[int]
-    change_24h: Optional[float]
+    tournament_change: Optional[float]
     calculated_score: float
 
 class TournamentListItem(BaseModel):
@@ -400,13 +400,13 @@ async def get_tournament_details(
                                 ac.rendered_image_url,
                                 ac.current_price,
                                 ac.market_cap,
-                                ac.change_24h,
+                                ac.tournament_change,
                                 ac.calculated_score
                             FROM user_cards uc
                             JOIN active_cards_with_score ac ON uc.card_id = ac.card_id
                             WHERE uc.id = ANY(:user_card_ids)
-                              AND uc.is_active = true
-                              AND ac.is_active = true
+                            AND uc.is_active = true
+                            AND ac.is_active = true
                         """)
 
                         cards_result = await db.execute(
@@ -432,7 +432,7 @@ async def get_tournament_details(
                                 rendered_image_url=row.rendered_image_url,
                                 current_price=float(row.current_price) if row.current_price else None,
                                 market_cap=int(row.market_cap) if row.market_cap else None,
-                                change_24h=float(row.change_24h) if row.change_24h else None,
+                                tournament_change=float(row.tournament_change) if row.tournament_change else None,
                                 calculated_score=float(row.calculated_score) if row.calculated_score else 0.0
                             )
 

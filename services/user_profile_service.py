@@ -116,7 +116,7 @@ class UserProfileService:
                     acs.rendered_image_url,
                     acs.current_price,
                     acs.market_cap,
-                    acs.change_24h,
+                    acs.tournament_change,
                     acs.calculated_score,
                     acs.active_tournament_id,
                     acs.tournament_status
@@ -126,10 +126,10 @@ class UserProfileService:
                 AND uc.is_active = true
                 ORDER BY acs.rarity_name DESC, acs.token_symbol ASC
             """)
-            
+
             result = await db.execute(query, {"user_id": user_id})
-            
             cards = []
+
             for row in result:
                 card_data = {
                     "user_card_id": row.user_card_id,
@@ -145,13 +145,13 @@ class UserProfileService:
                     "calculated_score": float(row.calculated_score) if row.calculated_score else 0,
                     "current_price": float(row.current_price) if row.current_price else None,
                     "market_cap": int(row.market_cap) if row.market_cap else None,
-                    "change_24h": float(row.change_24h) if row.change_24h else None,
+                    "tournament_change": float(row.tournament_change) if row.tournament_change else None,
                     "obtained_at": row.obtained_at.isoformat() if row.obtained_at else None,
                     "expires_at": row.expires_at.isoformat() if row.expires_at else None,
                     "status": row.status
                 }
                 cards.append(card_data)
-            
+
             return cards
             
         except Exception as e:

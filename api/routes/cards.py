@@ -9,7 +9,6 @@ from models.database import get_async_db
 import logging
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 # ==================== Pydantic Schemas ====================
@@ -27,7 +26,7 @@ class CardBase(BaseModel):
     rendered_image_url: str
     current_price: Optional[float]
     market_cap: Optional[int]
-    change_24h: Optional[float]
+    tournament_change: Optional[float]
     calculated_score: float
 
 class CardCatalogResponse(BaseModel):
@@ -56,7 +55,6 @@ async def get_cards_catalog(
 ):
     """
     Get all available cards in the game
-    
     - **rarity**: Optional filter by rarity name
     - **token_symbol**: Optional filter by token symbol
     """
@@ -76,7 +74,7 @@ async def get_cards_catalog(
                 rendered_image_url,
                 current_price,
                 market_cap,
-                change_24h,
+                tournament_change,
                 calculated_score
             FROM active_cards_with_score
             WHERE is_active = true
@@ -87,11 +85,11 @@ async def get_cards_catalog(
         if rarity:
             query += " AND LOWER(rarity_name) = LOWER(:rarity)"
             params["rarity"] = rarity
-        
+            
         if token_symbol:
             query += " AND LOWER(token_symbol) = LOWER(:token_symbol)"
             params["token_symbol"] = token_symbol
-        
+            
         query += " ORDER BY card_id, rarity_name DESC, token_symbol ASC"
         
         result = await db.execute(text(query), params)
@@ -112,7 +110,7 @@ async def get_cards_catalog(
                 "rendered_image_url": row.rendered_image_url,
                 "current_price": float(row.current_price) if row.current_price else None,
                 "market_cap": int(row.market_cap) if row.market_cap else None,
-                "change_24h": float(row.change_24h) if row.change_24h else None,
+                "tournament_change": float(row.tournament_change) if row.tournament_change else None,
                 "calculated_score": float(row.calculated_score) if row.calculated_score else 0.0
             }
             cards.append(card_data)
@@ -129,7 +127,6 @@ async def get_cards_catalog(
             detail="Failed to retrieve cards catalog"
         )
 
-
 @router.get(
     "/cards/{card_id}",
     response_model=CardDetailResponse,
@@ -142,7 +139,6 @@ async def get_card_details(
 ):
     """
     Get detailed card information by ID
-    
     - **card_id**: Card ID from the database
     """
     try:
@@ -161,7 +157,7 @@ async def get_card_details(
                 rendered_image_url,
                 current_price,
                 market_cap,
-                change_24h,
+                tournament_change,
                 calculated_score
             FROM active_cards_with_score
             WHERE card_id = :card_id
@@ -205,7 +201,7 @@ async def get_card_details(
             "rendered_image_url": card_row.rendered_image_url,
             "current_price": float(card_row.current_price) if card_row.current_price else None,
             "market_cap": int(card_row.market_cap) if card_row.market_cap else None,
-            "change_24h": float(card_row.change_24h) if card_row.change_24h else None,
+            "tournament_change": float(card_row.tournament_change) if card_row.tournament_change else None,
             "calculated_score": float(card_row.calculated_score) if card_row.calculated_score else 0.0,
             "stats": {
                 "total_owned": stats_row.total_owned if stats_row else 0,
