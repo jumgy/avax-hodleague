@@ -195,19 +195,21 @@ class TournamentService:
                     logger.info(f"  Processing card {card_idx}/{len(deck_composition)}: card_id={card_id}")
 
                     try:
-                        # ⭐ NEW: Get score closest to end_date (but not after)
+                        # Get score closest to end_date (but not after)
                         score_query = text("""
                             WITH ranked_scores AS (
                                 SELECT 
                                     ts.calculated_score,
                                     ts.calculated_at,
-                                    acws.rarity_score_bonus,
+                                    r.score_bonus as rarity_score_bonus,
                                     ROW_NUMBER() OVER (
                                         ORDER BY ts.calculated_at DESC
                                     ) as rn
                                 FROM token_scores ts
-                                JOIN active_cards_with_score acws ON acws.card_id = :card_id
-                                WHERE ts.token_id = acws.token_id
+                                JOIN user_cards uc ON uc.id = :user_card_id
+                                JOIN cards c ON c.id = uc.card_id
+                                JOIN rarities r ON r.id = c.rarity_id
+                                WHERE ts.token_id = c.token_id
                                 AND ts.tournament_id = :tournament_id
                                 AND ts.calculated_at <= :end_date
                             )
@@ -217,11 +219,11 @@ class TournamentService:
                             FROM ranked_scores
                             WHERE rn = 1
                         """)
-                        
+
                         score_result = await db.execute(
                             score_query, 
                             {
-                                "card_id": card_id, 
+                                "user_card_id": card_id,  # это user_cards.id из deck_composition
                                 "tournament_id": tournament_id,
                                 "end_date": end_date
                             }

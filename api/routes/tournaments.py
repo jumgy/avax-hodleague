@@ -12,13 +12,14 @@ import logging
 from models.database import get_async_db
 from models.tournament_models import Tournament, TournamentStatus
 from models.tournament_deck_models import TournamentDeck
+from models.user_models import User
 from models.user_card_models import UserCard
 from models.card_models import Card
 from models.rarity_models import Rarity
 from models.token_models import Token
 from services.web3_auth_service import web3_auth_service
 from services.tournament_registration_service import TournamentRegistrationService
-
+from models.tournament_deck_models import TournamentResult
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tournaments")
@@ -196,6 +197,50 @@ class DeckUnregisterResponse(BaseModel):
     tx_hash: str
     message: str
 
+# ==================== Leaderboard Models ====================
+
+# ==================== Leaderboard Models ====================
+
+class CardInDeck(BaseModel):
+    """Информация о карте в деке"""
+    card_id: int
+    token_id: int
+    token_symbol: str
+    token_name: str
+    rarity: str
+    design_type: str
+    rendered_image_url: Optional[str] = None
+    template_image_url: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+class LeaderboardEntry(BaseModel):
+    """Запись в лидерборде"""
+    position: int
+    user_id: int
+    wallet_address: Optional[str] = None
+    final_score: float
+    deck_composition: List[int]
+    cards: List[CardInDeck]
+    calculated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class LeaderboardResponse(BaseModel):
+    """Ответ с лидербордом турнира"""
+    tournament_id: int
+    tournament_number: int
+    status: str
+    leaderboard: List[LeaderboardEntry]
+    total_participants: int
+    page: int
+    limit: int
+    has_next: bool
+    has_prev: bool
+    my_position: Optional[LeaderboardEntry] = None
+    last_updated: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
 # ==================== Endpoints ====================
 
 @router.get("",
@@ -424,7 +469,254 @@ async def get_tournament_details(
             detail=f"Failed to retrieve tournament details: {str(e)}"
         )
 
-# ==================== NEW: Blockchain-Verified Registration ====================
+async def get_cards_info(user_card_ids: List[int], db: AsyncSession) -> List[CardInDeck]:
+    """
+    Получить детальную информацию о картах по их user_card_id
+    
+    Args:
+        user_card_ids: Список user_cards.id из deck_composition
+        db: Database session
+        
+    Returns:
+        Список CardInDeck с полной информацией (включая изображения из cards)
+    """
+    if not user_card_ids:
+        return []
+    
+    from models.card_models import Card
+    from models.user_card_models import UserCard
+    from models.token_models import Token
+    from models.rarity_models import Rarity
+    
+    # ⭐ Получаем cards через user_cards
+    cards_query = select(
+        UserCard.id.label('user_card_id'),
+        Card.id.label('card_id'),
+        Card.rendered_image_url,
+        Card.template_image_url,
+        Card.design_type,
+        Token.id.label('token_id'),
+        Token.symbol,
+        Token.name,
+        Rarity.name.label('rarity_name')
+    ).join(
+        Card, UserCard.card_id == Card.id
+    ).join(
+        Token, Card.token_id == Token.id
+    ).join(
+        Rarity, Card.rarity_id == Rarity.id
+    ).where(
+        UserCard.id.in_(user_card_ids)
+    )
+    
+    cards_result = await db.execute(cards_query)
+    cards_rows = cards_result.all()
+    
+    # Создаем словарь для быстрого доступа по user_card_id
+    cards_dict = {}
+    for row in cards_rows:
+        cards_dict[row.user_card_id] = CardInDeck(
+            card_id=row.card_id,
+            token_id=row.token_id,
+            token_symbol=row.symbol,
+            token_name=row.name,
+            rarity=row.rarity_name,
+            design_type=row.design_type,
+            rendered_image_url=row.rendered_image_url,
+            template_image_url=row.template_image_url
+        )
+    
+    # Возвращаем в том же порядке что и user_card_ids
+    return [cards_dict[user_card_id] for user_card_id in user_card_ids if user_card_id in cards_dict]
+
+@router.get("/{tournament_id}/leaderboard",
+           response_model=LeaderboardResponse,
+           summary="Get tournament leaderboard",
+           description="Get paginated leaderboard with optional user position highlight")
+async def get_tournament_leaderboard(
+    tournament_id: int,
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(50, ge=1, le=100, description="Items per page (max 100)"),
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get tournament leaderboard with pagination
+    
+    - **tournament_id**: Tournament ID
+    - **page**: Page number (default: 1)
+    - **limit**: Items per page (default: 50, max: 100)
+    - **Authorization** (optional): If provided, returns user's position even if not in top 50
+    
+    Returns:
+    - Top N participants for current page with full card info
+    - Total participants count
+    - Pagination info
+    - User's position (if authenticated and has registered deck)
+    - Last calculation timestamp
+    """
+    try:
+        # Проверяем что турнир существует
+        tournament_query = select(Tournament).where(Tournament.id == tournament_id)
+        tournament_result = await db.execute(tournament_query)
+        tournament = tournament_result.scalar_one_or_none()
+
+        if not tournament:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tournament {tournament_id} not found"
+            )
+
+        # Получаем общее количество участников с результатами
+        total_query = select(func.count()).select_from(TournamentResult).where(
+            TournamentResult.tournament_id == tournament_id
+        )
+        total_result = await db.execute(total_query)
+        total_participants = total_result.scalar() or 0
+
+        if total_participants == 0:
+            # Турнир без результатов
+            return LeaderboardResponse(
+                tournament_id=tournament.id,
+                tournament_number=tournament.tournament_number,
+                status=tournament.status,
+                leaderboard=[],
+                total_participants=0,
+                page=page,
+                limit=limit,
+                has_next=False,
+                has_prev=False,
+                my_position=None,
+                last_updated=None
+            )
+
+        # Получаем время последнего обновления
+        last_updated_query = select(func.max(TournamentResult.calculated_at)).where(
+            TournamentResult.tournament_id == tournament_id
+        )
+        last_updated_result = await db.execute(last_updated_query)
+        last_updated = last_updated_result.scalar()
+
+        # Получаем лидерборд с пагинацией
+        offset = (page - 1) * limit
+
+        leaderboard_query = select(
+            TournamentResult,
+            TournamentDeck,
+            User.wallet_address
+        ).join(
+            TournamentDeck, TournamentResult.tournament_deck_id == TournamentDeck.id
+        ).join(
+            User, TournamentDeck.user_id == User.id
+        ).where(
+            TournamentResult.tournament_id == tournament_id
+        ).order_by(
+            TournamentResult.final_position.asc()
+        ).offset(offset).limit(limit)
+
+        leaderboard_result = await db.execute(leaderboard_query)
+        leaderboard_rows = leaderboard_result.all()
+
+        # Формируем список лидеров
+        leaderboard = []
+        for result, deck, wallet_address in leaderboard_rows:
+            # Поддержка двух форматов deck_composition
+            card_ids = []
+            if deck.deck_composition:
+                for card_entry in deck.deck_composition:
+                    if isinstance(card_entry, dict):
+                        card_ids.append(card_entry.get('card_id'))
+                    elif isinstance(card_entry, int):
+                        card_ids.append(card_entry)
+            
+            # Получаем детальную информацию о картах
+            cards_info = await get_cards_info(card_ids, db)
+            
+            leaderboard.append(LeaderboardEntry(
+                position=result.final_position,
+                user_id=deck.user_id,
+                wallet_address=wallet_address,
+                final_score=float(result.final_score),
+                deck_composition=card_ids,
+                cards=cards_info,
+                calculated_at=result.calculated_at
+            ))
+
+        # Получаем позицию текущего пользователя (если authenticated)
+        my_position = None
+        user_id = current_user.get('user_id') if current_user else None
+
+        if user_id:
+            user_deck_query = select(
+                TournamentDeck,
+                User.wallet_address
+            ).join(
+                User, TournamentDeck.user_id == User.id
+            ).where(
+                TournamentDeck.tournament_id == tournament_id,
+                TournamentDeck.user_id == user_id,
+                TournamentDeck.is_active == True
+            )
+            user_deck_result = await db.execute(user_deck_query)
+            user_deck_row = user_deck_result.first()
+
+            if user_deck_row:
+                user_deck, user_wallet = user_deck_row
+                
+                # Получаем результат пользователя
+                user_result_query = select(TournamentResult).where(
+                    TournamentResult.tournament_deck_id == user_deck.id
+                )
+                user_result_result = await db.execute(user_result_query)
+                user_result = user_result_result.scalar_one_or_none()
+
+                if user_result:
+                    # Парсим card_ids из дека пользователя
+                    user_card_ids = []
+                    if user_deck.deck_composition:
+                        for card_entry in user_deck.deck_composition:
+                            if isinstance(card_entry, dict):
+                                user_card_ids.append(card_entry.get('card_id'))
+                            elif isinstance(card_entry, int):
+                                user_card_ids.append(card_entry)
+                    
+                    # Получаем детальную информацию о картах пользователя
+                    user_cards_info = await get_cards_info(user_card_ids, db)
+                    
+                    my_position = LeaderboardEntry(
+                        position=user_result.final_position,
+                        user_id=user_deck.user_id,
+                        wallet_address=user_wallet,
+                        final_score=float(user_result.final_score),
+                        deck_composition=user_card_ids,
+                        cards=user_cards_info,
+                        calculated_at=user_result.calculated_at
+                    )
+
+        return LeaderboardResponse(
+            tournament_id=tournament.id,
+            tournament_number=tournament.tournament_number,
+            status=tournament.status,
+            leaderboard=leaderboard,
+            total_participants=total_participants,
+            page=page,
+            limit=limit,
+            has_next=(offset + limit) < total_participants,
+            has_prev=page > 1,
+            my_position=my_position,
+            last_updated=last_updated
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting leaderboard for tournament {tournament_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve leaderboard: {str(e)}"
+        )
+
+# ==================== Blockchain-Verified Registration ====================
 
 @router.post("/{tournament_id}/validate-deck",
             response_model=DeckValidateResponse,

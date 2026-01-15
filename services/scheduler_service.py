@@ -120,29 +120,29 @@ class SchedulerService:
 
     async def _price_and_score_job(self):
         """
-        Combined job: Price update → Score calculation (sequential)
-        Runs every 5 minutes:
+        Combined job: Price update → Score calculation → Leaderboard update (sequential)
+        Runs every 1 minute:
         1. Update token prices (wait for completion)
         2. Calculate scores based on new prices
-        3. Refresh materialized view
+        3. Update tournament leaderboard if there's an ONGOING tournament
         """
         job_start = datetime.now()
         logger.info(f"🔄 Starting price update & score calculation at {job_start.strftime('%H:%M:%S')}")
-        
+
         try:
             # ===== STEP 1: Update Prices =====
             price_start = datetime.now()
-            logger.info("💰 [1/3] Updating token prices...")
+            logger.info("💰 [1/4] Updating token prices...")
             
             async with self.price_monitor:
                 await self.price_monitor.monitor_and_update_prices()
             
             price_duration = (datetime.now() - price_start).total_seconds()
-            logger.info(f"✅ [1/3] Prices updated in {price_duration:.2f}s")
-            
+            logger.info(f"✅ [1/4] Prices updated in {price_duration:.2f}s")
+
             # ===== STEP 2: Calculate Scores =====
             score_start = datetime.now()
-            logger.info("📊 [2/3] Calculating scores...")
+            logger.info("📊 [2/4] Calculating scores...")
             
             async with AsyncSessionLocal() as db:
                 score_service = ScoreService(db)
@@ -154,7 +154,7 @@ class SchedulerService:
                     )
                 )
                 tournament = result.scalar_one_or_none()
-                
+
                 # Calculate scores
                 if tournament:
                     logger.info(f"   ✅ Found ONGOING tournament #{tournament.tournament_number} (id={tournament.id})")
@@ -164,17 +164,36 @@ class SchedulerService:
                     logger.info("   ℹ️  No active tournament - writing zero scores")
                     scores_count = await score_service.calculate_and_store_zero_scores()
                     logger.info(f"   ✅ Wrote zero scores for {scores_count} tokens")
-            
+
             score_duration = (datetime.now() - score_start).total_seconds()
-            logger.info(f"✅ [2/3] Scores calculated in {score_duration:.2f}s")
+            logger.info(f"✅ [2/4] Scores calculated in {score_duration:.2f}s")
+
+            # Update Leaderboard (if tournament is ongoing)
+            leaderboard_start = datetime.now()
             
-            # ===== STEP 3: Summary =====
+            if tournament:  # Используем турнир из предыдущего шага
+                logger.info(f"🏆 [3/4] Updating leaderboard for tournament #{tournament.tournament_number}...")
+                
+                async with AsyncSessionLocal() as db:
+                    try:
+                        participants_count = await tournament_service.calculate_results(tournament.id, db)
+                        
+                        leaderboard_duration = (datetime.now() - leaderboard_start).total_seconds()
+                        logger.info(
+                            f"✅ [3/4] Leaderboard updated: {participants_count} participants in {leaderboard_duration:.2f}s"
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ [3/4] Failed to update leaderboard: {e}", exc_info=True)
+            else:
+                logger.info("ℹ️  [3/4] No ongoing tournament - skipping leaderboard update")
+
+            # ===== STEP 4: Summary =====
             total_duration = (datetime.now() - job_start).total_seconds()
             logger.info(
-                f"✅ [3/3] Price update & score calculation completed in {total_duration:.2f}s "
+                f"✅ [4/4] Complete job finished in {total_duration:.2f}s "
                 f"(prices: {price_duration:.2f}s, scores: {score_duration:.2f}s)"
             )
-            
+
         except Exception as e:
             logger.error(f"❌ Price update & score calculation job failed: {e}", exc_info=True)
 
