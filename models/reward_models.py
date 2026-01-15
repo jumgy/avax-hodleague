@@ -67,7 +67,6 @@ class UserReward(Base):
     amount = Column(Numeric(20, 8), nullable=False)
     tournament_result_id = Column(Integer, ForeignKey('tournament_results.id'), nullable=True)
 
-    # Timestamps - ✅ Исправлено
     earned_at = Column(
         DateTime(timezone=True), 
         nullable=False,

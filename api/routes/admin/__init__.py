@@ -14,6 +14,8 @@ from .user_cards import router as user_cards_router
 from .user_packs import router as user_packs_router
 from .tournament_details import router as tournament_details_router
 from .reward import router as reward_router
+from .user_rewards import router as admin_user_rewards
+
 
 
 # Create admin router
@@ -26,6 +28,7 @@ admin_router.include_router(cards_router, tags=["Admin - Cards"])
 admin_router.include_router(upload_router, tags=["Admin - Upload"])
 admin_router.include_router(rarities_router, tags=["Admin - Rarities"])
 admin_router.include_router(reward_router, tags=["Admin - Rewards"])
+admin_router.include_router(admin_user_rewards, tags=["Admin - User Rewards"])
 admin_router.include_router(pack_types_router, tags=["Admin - Pack types"])
 admin_router.include_router(drop_rates_router, tags=["Admin - Drop rates"])
 admin_router.include_router(tournaments_router, tags=["Admin - Tournaments"])
