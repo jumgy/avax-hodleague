@@ -142,22 +142,21 @@ async def verify_signature(
         cards_granted_count = 0
         packs_granted_count = 0
 
-        # Выдаем карточки и паки только новым пользователям
+        # Выдаем паки новым пользователям (карты временно отключены)
         if is_new_user:
-            # Выдаем карточки
-            try:
-                granted_cards = await user_card_grant_service.grant_all_active_cards_to_user(
-                    user_id=user.id,
-                    source="reward"  # Стартовые карточки как награда
-                )
-                cards_granted_count = len(granted_cards)
-                logger.info(f"Granted {cards_granted_count} starter cards to new user {user.id}")
-            except Exception as card_error:
-                # Если не удалось выдать карточки, не блокируем аутентификацию
-                logger.error(f"Error granting starter cards to user {user.id}: {card_error}")
-                cards_granted_count = 0
+            # 🚫 DISABLED: Не выдаем карточки при регистрации
+            # try:
+            #     granted_cards = await user_card_grant_service.grant_all_active_cards_to_user(
+            #         user_id=user.id,
+            #         source="reward"
+            #     )
+            #     cards_granted_count = len(granted_cards)
+            #     logger.info(f"Granted {cards_granted_count} starter cards to new user {user.id}")
+            # except Exception as card_error:
+            #     logger.error(f"Error granting starter cards to user {user.id}: {card_error}")
+            #     cards_granted_count = 0
 
-            # Выдаем паки
+            # ✅ Выдаем паки
             try:
                 granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
                     user_id=user.id,
@@ -166,7 +165,6 @@ async def verify_signature(
                 packs_granted_count = len(granted_packs)
                 logger.info(f"Granted {packs_granted_count} starter packs to new user {user.id}")
             except Exception as pack_error:
-                # Если не удалось выдать паки, не блокируем аутентификацию
                 logger.error(f"Error granting starter packs to user {user.id}: {pack_error}")
                 packs_granted_count = 0
 
@@ -231,21 +229,21 @@ async def test_verify_without_signature(
         cards_granted_count = 0
         packs_granted_count = 0
 
-        # Выдаем карточки и паки только новым пользователям
+        # Выдаем паки новым пользователям (карты временно отключены)
         if is_new_user:
-            # Выдаем карточки
-            try:
-                granted_cards = await user_card_grant_service.grant_all_active_cards_to_user(
-                    user_id=user.id,
-                    source="admin"  # Тестовые карточки от админа
-                )
-                cards_granted_count = len(granted_cards)
-                logger.info(f"Granted {cards_granted_count} test cards to new user {user.id}")
-            except Exception as card_error:
-                logger.error(f"Error granting test cards to user {user.id}: {card_error}")
-                cards_granted_count = 0
+            # 🚫 DISABLED: Не выдаем карточки при тестовой регистрации
+            # try:
+            #     granted_cards = await user_card_grant_service.grant_all_active_cards_to_user(
+            #         user_id=user.id,
+            #         source="admin"
+            #     )
+            #     cards_granted_count = len(granted_cards)
+            #     logger.info(f"Granted {cards_granted_count} test cards to new user {user.id}")
+            # except Exception as card_error:
+            #     logger.error(f"Error granting test cards to user {user.id}: {card_error}")
+            #     cards_granted_count = 0
 
-            # Выдаем паки
+            # ✅ Выдаем паки
             try:
                 granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
                     user_id=user.id,
