@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric, Boolean
 from datetime import datetime, timezone
 from .database import Base
 class Tournament(Base):
@@ -17,6 +17,8 @@ class Tournament(Base):
     gameplay_start_date = Column(DateTime(timezone=True), nullable=True)  # Когда начинается игра и фиксируются цены
 
     weight_limit = Column(Integer, nullable=False, default=30)  # Maximum deck weight limit
+
+    is_active = Column(Boolean, nullable=False, default=True, server_default='true')
     
     # Timestamps
     created_at = Column(
@@ -33,11 +35,6 @@ class Tournament(Base):
     
     def __repr__(self):
         return f"<Tournament(id={self.id}, number={self.tournament_number}, status='{self.status}', weight_limit={self.weight_limit})>"
-    
-    @property
-    def is_active(self):
-        """Check if tournament is currently active (registration or ongoing)"""
-        return self.status in ["registration", "ongoing"]
     
     @property
     def duration_days(self):

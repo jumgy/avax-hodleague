@@ -261,7 +261,7 @@ async def get_tournaments_list(
                 detail=f"Invalid status. Must be one of: {', '.join(TournamentStatus.ALL_STATUSES)}"
             )
 
-        query = select(Tournament)
+        query = select(Tournament).where(Tournament.is_active == True)
         if status_filter:
             query = query.where(Tournament.status == status_filter)
 
