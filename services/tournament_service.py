@@ -8,6 +8,11 @@ import logging
 from models.tournament_models import Tournament, TournamentStatus
 from models.tournament_deck_models import TournamentDeck, TournamentResult, TournamentPrizeConfig
 from models.reward_models import UserReward, ClaimStatus
+from models.rarity_models import Rarity
+from models.token_models import Token, TokenPrice
+from models.card_models import Card
+
+from .card_render_service import card_render_service
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +92,254 @@ class TournamentService:
             logger.error(f"❌ Error starting tournament {tournament_id}: {e}")
             raise
 
+
+    async def recalculate_token_weights(self, tournament_id: int, db: AsyncSession) -> int:
+        """
+        Recalculate and update token weights based on tournament performance.
+        Preserves weight distribution structure, but reassigns based on common card scores.
+        
+        Logic:
+        1. Get current weight distribution (e.g., 3x weight-10, 3x weight-9, etc.)
+        2. For each active token with active common card:
+        - Get token's final score from token_scores at end_date
+        - Get market cap for tiebreaking
+        3. Sort tokens by: score DESC, then market_cap DESC
+        4. Reassign weights preserving original distribution
+        
+        Returns: number of tokens updated
+        """
+        try:
+            logger.info(f"🔄 Starting token weight recalculation for tournament {tournament_id}")
+            
+            # ========== STEP 1: Get current weight distribution ==========
+            logger.info("Step 1: Getting current weight distribution...")
+            
+            weight_distribution_query = text("""
+                SELECT weight, COUNT(*) as count
+                FROM tokens
+                WHERE is_active = true
+                GROUP BY weight
+                ORDER BY weight DESC
+            """)
+            
+            weight_dist_result = await db.execute(weight_distribution_query)
+            weight_distribution = []
+            
+            for row in weight_dist_result:
+                weight = row[0]
+                count = row[1]
+                weight_distribution.extend([weight] * count)
+                logger.info(f"  {count}x tokens with weight {weight}")
+            
+            if not weight_distribution:
+                logger.warning("⚠️ No active tokens found, skipping weight recalculation")
+                return 0
+            
+            logger.info(f"✅ Total weight slots: {len(weight_distribution)}")
+            
+            # ========== STEP 2: Get tournament end_date ==========
+            logger.info("Step 2: Getting tournament end_date...")
+            
+            tournament_result = await db.execute(
+                select(Tournament).where(Tournament.id == tournament_id)
+            )
+            tournament = tournament_result.scalar_one_or_none()
+            
+            if not tournament:
+                raise ValueError(f"Tournament {tournament_id} not found")
+            
+            end_date = tournament.end_date
+            logger.info(f"✅ Tournament end_date: {end_date}")
+            
+            # ========== STEP 3: Get common rarity ID ==========
+            logger.info("Step 3: Getting common rarity ID...")
+            
+            rarity_result = await db.execute(
+                select(Rarity).where(Rarity.name == 'common')
+            )
+            common_rarity = rarity_result.scalar_one_or_none()
+            
+            if not common_rarity:
+                raise ValueError("Common rarity not found in database")
+            
+            common_rarity_id = common_rarity.id
+            logger.info(f"✅ Common rarity_id: {common_rarity_id}")
+            
+            # ========== STEP 4: Collect token scores DIRECTLY from token_scores ==========
+            logger.info("Step 4: Collecting token performance data...")
+            
+            # Get all active tokens
+            tokens_result = await db.execute(
+                select(Token).where(Token.is_active == True)
+            )
+            active_tokens = tokens_result.scalars().all()
+            logger.info(f"  Found {len(active_tokens)} active tokens")
+            
+            token_performance = []
+            
+            for token in active_tokens:
+                logger.info(f"  Processing token: {token.symbol} (id={token.id})")
+                
+                # Get active common card for this token (most recent if multiple)
+                card_result = await db.execute(
+                    select(Card)
+                    .where(
+                        and_(
+                            Card.token_id == token.id,
+                            Card.rarity_id == common_rarity_id,
+                            Card.is_active == True
+                        )
+                    )
+                    .order_by(Card.created_at.desc())
+                    .limit(1)
+                )
+                common_card = card_result.scalar_one_or_none()
+                
+                if not common_card:
+                    logger.warning(f"    ⚠️ No active common card found for {token.symbol}, skipping")
+                    continue
+                
+                logger.info(f"    Common card found: card_id={common_card.id}")
+                
+                # Get token's final score from token_scores (last before end_date)
+                # This score already includes rarity bonus applied
+                score_query = text("""
+                    SELECT 
+                        ts.calculated_score * r.score_bonus as final_score
+                    FROM token_scores ts
+                    JOIN tokens t ON t.id = ts.token_id
+                    JOIN cards c ON c.token_id = t.id
+                    JOIN rarities r ON r.id = c.rarity_id
+                    WHERE ts.token_id = :token_id
+                    AND ts.tournament_id = :tournament_id
+                    AND ts.calculated_at <= :end_date
+                    AND c.id = :card_id
+                    ORDER BY ts.calculated_at DESC
+                    LIMIT 1
+                """)
+                
+                score_result = await db.execute(
+                    score_query,
+                    {
+                        "token_id": token.id,
+                        "tournament_id": tournament_id,
+                        "end_date": end_date,
+                        "card_id": common_card.id
+                    }
+                )
+                score_row = score_result.first()
+                
+                if not score_row or score_row[0] is None:
+                    logger.warning(f"    ⚠️ No tournament score found for {token.symbol}, skipping")
+                    continue
+                
+                card_score = float(score_row[0])
+                logger.info(f"    ✅ Card score: {card_score}")
+                
+                # Get market cap (last value before end_date)
+                market_cap_query = text("""
+                    SELECT market_cap
+                    FROM token_prices
+                    WHERE token_id = :token_id
+                    AND timestamp <= :end_date
+                    AND market_cap IS NOT NULL
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                """)
+                
+                mc_result = await db.execute(
+                    market_cap_query,
+                    {"token_id": token.id, "end_date": end_date}
+                )
+                mc_row = mc_result.first()
+                
+                market_cap = float(mc_row[0]) if mc_row and mc_row[0] else 0
+                logger.info(f"    Market cap: ${market_cap:,.0f}")
+                
+                token_performance.append({
+                    'token_id': token.id,
+                    'symbol': token.symbol,
+                    'score': card_score,
+                    'market_cap': market_cap,
+                    'old_weight': token.weight
+                })
+            
+            if not token_performance:
+                logger.warning("⚠️ No tokens with tournament scores found, skipping weight update")
+                return 0
+            
+            logger.info(f"✅ Collected data for {len(token_performance)} tokens")
+            
+            # ========== STEP 5: Sort tokens by performance ==========
+            logger.info("Step 5: Sorting tokens by performance...")
+            
+            # Sort by: score DESC, then market_cap DESC
+            token_performance.sort(key=lambda x: (-x['score'], -x['market_cap']))
+            
+            logger.info("  Top 5 performers:")
+            for i, tp in enumerate(token_performance[:5], 1):
+                logger.info(f"    {i}. {tp['symbol']}: score={tp['score']:.2f}, mc=${tp['market_cap']/1e9:.2f}B")
+            
+            # ========== STEP 6: Assign new weights ==========
+            logger.info("Step 6: Assigning new weights...")
+            
+            # Ensure we have enough weight slots
+            num_tokens_to_update = min(len(token_performance), len(weight_distribution))
+            
+            if len(token_performance) < len(weight_distribution):
+                logger.warning(
+                    f"⚠️ Only {len(token_performance)} tokens have scores, "
+                    f"but {len(weight_distribution)} weight slots exist"
+                )
+            
+            updates_count = 0
+            
+            for i in range(num_tokens_to_update):
+                token_data = token_performance[i]
+                new_weight = weight_distribution[i]
+                old_weight = token_data['old_weight']
+                
+                if new_weight != old_weight:
+                    logger.info(
+                        f"  {token_data['symbol']}: weight {old_weight} -> {new_weight} "
+                        f"(score={token_data['score']:.2f})"
+                    )
+                    
+                    # Update token weight
+                    update_query = text("""
+                        UPDATE tokens
+                        SET weight = :new_weight,
+                            updated_at = :updated_at
+                        WHERE id = :token_id
+                    """)
+                    
+                    await db.execute(
+                        update_query,
+                        {
+                            "new_weight": new_weight,
+                            "updated_at": datetime.now(timezone.utc),
+                            "token_id": token_data['token_id']
+                        }
+                    )
+                    
+                    updates_count += 1
+                else:
+                    logger.info(f"  {token_data['symbol']}: weight unchanged ({old_weight})")
+            
+            await db.commit()
+            
+            logger.info(f"✅ Token weights recalculated: {updates_count} tokens updated")
+            return updates_count
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"❌ Error recalculating token weights: {e}", exc_info=True)
+            raise
+
     async def finish_tournament(self, tournament_id: int, db: AsyncSession) -> Tournament:
         """
         Finish tournament: ongoing -> finished
-        Calculates final results and distributes rewards
+        Calculates final results, distributes rewards, recalculates token weights, and re-renders cards
         """
         try:
             result = await db.execute(
@@ -112,6 +361,20 @@ class TournamentService:
             logger.info(f"Distributing rewards for tournament #{tournament.tournament_number}...")
             rewards_count = await self.distribute_rewards(tournament_id, db)
             
+            logger.info(f"Recalculating token weights for tournament #{tournament.tournament_number}...")
+            weights_updated = await self.recalculate_token_weights(tournament_id, db)
+            
+            logger.info(f"Rendering cards with updated weights for tournament #{tournament.tournament_number}...")
+            try:
+                render_result = await card_render_service.render_all_active_cards()
+                logger.info(
+                    f"✅ Cards rendered: {render_result.get('success', 0)} success, "
+                    f"{render_result.get('failed', 0)} failed"
+                )
+            except Exception as render_error:
+                # Don't fail the whole tournament finalization if rendering fails
+                logger.error(f"⚠️ Card rendering failed (non-critical): {render_error}", exc_info=True)
+            
             tournament.status = TournamentStatus.FINISHED
             tournament.updated_at = datetime.now(timezone.utc)
             
@@ -120,8 +383,10 @@ class TournamentService:
             
             logger.info(
                 f"✅ Tournament #{tournament.tournament_number} finished "
-                f"(participants: {participants_count}, rewards: {rewards_count})"
+                f"(participants: {participants_count}, rewards: {rewards_count}, "
+                f"weights updated: {weights_updated}, cards re-rendered)"
             )
+            
             return tournament
             
         except Exception as e:
