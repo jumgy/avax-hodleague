@@ -77,6 +77,9 @@ class TournamentResult(Base):
     final_position = Column(Integer, nullable=False)
     final_score = Column(Numeric(20, 4), nullable=False)
     card_scores = Column(JSON, nullable=True)
+
+    prizes = Column(JSON, nullable=True)  # {"1": "12250.50", "2": "45000.00"} - фактические призы
+    
     calculated_at = Column(
         DateTime(timezone=True), 
         nullable=False, 

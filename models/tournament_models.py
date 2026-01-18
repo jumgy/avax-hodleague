@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric, Boolean, JSON
 from datetime import datetime, timezone
 from .database import Base
 class Tournament(Base):
@@ -17,6 +17,8 @@ class Tournament(Base):
     gameplay_start_date = Column(DateTime(timezone=True), nullable=True)  # Когда начинается игра и фиксируются цены
 
     weight_limit = Column(Integer, nullable=False, default=30)  # Maximum deck weight limit
+    reward_types = Column(JSON, nullable=True)  # [1, 2, 3] - список ID типов наград
+    prize_pools = Column(JSON, nullable=True)   # {"1": "100000", "2": "500000"} - пулы для каждого типа
 
     is_active = Column(Boolean, nullable=False, default=True, server_default='true')
     

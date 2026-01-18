@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel, validator, ConfigDict
 from datetime import datetime, timedelta, timezone
 
@@ -17,6 +17,10 @@ class TournamentCreate(BaseModel):
     end_date: datetime
     gameplay_start_date: datetime
     weight_limit: int = 30
+    reward_types: Optional[List[int]] = None
+    prize_pools: Optional[Dict[str, str]] = None
+
+    
 
     @validator('tournament_number')
     def validate_tournament_number(cls, v):
@@ -125,6 +129,8 @@ class TournamentResponse(BaseModel):
     end_date: datetime
     gameplay_start_date: Optional[datetime]
     weight_limit: int
+    reward_types: Optional[List[int]] = None
+    prize_pools: Optional[Dict[str, str]] = None
     created_at: datetime
     updated_at: datetime
     is_active: bool
@@ -311,7 +317,9 @@ async def create_tournament(
         start_date=tournament_data.start_date,
         end_date=tournament_data.end_date,
         gameplay_start_date=tournament_data.gameplay_start_date,
-        weight_limit=tournament_data.weight_limit
+        weight_limit=tournament_data.weight_limit,
+        reward_types=tournament_data.reward_types,
+        prize_pools=tournament_data.prize_pools 
     )
     
     db.add(new_tournament)

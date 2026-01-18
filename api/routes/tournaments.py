@@ -12,6 +12,7 @@ import logging
 from models.database import get_async_db
 from models.tournament_models import Tournament, TournamentStatus
 from models.tournament_deck_models import TournamentDeck
+from models.reward_models import RewardType
 from models.user_models import User
 from models.user_card_models import UserCard
 from models.card_models import Card
@@ -199,8 +200,6 @@ class DeckUnregisterResponse(BaseModel):
 
 # ==================== Leaderboard Models ====================
 
-# ==================== Leaderboard Models ====================
-
 class CardInDeck(BaseModel):
     """Информация о карте в деке"""
     card_id: int
@@ -214,6 +213,17 @@ class CardInDeck(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class PrizeInfo(BaseModel):
+    """Информация о призе"""
+    reward_type_id: int
+    reward_name: str
+    reward_category: str
+    currency_type: str
+    amount: str  # Decimal as string
+    
+    class Config:
+        from_attributes = True
+
 class LeaderboardEntry(BaseModel):
     """Запись в лидерборде"""
     position: int
@@ -222,6 +232,7 @@ class LeaderboardEntry(BaseModel):
     final_score: float
     deck_composition: List[int]
     cards: List[CardInDeck]
+    prizes: Optional[List[PrizeInfo]]
     calculated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -529,6 +540,44 @@ async def get_cards_info(user_card_ids: List[int], db: AsyncSession) -> List[Car
     # Возвращаем в том же порядке что и user_card_ids
     return [cards_dict[user_card_id] for user_card_id in user_card_ids if user_card_id in cards_dict]
 
+async def get_prizes_info(prizes_json: dict, db: AsyncSession) -> List[PrizeInfo]:
+    """
+    Преобразует prizes JSON в список PrizeInfo с названиями наград.
+    
+    Args:
+        prizes_json: {"1": "12250.50", "2": "45000.00"}
+        db: Database session
+    
+    Returns:
+        List[PrizeInfo]
+    """
+    if not prizes_json:
+        return []
+    
+    prize_list = []
+    
+    for reward_type_id_str, amount_str in prizes_json.items():
+        reward_type_id = int(reward_type_id_str)
+        
+        # Получаем информацию о reward_type
+        reward_query = select(RewardType).where(RewardType.id == reward_type_id)
+        reward_result = await db.execute(reward_query)
+        reward_type = reward_result.scalar_one_or_none()
+        
+        if reward_type:
+            prize_list.append(PrizeInfo(
+                reward_type_id=reward_type_id,
+                reward_name=reward_type.name,
+                reward_category=reward_type.reward_category,
+                currency_type=reward_type.currency_type,
+                amount=amount_str
+            ))
+        else:
+            logger.warning(f"RewardType {reward_type_id} not found")
+    
+    return prize_list
+
+
 @router.get("/{tournament_id}/leaderboard",
            response_model=LeaderboardResponse,
            summary="Get tournament leaderboard",
@@ -541,15 +590,14 @@ async def get_tournament_leaderboard(
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Get tournament leaderboard with pagination
-    
+    Get tournament leaderboard with pagination and prizes
     - **tournament_id**: Tournament ID
     - **page**: Page number (default: 1)
     - **limit**: Items per page (default: 50, max: 100)
     - **Authorization** (optional): If provided, returns user's position even if not in top 50
     
     Returns:
-    - Top N participants for current page with full card info
+    - Top N participants for current page with full card info and prizes
     - Total participants count
     - Pagination info
     - User's position (if authenticated and has registered deck)
@@ -560,22 +608,21 @@ async def get_tournament_leaderboard(
         tournament_query = select(Tournament).where(Tournament.id == tournament_id)
         tournament_result = await db.execute(tournament_query)
         tournament = tournament_result.scalar_one_or_none()
-
+        
         if not tournament:
             raise HTTPException(
                 status_code=404,
                 detail=f"Tournament {tournament_id} not found"
             )
-
+        
         # Получаем общее количество участников с результатами
         total_query = select(func.count()).select_from(TournamentResult).where(
             TournamentResult.tournament_id == tournament_id
         )
         total_result = await db.execute(total_query)
         total_participants = total_result.scalar() or 0
-
+        
         if total_participants == 0:
-            # Турнир без результатов
             return LeaderboardResponse(
                 tournament_id=tournament.id,
                 tournament_number=tournament.tournament_number,
@@ -589,17 +636,17 @@ async def get_tournament_leaderboard(
                 my_position=None,
                 last_updated=None
             )
-
+        
         # Получаем время последнего обновления
         last_updated_query = select(func.max(TournamentResult.calculated_at)).where(
             TournamentResult.tournament_id == tournament_id
         )
         last_updated_result = await db.execute(last_updated_query)
         last_updated = last_updated_result.scalar()
-
+        
         # Получаем лидерборд с пагинацией
         offset = (page - 1) * limit
-
+        
         leaderboard_query = select(
             TournamentResult,
             TournamentDeck,
@@ -613,10 +660,10 @@ async def get_tournament_leaderboard(
         ).order_by(
             TournamentResult.final_position.asc()
         ).offset(offset).limit(limit)
-
+        
         leaderboard_result = await db.execute(leaderboard_query)
         leaderboard_rows = leaderboard_result.all()
-
+        
         # Формируем список лидеров
         leaderboard = []
         for result, deck, wallet_address in leaderboard_rows:
@@ -632,6 +679,9 @@ async def get_tournament_leaderboard(
             # Получаем детальную информацию о картах
             cards_info = await get_cards_info(card_ids, db)
             
+            # Получаем информацию о призах
+            prizes_info = await get_prizes_info(result.prizes, db)
+            
             leaderboard.append(LeaderboardEntry(
                 position=result.final_position,
                 user_id=deck.user_id,
@@ -639,13 +689,14 @@ async def get_tournament_leaderboard(
                 final_score=float(result.final_score),
                 deck_composition=card_ids,
                 cards=cards_info,
+                prizes=prizes_info,  # НОВОЕ
                 calculated_at=result.calculated_at
             ))
-
+        
         # Получаем позицию текущего пользователя (если authenticated)
         my_position = None
         user_id = current_user.get('user_id') if current_user else None
-
+        
         if user_id:
             user_deck_query = select(
                 TournamentDeck,
@@ -659,7 +710,7 @@ async def get_tournament_leaderboard(
             )
             user_deck_result = await db.execute(user_deck_query)
             user_deck_row = user_deck_result.first()
-
+            
             if user_deck_row:
                 user_deck, user_wallet = user_deck_row
                 
@@ -669,7 +720,7 @@ async def get_tournament_leaderboard(
                 )
                 user_result_result = await db.execute(user_result_query)
                 user_result = user_result_result.scalar_one_or_none()
-
+                
                 if user_result:
                     # Парсим card_ids из дека пользователя
                     user_card_ids = []
@@ -683,6 +734,9 @@ async def get_tournament_leaderboard(
                     # Получаем детальную информацию о картах пользователя
                     user_cards_info = await get_cards_info(user_card_ids, db)
                     
+                    # Получаем призы пользователя
+                    user_prizes_info = await get_prizes_info(user_result.prizes, db)
+                    
                     my_position = LeaderboardEntry(
                         position=user_result.final_position,
                         user_id=user_deck.user_id,
@@ -690,9 +744,10 @@ async def get_tournament_leaderboard(
                         final_score=float(user_result.final_score),
                         deck_composition=user_card_ids,
                         cards=user_cards_info,
+                        prizes=user_prizes_info,  # НОВОЕ
                         calculated_at=user_result.calculated_at
                     )
-
+        
         return LeaderboardResponse(
             tournament_id=tournament.id,
             tournament_number=tournament.tournament_number,
@@ -706,7 +761,7 @@ async def get_tournament_leaderboard(
             my_position=my_position,
             last_updated=last_updated
         )
-
+        
     except HTTPException:
         raise
     except Exception as e:
