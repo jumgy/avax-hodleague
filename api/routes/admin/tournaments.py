@@ -12,7 +12,7 @@ from .auth import verify_admin_token
 
 class TournamentCreate(BaseModel):
     tournament_number: int
-    status: str = TournamentStatus.REGISTRATION
+    status: str = TournamentStatus.FEATURED
     start_date: datetime
     end_date: datetime
     gameplay_start_date: datetime
@@ -77,10 +77,17 @@ class TournamentCreate(BaseModel):
 
     @validator('status')
     def validate_status_for_gameplay_date(cls, v, values):
-        """Cannot set status to 'registration' if gameplay_start_date already passed"""
+        """ОБНОВИТЬ: добавить проверку для FEATURED"""
+        if v == TournamentStatus.FEATURED:
+            return v
+            
+        # REGISTRATION нельзя создать если gameplay_start_date уже прошла
         if v == TournamentStatus.REGISTRATION and 'gameplay_start_date' in values:
             if values['gameplay_start_date'] <= datetime.now(timezone.utc):
-                raise ValueError("Cannot create tournament with 'registration' status if gameplay_start_date is in the past")
+                raise ValueError(
+                    "Cannot create tournament with 'registration' status "
+                    "if gameplay_start_date is in the past"
+                )
         return v
 
 
@@ -283,17 +290,14 @@ async def create_tournament(
             status_code=400,
             detail=f"Tournament with number {tournament_data.tournament_number} already exists"
         )
-    
-    # ⭐ NEW: Проверяем пересечение по датам gameplay (только для REGISTRATION/ONGOING)
+    # Проверка на пересечение по времени с другими активными турнирами
     if tournament_data.status in [TournamentStatus.REGISTRATION, TournamentStatus.ONGOING]:
-        # Ищем турниры, у которых период gameplay пересекается с новым турниром
         overlap_query = select(Tournament).where(
             and_(
                 Tournament.status.in_([
                     TournamentStatus.REGISTRATION,
                     TournamentStatus.ONGOING
                 ]),
-                # Пересечение: новый.gameplay_start <= существующий.end AND новый.end >= существующий.gameplay_start
                 Tournament.end_date >= tournament_data.gameplay_start_date,
                 Tournament.gameplay_start_date <= tournament_data.end_date
             )
@@ -305,8 +309,10 @@ async def create_tournament(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Cannot create tournament. Time conflict with tournament #{overlapping_tournament.tournament_number} "
-                    f"(gameplay: {overlapping_tournament.gameplay_start_date} - {overlapping_tournament.end_date})"
+                    f"Cannot create tournament. Time conflict with tournament "
+                    f"#{overlapping_tournament.tournament_number} "
+                    f"(gameplay: {overlapping_tournament.gameplay_start_date} - "
+                    f"{overlapping_tournament.end_date})"
                 )
             )
     
@@ -398,12 +404,33 @@ async def update_tournament(
                 detail="Cannot set status to 'registration' - gameplay_start_date has already passed"
             )
 
-    # Проверка активных турниров
+    if tournament_data.status and tournament_data.status != tournament.status:
+        # Запрещенные переходы
+        forbidden_transitions = [
+            (TournamentStatus.ONGOING, TournamentStatus.FEATURED),
+            (TournamentStatus.ONGOING, TournamentStatus.REGISTRATION),
+            (TournamentStatus.FINISHED, TournamentStatus.FEATURED),
+            (TournamentStatus.FINISHED, TournamentStatus.REGISTRATION),
+            (TournamentStatus.FINISHED, TournamentStatus.ONGOING),
+        ]
+        
+        if (tournament.status, tournament_data.status) in forbidden_transitions:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid status transition: cannot change from "
+                    f"'{tournament.status}' to '{tournament_data.status}'"
+                )
+            )
+
     if tournament_data.status:
         if tournament_data.status in [TournamentStatus.REGISTRATION, TournamentStatus.ONGOING]:
             active_query = select(Tournament).where(
                 Tournament.id != tournament_id,
-                Tournament.status.in_([TournamentStatus.REGISTRATION, TournamentStatus.ONGOING])
+                Tournament.status.in_([
+                    TournamentStatus.REGISTRATION, 
+                    TournamentStatus.ONGOING
+                ])
             )
             active_result = await db.execute(active_query)
             active_tournament = active_result.scalar_one_or_none()
@@ -411,7 +438,10 @@ async def update_tournament(
             if active_tournament:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Cannot set tournament to active status. Tournament #{active_tournament.tournament_number} is already active"
+                    detail=(
+                        f"Cannot set tournament to active status. "
+                        f"Tournament #{active_tournament.tournament_number} is already active"
+                    )
                 )
 
     # Применяем обновления
@@ -442,10 +472,17 @@ async def delete_tournament(
         raise HTTPException(status_code=404, detail="Tournament not found")
 
     # Проверка что турнир можно деактивировать
-    if tournament.status in [TournamentStatus.REGISTRATION, TournamentStatus.ONGOING]:
+    if tournament.status in [
+        TournamentStatus.FEATURED,
+        TournamentStatus.REGISTRATION, 
+        TournamentStatus.ONGOING
+    ]:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot deactivate active tournament. Tournament #{tournament.tournament_number} is currently {tournament.status.lower()}"
+            detail=(
+                f"Cannot deactivate active tournament. "
+                f"Tournament #{tournament.tournament_number} is currently {tournament.status.lower()}"
+            )
         )
 
     tournament.is_active = False
@@ -490,17 +527,23 @@ async def get_tournaments_summary(
     finished_result = await db.execute(finished_query)
     finished_count = finished_result.scalar()
 
-    # Текущий активный турнир
-    current_query = select(Tournament).where(Tournament.status.in_([
-        TournamentStatus.REGISTRATION,
-        TournamentStatus.ONGOING
-    ]))
+    featured_query = select(func.count()).select_from(Tournament).where(
+        Tournament.status == TournamentStatus.FEATURED
+    )
+    featured_result = await db.execute(featured_query)
+    featured_count = featured_result.scalar()
+    current_query = select(Tournament).where(
+        Tournament.status.in_([
+            TournamentStatus.REGISTRATION,
+            TournamentStatus.ONGOING
+        ])
+    )
     current_result = await db.execute(current_query)
     current_tournament = current_result.scalar_one_or_none()
-
     return {
         "total_tournaments": total_tournaments,
         "by_status": {
+            "featured": featured_count,
             "registration": registration_count,
             "ongoing": ongoing_count,
             "finished": finished_count

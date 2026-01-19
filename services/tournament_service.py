@@ -94,6 +94,64 @@ class TournamentService:
             logger.error(f"❌ Error starting tournament {tournament_id}: {e}")
             raise
 
+    async def transition_featured_to_registration(self, tournament_id: int, db: AsyncSession):
+        """
+        Переводит турнир из FEATURED в REGISTRATION
+        Вызывается автоматически scheduler'ом при наступлении start_date
+        
+        Args:
+            tournament_id: ID турнира
+            db: Database session
+            
+        Raises:
+            ValueError: если турнир не найден или не в статусе FEATURED
+        """
+        try:
+            # Получаем турнир
+            result = await db.execute(
+                select(Tournament).where(Tournament.id == tournament_id)
+            )
+            tournament = result.scalar_one_or_none()
+            
+            if not tournament:
+                raise ValueError(f"Tournament {tournament_id} not found")
+            
+            # Проверка текущего статуса
+            if tournament.status != TournamentStatus.FEATURED:
+                raise ValueError(
+                    f"Tournament {tournament_id} is in status '{tournament.status}', "
+                    f"expected 'featured'"
+                )
+            
+            # Проверка времени (опционально, для безопасности)
+            now = datetime.now(timezone.utc)
+            if tournament.start_date > now:
+                raise ValueError(
+                    f"Tournament {tournament_id} start_date "
+                    f"({tournament.start_date}) has not arrived yet"
+                )
+            
+            # Переводим в REGISTRATION
+            tournament.status = TournamentStatus.REGISTRATION
+            tournament.updated_at = datetime.now(timezone.utc)
+            
+            await db.commit()
+            await db.refresh(tournament)
+            
+            logger.info(
+                f"✅ Tournament #{tournament.tournament_number} (id={tournament_id}) "
+                f"transitioned from FEATURED to REGISTRATION"
+            )
+            
+            return tournament
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(
+                f"❌ Error transitioning tournament {tournament_id} to registration: {e}"
+            )
+            raise
+
 
     async def recalculate_token_weights(self, tournament_id: int, db: AsyncSession) -> int:
         """

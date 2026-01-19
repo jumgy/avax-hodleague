@@ -10,7 +10,7 @@ class Tournament(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     tournament_number = Column(Integer, nullable=False, unique=True)  # Sequential tournament number
-    status = Column(String(20), nullable=False, default="registration")  # "registration", "ongoing", "finished"
+    status = Column(String(20), nullable=False, default="featured") # "featured", "registration", "ongoing", "finished"
 
     start_date = Column(DateTime(timezone=True), nullable=False)
     end_date = Column(DateTime(timezone=True), nullable=False)
@@ -54,10 +54,11 @@ class TournamentTokenSnapshot(Base):
     snapshot_time = Column(DateTime(timezone=True), nullable=False)
     
 class TournamentStatus:
+    FEATURED = "featured"
     REGISTRATION = "registration"
     ONGOING = "ongoing"
     FINISHED = "finished"
-    ALL_STATUSES = [REGISTRATION, ONGOING, FINISHED]
+    ALL_STATUSES = [FEATURED, REGISTRATION, ONGOING, FINISHED]
     
     @classmethod
     def is_valid(cls, status):

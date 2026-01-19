@@ -214,29 +214,68 @@ class SchedulerService:
 
 
     async def _check_tournaments_to_start(self):
-        """Check if any tournaments should be started"""
+        """
+        Check tournaments lifecycle:
+        1. FEATURED -> REGISTRATION (when start_date arrives)
+        2. REGISTRATION -> ONGOING (when gameplay_start_date arrives)
+        """
         try:
-            # Сначала найдем какие турниры надо стартовать
+            now = datetime.now(timezone.utc)
+            
+            # ===== STEP 1: FEATURED -> REGISTRATION =====
             async with AsyncSessionLocal() as db:
-                now = datetime.now(timezone.utc)
+                result = await db.execute(
+                    select(Tournament).where(
+                        and_(
+                            Tournament.status == TournamentStatus.FEATURED,
+                            Tournament.start_date <= now,
+                            Tournament.is_active == True
+                        )
+                    )
+                )
+                featured_tournaments = result.scalars().all()
+            
+            if featured_tournaments:
+                logger.info(f"🆕 Found {len(featured_tournaments)} FEATURED tournament(s) ready for registration")
                 
+                for tournament in featured_tournaments:
+                    try:
+                        logger.info(
+                            f"📝 Opening registration for tournament #{tournament.tournament_number} "
+                            f"(scheduled: {tournament.start_date.strftime('%Y-%m-%d %H:%M:%S')}, "
+                            f"now: {now.strftime('%Y-%m-%d %H:%M:%S')})"
+                        )
+                        
+                        async with AsyncSessionLocal() as db:
+                            await tournament_service.transition_featured_to_registration(tournament.id, db)
+                        
+                        logger.info(f"✅ Tournament #{tournament.tournament_number} opened for registration")
+                    
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Failed to open registration for tournament #{tournament.tournament_number}: {e}",
+                            exc_info=True
+                        )
+            
+            # ===== STEP 2: REGISTRATION -> ONGOING =====
+            async with AsyncSessionLocal() as db:
                 result = await db.execute(
                     select(Tournament).where(
                         and_(
                             Tournament.status == TournamentStatus.REGISTRATION,
-                            Tournament.gameplay_start_date <= now
+                            Tournament.gameplay_start_date <= now,
+                            Tournament.is_active == True
                         )
                     )
                 )
-                tournaments = result.scalars().all()
+                registration_tournaments = result.scalars().all()
             
-            if not tournaments:
+            if not registration_tournaments:
                 return
             
-            logger.info(f"🏁 Found {len(tournaments)} tournament(s) ready to start")
+            logger.info(f"🏁 Found {len(registration_tournaments)} REGISTRATION tournament(s) ready to start")
             
-            # Каждый турнир обрабатываем в ОТДЕЛЬНОЙ сессии
-            for tournament in tournaments:
+            for tournament in registration_tournaments:
                 try:
                     logger.info(
                         f"▶️  Starting tournament #{tournament.tournament_number} "
@@ -244,17 +283,17 @@ class SchedulerService:
                         f"now: {now.strftime('%Y-%m-%d %H:%M:%S')})"
                     )
                     
-                    # Создаем новую сессию для этого турнира
                     async with AsyncSessionLocal() as db:
                         await tournament_service.start_tournament(tournament.id, db)
                     
                     logger.info(f"✅ Tournament #{tournament.tournament_number} started successfully")
+                
                 except Exception as e:
                     logger.error(
                         f"❌ Failed to start tournament #{tournament.tournament_number}: {e}",
                         exc_info=True
                     )
-                    
+        
         except Exception as e:
             logger.error(f"❌ Tournament start checker failed: {e}", exc_info=True)
 
