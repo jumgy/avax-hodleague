@@ -1,5 +1,4 @@
 # services/web3_auth_service.py
-
 import secrets
 import hashlib
 import time
@@ -11,6 +10,8 @@ import jwt
 import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from web3 import Web3
+from eth_utils import to_checksum_address
 
 from models.database import get_async_db
 from models.user_models import User
@@ -23,6 +24,20 @@ class Web3AuthService:
         # Храним nonce в памяти (в продакшене лучше Redis)
         self.nonce_storage: Dict[str, Dict] = {}
         self.cleanup_interval = 600  # 10 минут для cleanup
+        
+        # Web3 provider для EIP-1271
+        try:
+            self.w3 = Web3(Web3.HTTPProvider(Config.WEB3_PROVIDER_URL))
+            if self.w3.is_connected():
+                logger.info(f"✅ Web3 connected to {Config.WEB3_PROVIDER_URL}")
+            else:
+                logger.warning(f"⚠️ Web3 provider not connected: {Config.WEB3_PROVIDER_URL}")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Web3 provider: {e}")
+            self.w3 = None
+        
+        # EIP-1271 magic value
+        self.EIP1271_MAGIC_VALUE = "0x1626ba7e"
 
     def generate_nonce(self, wallet_address: str) -> str:
         """Генерируем nonce для подписи"""
@@ -49,8 +64,8 @@ class Web3AuthService:
         logger.info(f"Generated nonce for wallet: {wallet_address[:10]}...")
         return message
 
-    def verify_signature(self, wallet_address: str, signature: str) -> bool:
-        """Верифицируем подпись сообщения"""
+    async def verify_signature(self, wallet_address: str, signature: str) -> bool:
+        """Верифицируем подпись для EOA и смарт-контрактных кошельков"""
         wallet_address = wallet_address.lower()
         
         # Проверяем, есть ли nonce для этого кошелька
@@ -67,27 +82,111 @@ class Web3AuthService:
             return False
         
         try:
-            # Кодируем сообщение для верификации
             message = nonce_data['message']
             message_hash = encode_defunct(text=message)
             
-            # Восстанавливаем адрес из подписи
-            recovered_address = Account.recover_message(message_hash, signature=signature)
+            # 1. Сначала пробуем как обычный кошелек (EOA)
+            try:
+                recovered_address = Account.recover_message(message_hash, signature=signature)
+                
+                if recovered_address.lower() == wallet_address.lower():
+                    logger.info(f"✅ Valid EOA signature for wallet: {wallet_address[:10]}...")
+                    del self.nonce_storage[wallet_address]
+                    return True
+            except Exception as eoa_error:
+                logger.debug(f"EOA recovery failed, trying EIP-1271: {eoa_error}")
             
-            # Проверяем, что адрес совпадает
-            is_valid = recovered_address.lower() == wallet_address.lower()
+            # 2. Если EOA не сработало, пробуем EIP-1271 (смарт-контракт)
+            is_valid = await self._verify_eip1271_signature(
+                wallet_address, 
+                message, 
+                signature
+            )
             
             if is_valid:
-                logger.info(f"Valid signature for wallet: {wallet_address[:10]}...")
-                # Удаляем использованный nonce
+                logger.info(f"✅ Valid EIP-1271 signature for wallet: {wallet_address[:10]}...")
                 del self.nonce_storage[wallet_address]
-            else:
-                logger.warning(f"Invalid signature for wallet: {wallet_address[:10]}...")
+                return True
             
+            logger.warning(f"❌ Invalid signature for wallet: {wallet_address[:10]}...")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error verifying signature: {e}", exc_info=True)
+            return False
+
+    async def _verify_eip1271_signature(
+        self, 
+        contract_address: str, 
+        message: str, 
+        signature: str
+    ) -> bool:
+        """Проверка подписи через EIP-1271 для смарт-контрактных кошельков"""
+        try:
+            # Проверяем, что Web3 инициализирован
+            if not self.w3:
+                logger.error("Web3 provider not initialized")
+                return False
+            
+            # Проверяем, является ли адрес контрактом
+            checksum_address = to_checksum_address(contract_address)
+            code = self.w3.eth.get_code(checksum_address)
+            
+            if code == b'' or code == b'\x00' or code.hex() == '0x':
+                logger.debug(f"Address {contract_address[:10]}... is not a contract (EOA)")
+                return False
+            
+            logger.info(f"Address {contract_address[:10]}... is a smart contract, verifying with EIP-1271")
+            
+            # Кодируем сообщение так же, как для EOA
+            message_hash = encode_defunct(text=message)
+            
+            # Получаем hash bytes
+            if hasattr(message_hash, 'body'):
+                hash_bytes = message_hash.body
+            elif hasattr(message_hash, 'message_hash'):
+                hash_bytes = message_hash.message_hash
+            else:
+                hash_bytes = message_hash
+            
+            # EIP-1271 ABI
+            eip1271_abi = [{
+                "constant": True,
+                "inputs": [
+                    {"name": "_hash", "type": "bytes32"},
+                    {"name": "_signature", "type": "bytes"}
+                ],
+                "name": "isValidSignature",
+                "outputs": [{"name": "magicValue", "type": "bytes4"}],
+                "type": "function"
+            }]
+            
+            # Создаем контракт
+            contract = self.w3.eth.contract(
+                address=checksum_address,
+                abi=eip1271_abi
+            )
+            
+            # Убираем '0x' из подписи если есть
+            signature_bytes = bytes.fromhex(signature[2:] if signature.startswith('0x') else signature)
+            
+            # Вызываем isValidSignature
+            magic_value = contract.functions.isValidSignature(
+                hash_bytes,
+                signature_bytes
+            ).call()
+            
+            # Проверяем magic value
+            magic_hex = magic_value.hex() if isinstance(magic_value, bytes) else hex(magic_value)[2:]
+            expected_magic = self.EIP1271_MAGIC_VALUE[2:]
+            
+            is_valid = magic_hex == expected_magic
+            
+            logger.info(f"EIP-1271 verification: {'✅ VALID' if is_valid else '❌ INVALID'} (magic: 0x{magic_hex})")
             return is_valid
             
         except Exception as e:
-            logger.error(f"Error verifying signature: {e}")
+            logger.error(f"EIP-1271 verification error: {e}", exc_info=True)
             return False
 
     async def get_user_by_wallet(self, wallet_address: str, db: AsyncSession) -> Optional[User]:
@@ -121,11 +220,11 @@ class Web3AuthService:
             if existing_user:
                 logger.info(f"Existing user login: {existing_user.nickname}")
                 return existing_user
-
+            
             # Создаем нового пользователя
             if not nickname:
                 nickname = f"Player{wallet_address[2:8].upper()}"
-
+            
             # Проверяем уникальность nickname
             counter = 1
             original_nickname = nickname
@@ -136,7 +235,7 @@ class Web3AuthService:
                     break
                 nickname = f"{original_nickname}{counter}"
                 counter += 1
-
+            
             # Генерируем referral_route на основе nickname
             referral_route = f"{nickname}{secrets.randbelow(9999):04d}"
             while True:
@@ -145,11 +244,11 @@ class Web3AuthService:
                 if check_result.scalar_one_or_none() is None:
                     break
                 referral_route = f"{nickname}{secrets.randbelow(9999):04d}"
-
+            
             # Дефолтный avatar
             if not avatar_url:
                 avatar_url = f"https://api.dicebear.com/7.x/avataaars/svg?seed={wallet_address}"
-
+            
             # Создаем пользователя
             new_user = User(
                 wallet_address=wallet_address,
@@ -157,14 +256,14 @@ class Web3AuthService:
                 referral_route=referral_route,
                 avatar_url=avatar_url
             )
-
+            
             db.add(new_user)
             await db.commit()
             await db.refresh(new_user)
-
+            
             logger.info(f"New user created: {new_user.nickname} ({wallet_address[:10]}...)")
             return new_user
-
+            
         except Exception as e:
             logger.error(f"Error creating/getting user: {e}")
             await db.rollback()

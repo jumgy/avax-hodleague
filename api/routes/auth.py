@@ -117,7 +117,7 @@ async def verify_signature(
     Validates the signed message and returns JWT access token.
     """
     try:
-        is_valid = web3_auth_service.verify_signature(
+        is_valid = await web3_auth_service.verify_signature(
             request.wallet_address, 
             request.signature
         )
