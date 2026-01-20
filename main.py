@@ -2,14 +2,19 @@
 
 import logging
 import sys
+import secrets
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from api.routes import router as api_router
 from api.routes.admin import admin_router
 from services.scheduler_service import scheduler_service
 from config import Config
 from models.database import init_database, close_database
+
 
 _logging_configured = False
 def setup_logging():
@@ -102,15 +107,41 @@ async def lifespan(app: FastAPI):
     
     logger.info("✅ Application shutdown complete")
 
-# Create FastAPI app
+
+security = HTTPBasic()
+def verify_swagger_access(credentials: HTTPBasicCredentials = Depends(security)):
+    """Проверка доступа к Swagger в production"""
+    correct_username = secrets.compare_digest(
+        credentials.username.encode("utf8"), 
+        Config.SWAGGER_USERNAME.encode("utf8")
+    )
+    correct_password = secrets.compare_digest(
+        credentials.password.encode("utf8"),
+        Config.SWAGGER_PASSWORD.encode("utf8")
+    )
+    
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return True
+def get_swagger_dependency():
+    """Возвращает dependency в зависимости от окружения"""
+    if Config.ENVIRONMENT == "production":
+        return Depends(verify_swagger_access)
+    return None  # В development не требуем авторизацию
+
+
 app = FastAPI(
     title="Hodleague API",
     description="API for fantasy cryptocurrency trading game", 
     version="1.0.0",
     lifespan=lifespan,
-    docs_url="/swagger",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    docs_url=None,  # Отключаем стандартный
+    redoc_url=None,  # Отключаем стандартный
+    openapi_url=None  # Отключаем стандартный
 )
 
 # Setup CORS 
@@ -126,10 +157,47 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 app.include_router(admin_router)
 
-# Main index endpoint
+# ============ ЗАЩИЩЕННЫЕ DOCS ENDPOINTS ============
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_open_api_endpoint(authorized: bool = get_swagger_dependency()):
+    """Protected OpenAPI schema"""
+    return get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+@app.get("/swagger", include_in_schema=False)
+async def get_swagger_documentation(authorized: bool = get_swagger_dependency()):
+    """Protected Swagger UI"""
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title=f"{app.title} - Swagger UI"
+    )
+@app.get("/redoc", include_in_schema=False)
+async def get_redoc_documentation(authorized: bool = get_swagger_dependency()):
+    """Protected ReDoc UI"""
+    from fastapi.openapi.docs import get_redoc_html
+    return get_redoc_html(
+        openapi_url="/openapi.json",
+        title=f"{app.title} - ReDoc"
+    )
+# ============ MAIN ENDPOINTS ============
+
+# Main index endpoint - СКРЫТ В PRODUCTION
 @app.get("/", tags=["Root"])
 async def root():
     """Main API information endpoint"""
+    # В production возвращаем минимум
+    if Config.ENVIRONMENT == "production":
+        return {
+            "message": "Hodleague API",
+            "version": "1.0.0",
+            "docs": "/swagger"
+        }
+    
+    # В development - полная информация
     return {
         "message": "Hodleague API",
         "version": "1.0.0",
@@ -171,10 +239,7 @@ async def health_check():
     """Health check endpoint"""
     from models.database import check_database_connection, get_database_info
     
-    # Check database connection
     db_healthy = await check_database_connection()
-    
-    # Get database info
     db_info = get_database_info()
     
     return {

@@ -15,6 +15,10 @@ class Config:
     DEBUG = os.environ.get('FLASK_DEBUG') == 'True'
     JWT_SECRET = SECRET_KEY
     
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    SWAGGER_USERNAME: str = os.getenv("SWAGGER_USERNAME", "admin")
+    SWAGGER_PASSWORD: str = os.getenv("SWAGGER_PASSWORD", "admin")
+
     # Database settings
     DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql+asyncpg://postgres:postgres@localhost:5432/fantasy_crypto')
     DB_ECHO = os.environ.get('DB_ECHO', 'False').lower() == 'true'
