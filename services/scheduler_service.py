@@ -37,7 +37,7 @@ class SchedulerService:
             # Job 1: Price monitoring (every 30 minutes)
             self.scheduler.add_job(
                 func=self._price_and_score_job,
-                trigger=IntervalTrigger(minutes=1),
+                trigger=IntervalTrigger(minutes=5),
                 id='price_and_score',
                 name='Price Update & Score Calculation',
                 replace_existing=True,
@@ -59,7 +59,7 @@ class SchedulerService:
             # Job 3: Check tournaments to start (every 1 minute)
             self.scheduler.add_job(
                 func=self._check_tournaments_to_start,
-                trigger=IntervalTrigger(minutes=1),
+                trigger=IntervalTrigger(minutes=5),
                 id='tournament_start_checker',
                 name='Tournament Start Checker',
                 replace_existing=True,
@@ -70,7 +70,7 @@ class SchedulerService:
             # Job 4: Check tournaments to finish (every 1 minute)
             self.scheduler.add_job(
                 func=self._check_tournaments_to_finish,
-                trigger=IntervalTrigger(minutes=1),
+                trigger=IntervalTrigger(minutes=5),
                 id='tournament_finish_checker',
                 name='Tournament Finish Checker',
                 replace_existing=True,
