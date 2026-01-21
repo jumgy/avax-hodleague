@@ -98,6 +98,9 @@ class TournamentUpdate(BaseModel):
     end_date: Optional[datetime] = None
     gameplay_start_date: Optional[datetime] = None
     weight_limit: Optional[int] = None
+    reward_types: Optional[List[int]] = None
+    prize_pools: Optional[Dict[str, str]] = None
+    
 
     @validator('tournament_number')
     def validate_tournament_number(cls, v):
