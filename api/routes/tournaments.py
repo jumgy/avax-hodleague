@@ -15,7 +15,7 @@ from models.tournament_deck_models import TournamentDeck
 from models.reward_models import RewardType
 from models.user_models import User
 from models.user_card_models import UserCard
-from models.card_models import Cardпше
+from models.card_models import Card
 from models.rarity_models import Rarity
 from models.token_models import Token
 from services.web3_auth_service import web3_auth_service
