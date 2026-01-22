@@ -231,7 +231,7 @@ class CardRenderService:
             img.paste(number_layer, number_pos, number_layer)
             
             # Save rendered image
-            img.convert("RGB").save(output_path, "PNG", quality=95)
+            img.save(output_path, "PNG", quality=95)
             logger.info(f"✅ Card rendered: {os.path.basename(output_path)}")
             
             return True

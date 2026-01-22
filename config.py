@@ -9,6 +9,11 @@ class Config:
     
     # ✅ API Server settings
     PORT = int(os.environ.get('PORT', 8000))
+
+    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000')
+    @staticmethod
+    def get_cors_origins():
+        return [origin.strip() for origin in Config.CORS_ORIGINS.split(',') if origin.strip()]
     
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'fantasy-crypto-game-secret-key-2025'

@@ -147,10 +147,10 @@ app = FastAPI(
 # Setup CORS 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В продакшене заменить на конкретные домены
+    allow_origins=Config.get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"], 
+    allow_headers=["*"]
 )
 
 # Include routers
