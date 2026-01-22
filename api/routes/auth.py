@@ -88,6 +88,33 @@ class AuthResponse(BaseModel):
             }
         }
 
+class TestAuthResponse(BaseModel):
+    """Response model for test authentication (includes token in body)"""
+    access_token: str  # ← Добавляем токен
+    token_type: str = "bearer"
+    expires_in: int = 604800
+    user: dict
+    cards_granted: Optional[int] = None
+    packs_granted: Optional[int] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "token_type": "bearer",
+                "expires_in": 604800,
+                "user": {
+                    "id": 1,
+                    "wallet_address": "0x1234...",
+                    "nickname": "TestUser123",
+                    "referral_route": "TestUser1230001",
+                    "avatar_url": "https://...",
+                    "created_at": "2026-01-22T10:00:00"
+                },
+                "packs_granted": 3
+            }
+        }
+
 
 
 def verify_jwt_dependency(
@@ -251,11 +278,10 @@ async def get_current_user(current_user: dict = Depends(verify_jwt_dependency)):
         "nickname": current_user["nickname"]
     }
 
-
-@router.post("/test-verify")
+@router.post("/test-verify", response_model=TestAuthResponse)
 async def test_verify_without_signature(
     request: NonceRequest,
-    db: AsyncSession = Depends(get_async_db)  # AsyncSession
+    db: AsyncSession = Depends(get_async_db)
 ):
     """TEST ONLY: Create user and JWT without signature verification"""
     try:
@@ -275,25 +301,12 @@ async def test_verify_without_signature(
         cards_granted_count = 0
         packs_granted_count = 0
 
-        # Выдаем паки новым пользователям (карты временно отключены)
+        # Выдаем паки новым пользователям
         if is_new_user:
-            # 🚫 DISABLED: Не выдаем карточки при тестовой регистрации
-            # try:
-            #     granted_cards = await user_card_grant_service.grant_all_active_cards_to_user(
-            #         user_id=user.id,
-            #         source="admin"
-            #     )
-            #     cards_granted_count = len(granted_cards)
-            #     logger.info(f"Granted {cards_granted_count} test cards to new user {user.id}")
-            # except Exception as card_error:
-            #     logger.error(f"Error granting test cards to user {user.id}: {card_error}")
-            #     cards_granted_count = 0
-
-            # ✅ Выдаем паки
             try:
                 granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
                     user_id=user.id,
-                    source="admin"  # Тестовые паки от админа
+                    source="admin"
                 )
                 packs_granted_count = len(granted_packs)
                 logger.info(f"Granted {packs_granted_count} test packs to new user {user.id}")
@@ -301,10 +314,14 @@ async def test_verify_without_signature(
                 logger.error(f"Error granting test packs to user {user.id}: {pack_error}")
                 packs_granted_count = 0
 
+        # Создаем JWT токен
         access_token = web3_auth_service.create_jwt_token(user)
 
+        # Формируем ответ с токеном в body (для тестов)
         response_data = {
             "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": 604800,
             "user": {
                 "id": user.id,
                 "wallet_address": user.wallet_address,
@@ -315,17 +332,17 @@ async def test_verify_without_signature(
             }
         }
 
+        # Добавляем информацию о выданных паках для новых пользователей
         if is_new_user:
             response_data["cards_granted"] = cards_granted_count
             response_data["packs_granted"] = packs_granted_count
 
-        return AuthResponse(**response_data)
+        return TestAuthResponse(**response_data)
 
     except Exception as e:
         logger.error(f"Error in test verify: {e}")
         raise HTTPException(status_code=500, detail="Test authentication failed")
-
-
+        
 # Дополнительный роут для ручной выдачи карточек (для админов)
 @router.post("/grant-cards")
 async def grant_cards_to_user(
