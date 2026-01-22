@@ -189,12 +189,12 @@ async def verify_signature(
         response.set_cookie(
             key="access_token",
             value=access_token,
-            httponly=True,                    # Защита от XSS
-            secure=Config.ENVIRONMENT == "production",  # HTTPS only в проде
-            samesite="lax",                   # Защита от CSRF
-            max_age=604800,                   # 7 дней в секундах
-            path="/",                         # Доступен для всех путей
-            domain=None                       # Автоматически определяется
+            httponly=True,
+            secure=True,  # ← Меняй на True (бэк же всегда на HTTPS)
+            samesite="none",  # ← Меняй на "none" (иначе не работает cross-origin)
+            max_age=604800,
+            path="/",
+            domain=None
         )
         
         # Формируем ответ БЕЗ токена в body
