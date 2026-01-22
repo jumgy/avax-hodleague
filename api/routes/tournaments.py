@@ -1,6 +1,6 @@
 # api/routes/tournaments.py
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
@@ -15,7 +15,7 @@ from models.tournament_deck_models import TournamentDeck
 from models.reward_models import RewardType
 from models.user_models import User
 from models.user_card_models import UserCard
-from models.card_models import Card
+from models.card_models import Cardпше
 from models.rarity_models import Rarity
 from models.token_models import Token
 from services.web3_auth_service import web3_auth_service
@@ -29,28 +29,55 @@ security_optional = HTTPBearer(auto_error=False)
 # ==================== Auth Dependencies ====================
 
 def get_current_user_optional(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
 ) -> Optional[dict]:
-    if not credentials:
-        return None
-    try:
+    """Optional auth: cookie OR Bearer header"""
+    token = None
+    
+    # 1. Пробуем Bearer header (Swagger)
+    if credentials:
         token = credentials.credentials
+    
+    # 2. Если нет, пробуем cookie (фронт)
+    if not token:
+        token = request.cookies.get("access_token")
+    
+    # 3. Если токена нет - это optional, возвращаем None
+    if not token:
+        return None
+    
+    try:
         payload = web3_auth_service.verify_jwt_token(token)
         return payload if payload else None
     except Exception as e:
         logger.debug(f"Optional auth failed (this is OK): {e}")
         return None
-
+    
 def get_current_user_required(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
 ) -> dict:
-    if not credentials:
+    """Required auth: cookie OR Bearer header"""
+    token = None
+    
+    # 1. Пробуем Bearer header (Swagger)
+    if credentials:
+        token = credentials.credentials
+    
+    # 2. Если нет, пробуем cookie (фронт)
+    if not token:
+        token = request.cookies.get("access_token")
+    
+    # 3. Если токена нет - ошибка
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required"
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"}
         )
+    
     try:
-        token = credentials.credentials
         payload = web3_auth_service.verify_jwt_token(token)
         if not payload:
             raise HTTPException(
@@ -66,7 +93,6 @@ def get_current_user_required(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed"
         )
-
 # ==================== Pydantic Models ====================
 
 class CardInDeckInfo(BaseModel):

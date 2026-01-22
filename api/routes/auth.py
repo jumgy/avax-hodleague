@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException, Header, Depends, Response, Cookie
+from fastapi import APIRouter, HTTPException, Header, Depends, Response, Cookie, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
 from pydantic import BaseModel, validator
 from typing import Optional
 import logging
@@ -12,6 +14,8 @@ from services.user_pack_grant_service import user_pack_grant_service
 from config import Config
 
 logger = logging.getLogger(__name__)
+
+security_optional = HTTPBearer(auto_error=False)
 
 router = APIRouter(prefix="/auth")
 
@@ -85,14 +89,25 @@ class AuthResponse(BaseModel):
         }
 
 
-from fastapi import Cookie, HTTPException
-from typing import Optional
 
 def verify_jwt_dependency(
-    access_token: Optional[str] = Cookie(None)  # ← ЧИТАЕМ ИЗ COOKIE
+    request: Request,
+    access_token: Optional[str] = Cookie(None),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
 ):
-    """Verify JWT token from HTTP-only cookie"""
-    if not access_token:
+    """Verify JWT token from cookie OR Bearer header"""
+    token = None
+    
+    # 1. Пробуем Bearer header (Swagger)
+    if credentials:
+        token = credentials.credentials
+    
+    # 2. Если нет, пробуем cookie (фронт)
+    if not token:
+        token = access_token
+    
+    # 3. Если токена нет вообще - ошибка
+    if not token:
         raise HTTPException(
             status_code=401, 
             detail="Not authenticated",
@@ -100,14 +115,13 @@ def verify_jwt_dependency(
         )
     
     try:
-        payload = web3_auth_service.verify_jwt_token(access_token)
+        payload = web3_auth_service.verify_jwt_token(token)
         if not payload:
             raise HTTPException(
                 status_code=401, 
                 detail="Invalid or expired token"
             )
         return payload
-        
     except HTTPException:
         raise
     except Exception as e:
