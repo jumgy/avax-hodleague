@@ -617,7 +617,7 @@ class TournamentService:
                         await prize_config_service.generate_and_save_prize_structure(
                             tournament_id=tournament_id,
                             reward_type_id=reward_type_id,
-                            prize_pool=prize_pool,
+                            base_prize_pool=prize_pool,
                             total_participants=total_participants
                         )
                     else:
