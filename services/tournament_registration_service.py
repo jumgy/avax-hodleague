@@ -3,6 +3,7 @@ from sqlalchemy import select, and_
 from fastapi import HTTPException, status
 import hashlib
 from typing import List, Dict
+from datetime import datetime, timezone
 
 from models.tournament_deck_models import TournamentDeck
 from models.tournament_models import Tournament
@@ -109,7 +110,15 @@ class TournamentRegistrationService:
 
         # 7. Валидация статуса и подсчёт веса
         total_weight = 0.0
+        now = datetime.now(timezone.utc)
         for user_card, card, token, rarity in cards_result:
+
+            if user_card.expires_at and user_card.expires_at <= now:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Card #{user_card.id} ({token.name} - {rarity.name}) has expired"
+                )
+
             # Проверка статуса
             if user_card.status != "available":
                 raise HTTPException(

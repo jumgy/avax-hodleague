@@ -14,6 +14,9 @@ from services.tournament_service import tournament_service
 from services.score_service import ScoreService
 from models.tournament_models import Tournament, TournamentStatus
 from models.database import AsyncSessionLocal
+from models.user_pack_models import PackSource
+from services.lock_service import JobLockService
+from services.user_pack_grant_service import user_pack_grant_service
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -30,22 +33,22 @@ class SchedulerService:
         if self._started:
             logger.warning("Scheduler is already running")
             return
-
+        
         try:
             logger.info("🕒 Starting scheduler...")
             
-            # Job 1: Price monitoring (every 30 minutes)
+            # Job 1: Price & Score - каждые 5 минут, НЕ в :00 и :30
             self.scheduler.add_job(
                 func=self._price_and_score_job,
-                trigger=IntervalTrigger(minutes=5),
+                trigger=CronTrigger(minute='3,8,13,18,23,28,33,38,43,48,53,58'),
                 id='price_and_score',
                 name='Price Update & Score Calculation',
                 replace_existing=True,
                 max_instances=1,
                 misfire_grace_time=300
             )
-
-            # Job 2: Card rendering (every day at 3 AM)
+            
+            # Job 2: Card rendering
             self.scheduler.add_job(
                 func=self._render_cards_job,
                 trigger=CronTrigger(hour=3, minute=0),
@@ -55,29 +58,18 @@ class SchedulerService:
                 max_instances=1,
                 misfire_grace_time=600
             )
-
-            # Job 3: Check tournaments to start (every 1 minute)
+            
+            # Job 3: Tournament Lifecycle (ОБЪЕДИНЁННЫЙ)
             self.scheduler.add_job(
-                func=self._check_tournaments_to_start,
-                trigger=IntervalTrigger(minutes=5),
-                id='tournament_start_checker',
-                name='Tournament Start Checker',
+                func=self._check_tournaments_lifecycle,
+                trigger=CronTrigger(minute='0,30', second=30),  # :00:30 и :30:30
+                id='tournament_lifecycle',
+                name='Tournament Lifecycle Manager',
                 replace_existing=True,
                 max_instances=1,
                 misfire_grace_time=60
             )
-
-            # Job 4: Check tournaments to finish (every 1 minute)
-            self.scheduler.add_job(
-                func=self._check_tournaments_to_finish,
-                trigger=IntervalTrigger(minutes=5),
-                id='tournament_finish_checker',
-                name='Tournament Finish Checker',
-                replace_existing=True,
-                max_instances=1,
-                misfire_grace_time=60
-            )
-
+            
             self.scheduler.start()
             self._started = True
 
@@ -96,8 +88,7 @@ class SchedulerService:
             await self._render_cards_job()
             
             logger.info("🚀 Running initial tournament checks...")
-            await self._check_tournaments_to_start()
-            await self._check_tournaments_to_finish()
+            await self._check_tournaments_lifecycle()
 
         except Exception as e:
             logger.error(f"Failed to start scheduler: {e}")
@@ -119,83 +110,77 @@ class SchedulerService:
             raise
 
     async def _price_and_score_job(self):
-        """
-        Combined job: Price update → Score calculation → Leaderboard update (sequential)
-        Runs every 1 minute:
-        1. Update token prices (wait for completion)
-        2. Calculate scores based on new prices
-        3. Update tournament leaderboard if there's an ONGOING tournament
-        """
-        job_start = datetime.now()
-        logger.info(f"🔄 Starting price update & score calculation at {job_start.strftime('%H:%M:%S')}")
-
-        try:
-            # ===== STEP 1: Update Prices =====
-            price_start = datetime.now()
-            logger.info("💰 [1/4] Updating token prices...")
-            
-            async with self.price_monitor:
-                await self.price_monitor.monitor_and_update_prices()
-            
-            price_duration = (datetime.now() - price_start).total_seconds()
-            logger.info(f"✅ [1/4] Prices updated in {price_duration:.2f}s")
-
-            # ===== STEP 2: Calculate Scores =====
-            score_start = datetime.now()
-            logger.info("📊 [2/4] Calculating scores...")
-            
-            async with AsyncSessionLocal() as db:
-                score_service = ScoreService(db)
+        """Price update & score calculation с блокировкой"""
+        async with AsyncSessionLocal() as db:
+            async with JobLockService(db, "price_and_score", 300) as lock:
+                if not lock.locked:
+                    logger.warning("🚫 Price & score job already running, skipping")
+                    return
                 
-                # Check for ONGOING tournament
-                result = await db.execute(
-                    select(Tournament).where(
-                        Tournament.status == TournamentStatus.ONGOING
-                    )
-                )
-                tournament = result.scalar_one_or_none()
-
-                # Calculate scores
-                if tournament:
-                    logger.info(f"   ✅ Found ONGOING tournament #{tournament.tournament_number} (id={tournament.id})")
-                    scores_count = await score_service.calculate_and_store_scores(tournament.id)
-                    logger.info(f"   ✅ Calculated {scores_count} token scores for tournament #{tournament.tournament_number}")
-                else:
-                    logger.info("   ℹ️  No active tournament - writing zero scores")
-                    scores_count = await score_service.calculate_and_store_zero_scores()
-                    logger.info(f"   ✅ Wrote zero scores for {scores_count} tokens")
-
-            score_duration = (datetime.now() - score_start).total_seconds()
-            logger.info(f"✅ [2/4] Scores calculated in {score_duration:.2f}s")
-
-            # Update Leaderboard (if tournament is ongoing)
-            leaderboard_start = datetime.now()
-            
-            if tournament:  # Используем турнир из предыдущего шага
-                logger.info(f"🏆 [3/4] Updating leaderboard for tournament #{tournament.tournament_number}...")
-                
-                async with AsyncSessionLocal() as db:
-                    try:
-                        participants_count = await tournament_service.calculate_results(tournament.id, db)
+                # ВСЯ РАБОТА ВНУТРИ БЛОКИРОВКИ! ✅
+                try:
+                    job_start = datetime.now()  # Переместил сюда
+                    logger.info(f"🔄 Starting price update & score calculation at {job_start.strftime('%H:%M:%S')}")
+                    
+                    # ===== STEP 1: Update Prices =====
+                    price_start = datetime.now()
+                    logger.info("💰 [1/4] Updating token prices...")
+                    async with self.price_monitor:
+                        await self.price_monitor.monitor_and_update_prices()
+                    price_duration = (datetime.now() - price_start).total_seconds()
+                    logger.info(f"✅ [1/4] Prices updated in {price_duration:.2f}s")
+                    
+                    # ===== STEP 2: Calculate Scores =====
+                    score_start = datetime.now()
+                    logger.info("📊 [2/4] Calculating scores...")
+                    async with AsyncSessionLocal() as score_db:
+                        score_service = ScoreService(score_db)
                         
-                        leaderboard_duration = (datetime.now() - leaderboard_start).total_seconds()
-                        logger.info(
-                            f"✅ [3/4] Leaderboard updated: {participants_count} participants in {leaderboard_duration:.2f}s"
+                        # Check for ONGOING tournament
+                        result = await score_db.execute(
+                            select(Tournament).where(
+                                Tournament.status == TournamentStatus.ONGOING
+                            )
                         )
-                    except Exception as e:
-                        logger.error(f"❌ [3/4] Failed to update leaderboard: {e}", exc_info=True)
-            else:
-                logger.info("ℹ️  [3/4] No ongoing tournament - skipping leaderboard update")
-
-            # ===== STEP 4: Summary =====
-            total_duration = (datetime.now() - job_start).total_seconds()
-            logger.info(
-                f"✅ [4/4] Complete job finished in {total_duration:.2f}s "
-                f"(prices: {price_duration:.2f}s, scores: {score_duration:.2f}s)"
-            )
-
-        except Exception as e:
-            logger.error(f"❌ Price update & score calculation job failed: {e}", exc_info=True)
+                        tournament = result.scalar_one_or_none()
+                        
+                        # Calculate scores
+                        if tournament:
+                            logger.info(f"   ✅ Found ONGOING tournament #{tournament.tournament_number} (id={tournament.id})")
+                            scores_count = await score_service.calculate_and_store_scores(tournament.id)
+                            logger.info(f"   ✅ Calculated {scores_count} token scores for tournament #{tournament.tournament_number}")
+                        else:
+                            logger.info("   ℹ️  No active tournament - writing zero scores")
+                            scores_count = await score_service.calculate_and_store_zero_scores()
+                            logger.info(f"   ✅ Wrote zero scores for {scores_count} tokens")
+                    
+                    score_duration = (datetime.now() - score_start).total_seconds()
+                    logger.info(f"✅ [2/4] Scores calculated in {score_duration:.2f}s")
+                    
+                    # ===== STEP 3: Update Leaderboard =====
+                    leaderboard_start = datetime.now()
+                    if tournament:
+                        logger.info(f"🏆 [3/4] Updating leaderboard for tournament #{tournament.tournament_number}...")
+                        async with AsyncSessionLocal() as leaderboard_db:
+                            try:
+                                participants_count = await tournament_service.calculate_results(tournament.id, leaderboard_db)
+                                leaderboard_duration = (datetime.now() - leaderboard_start).total_seconds()
+                                logger.info(
+                                    f"✅ [3/4] Leaderboard updated: {participants_count} participants in {leaderboard_duration:.2f}s"
+                                )
+                            except Exception as e:
+                                logger.error(f"❌ [3/4] Failed to update leaderboard: {e}", exc_info=True)
+                    else:
+                        logger.info("ℹ️  [3/4] No ongoing tournament - skipping leaderboard update")
+                    
+                    # ===== STEP 4: Summary =====
+                    total_duration = (datetime.now() - job_start).total_seconds()
+                    logger.info(
+                        f"✅ [4/4] Complete job finished in {total_duration:.2f}s "
+                        f"(prices: {price_duration:.2f}s, scores: {score_duration:.2f}s)"
+                    )
+                except Exception as e:
+                    logger.error(f"❌ Price update & score calculation job failed: {e}", exc_info=True)
 
     async def _render_cards_job(self):
         """Job function for card rendering"""
@@ -211,6 +196,21 @@ class SchedulerService:
             )
         except Exception as e:
             logger.error(f"❌ Card rendering job failed: {e}", exc_info=True)
+
+    async def _check_tournaments_lifecycle(self):
+        """Обрабатывает весь lifecycle турниров с блокировкой"""
+        async with AsyncSessionLocal() as db:
+            async with JobLockService(db, "tournament_lifecycle", 180) as lock:
+                if not lock.locked:
+                    logger.warning("🚫 Tournament lifecycle job already running, skipping")
+                    return
+                
+                try:
+                    # Вызываем оба метода последовательно
+                    await self._check_tournaments_to_start()
+                    await self._check_tournaments_to_finish()
+                except Exception as e:
+                    logger.error(f"❌ Tournament lifecycle failed: {e}", exc_info=True)
 
 
     async def _check_tournaments_to_start(self):
@@ -299,12 +299,12 @@ class SchedulerService:
 
 
     async def _check_tournaments_to_finish(self):
-        """Check if any tournaments should be finished"""
+        """Финализация турнира + мягкое удаление expired карт + выдача паков"""
         try:
-            # Сначала найдем какие турниры надо финишировать
             async with AsyncSessionLocal() as db:
                 now = datetime.now(timezone.utc)
                 
+                # 1. Найти турниры для финализации
                 result = await db.execute(
                     select(Tournament).where(
                         and_(
@@ -314,32 +314,55 @@ class SchedulerService:
                     )
                 )
                 tournaments = result.scalars().all()
-            
-            if not tournaments:
-                return
-            
-            logger.info(f"🏆 Found {len(tournaments)} tournament(s) ready to finish")
-            
-            # Каждый турнир обрабатываем в ОТДЕЛЬНОЙ сессии
-            for tournament in tournaments:
-                try:
-                    logger.info(
-                        f"🏁 Finishing tournament #{tournament.tournament_number} "
-                        f"(scheduled: {tournament.end_date.strftime('%Y-%m-%d %H:%M:%S')}, "
-                        f"now: {now.strftime('%Y-%m-%d %H:%M:%S')})"
+                
+                if not tournaments:
+                    return
+                
+                logger.info(f"🏆 Found {len(tournaments)} tournament(s) to finish")
+                
+                # 2. Финализируем турниры
+                for tournament in tournaments:
+                    try:
+                        async with AsyncSessionLocal() as t_db:
+                            await tournament_service.finish_tournament(tournament.id, t_db)
+                        logger.info(f"✅ Tournament #{tournament.tournament_number} finished")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to finish tournament: {e}", exc_info=True)
+                
+                # 3. 🗑️ МЯГКОЕ УДАЛЕНИЕ expired карт
+                async with AsyncSessionLocal() as cleanup_db:
+                    from sqlalchemy import update
+                    from models.user_card_models import UserCard
+                    
+                    result = await cleanup_db.execute(
+                        update(UserCard)
+                        .where(UserCard.expires_at <= now)
+                        .values(
+                            is_active=False,
+                            status="expired"
+                        )
+                    )
+                    await cleanup_db.commit()
+                    logger.info(f"🗑️  Marked {result.rowcount} cards as expired")
+                
+                # 4. 🎁 Выдаём новые паки ВСЕМ юзерам
+                async with AsyncSessionLocal() as pack_db:
+                    from models.user_models import User
+                    
+                    all_users = await pack_db.execute(
+                        select(User).where(User.is_active == True)
                     )
                     
-                    # Создаем новую сессию для этого турнира
-                    async with AsyncSessionLocal() as db:
-                        await tournament_service.finish_tournament(tournament.id, db)
-                    
-                    logger.info(f"✅ Tournament #{tournament.tournament_number} finished successfully")
-                except Exception as e:
-                    logger.error(
-                        f"❌ Failed to finish tournament #{tournament.tournament_number}: {e}",
-                        exc_info=True
-                    )
-                    
+                    for user in all_users.scalars():
+                        try:
+                            await user_pack_grant_service.grant_all_active_packs_to_user(
+                                user_id=user.id,
+                                source=PackSource.WEEKLY
+                            )
+                            logger.info(f"🎁 Granted weekly packs to user {user.id}")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to grant packs to user {user.id}: {e}")
+                
         except Exception as e:
             logger.error(f"❌ Tournament finish checker failed: {e}", exc_info=True)
 

@@ -1,11 +1,11 @@
 # services/pack_opening_service.py
 
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, List, Optional, Any
 import random
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from models.pack_models import PackType
 from models.user_pack_models import UserPack, PackOpening
@@ -202,6 +202,64 @@ class PackOpeningService:
         except Exception as e:
             logger.error(f"Error finding card for symbol {token_symbol}: {e}")
             return None
+        
+    async def _calculate_expires_at(self, db: AsyncSession) -> datetime:
+        """
+        Рассчитывает expires_at для карт.
+        Логика:
+        - Если есть турнир в REGISTRATION → ближайшая пятница 17:00 UTC
+        - Если НЕТ → пятница через неделю 17:00 UTC
+        """
+        from sqlalchemy import select
+        from models.tournament_models import Tournament, TournamentStatus
+        
+        # Проверяем, есть ли турнир с ОТКРЫТОЙ регистрацией
+        result = await db.execute(
+            select(Tournament).where(
+                Tournament.status == TournamentStatus.REGISTRATION,
+                Tournament.is_active == True
+            ).order_by(Tournament.start_date.asc())
+        )
+        open_tournament = result.scalars().first()
+        
+        # Получаем ближайшую пятницу 17:00
+        nearest_friday = self._get_next_friday_17utc()
+        
+        if open_tournament:
+            # Есть турнир с ОТКРЫТОЙ регистрацией → карты до ближайшей пятницы
+            logger.info(f"📅 Open REGISTRATION tournament found → expires_at: nearest Friday {nearest_friday}")
+            return nearest_friday
+        else:
+            # Нет турнира с открытой регистрацией → карты до пятницы через неделю
+            next_week_friday = nearest_friday + timedelta(days=7)
+            logger.info(f"📅 No open REGISTRATION tournament → expires_at: next week Friday {next_week_friday}")
+            return next_week_friday
+
+
+    def _get_next_friday_17utc(self) -> datetime:
+        """Возвращает ближайшую пятницу 17:00 UTC"""
+        now = datetime.utcnow().replace(tzinfo=timezone.utc)
+        current_weekday = now.weekday()  # 0 = Monday, 4 = Friday
+        
+        # Если сегодня пятница
+        if current_weekday == 4:
+            friday_17 = now.replace(hour=17, minute=0, second=0, microsecond=0)
+            if now < friday_17:
+                # Ещё не 17:00 → возвращаем сегодня
+                return friday_17
+            else:
+                # Уже после 17:00 → следующая пятница
+                return friday_17 + timedelta(days=7)
+        
+        # Если понедельник-четверг → ближайшая пятница
+        if current_weekday < 4:
+            days_until_friday = 4 - current_weekday
+        # Если суббота-воскресенье → следующая пятница
+        else:
+            days_until_friday = 7 - current_weekday + 4
+        
+        next_friday = now + timedelta(days=days_until_friday)
+        return next_friday.replace(hour=17, minute=0, second=0, microsecond=0)
 
     async def open_pack(
         self, 
@@ -262,6 +320,9 @@ class PackOpeningService:
                 
                 # 5. Create user_cards
                 created_cards = []
+
+                expires_at = await self._calculate_expires_at(db)
+
                 for card_id in card_ids:
                     user_card = UserCard(
                         user_id=user_id,
@@ -270,7 +331,8 @@ class PackOpeningService:
                         obtained_at=datetime.utcnow(),
                         source="pack_opening",
                         status="available",
-                        is_active=True
+                        is_active=True,
+                        expires_at=expires_at
                     )
                     db.add(user_card)
                     created_cards.append(user_card)
