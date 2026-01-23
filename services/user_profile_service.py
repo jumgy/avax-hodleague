@@ -1,5 +1,6 @@
 # services/user_profile_service.py
 
+import re
 from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, Dict, Any, List
@@ -19,6 +20,10 @@ class UserProfileService:
         """Find user by wallet address"""
         try:
             wallet_address = wallet_address.strip().lower()
+
+            if not re.match(r'^0x[a-f0-9]{40}$', wallet_address):
+                logger.warning(f"Invalid wallet address format: {wallet_address}")
+                return None  # Или raise ValueError("Invalid wallet address format")
             
             result = await db.execute(
                 select(User).where(User.wallet_address == wallet_address)

@@ -28,6 +28,11 @@ instance/
 
 # dotenv
 .env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.uat
 .env.*
 .json
 
@@ -35,3 +40,6 @@ instance/
 .mypy_cache/
 .coverage
 htmlcov/
+
+# Docker
+docker-compose.override.yml

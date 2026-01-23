@@ -9,9 +9,16 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
 from api.routes import router as api_router
 from api.routes.admin import admin_router
+
 from services.scheduler_service import scheduler_service
+
 from config import Config
 from models.database import init_database, close_database
 
@@ -62,6 +69,8 @@ def setup_logging():
 # Вызываем настройку
 setup_logging()
 logger = logging.getLogger(__name__)
+
+limiter = Limiter(key_func=get_remote_address)
 
 # Startup/shutdown events
 @asynccontextmanager
@@ -144,6 +153,9 @@ app = FastAPI(
     openapi_url=None  # Отключаем стандартный
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Setup CORS 
 app.add_middleware(
     CORSMiddleware,
@@ -185,54 +197,6 @@ async def get_redoc_documentation(authorized: bool = get_swagger_dependency()):
     )
 # ============ MAIN ENDPOINTS ============
 
-# Main index endpoint - СКРЫТ В PRODUCTION
-@app.get("/", tags=["Root"])
-async def root():
-    """Main API information endpoint"""
-    # В production возвращаем минимум
-    if Config.ENVIRONMENT == "production":
-        return {
-            "message": "Hodleague API",
-            "version": "1.0.0",
-            "docs": "/swagger"
-        }
-    
-    # В development - полная информация
-    return {
-        "message": "Hodleague API",
-        "version": "1.0.0",
-        "framework": "FastAPI",
-        "async_engine": "PostgreSQL + asyncpg",
-        "docs": "/swagger",
-        "endpoints": {
-            "tokens": {
-                "GET /api/tokens": "Get 30 game tokens for user selection",
-                "GET /api/simulation-tokens": "Get 100 tokens for simulation calculations"
-            },
-            "tournaments": {
-                "GET /api/tournaments": "Get tournaments list",
-                "GET /api/tournaments/{id}": "Get tournament details",
-                "POST /api/tournaments/register": "Register for tournament",
-                "GET /api/tournaments/my-deck": "Get my tournament deck"
-            },
-            "simulation": {
-                "POST /api/lock-deck": "Lock a deck of 5 tokens",
-                "POST /api/simulate-session": "Run simulation for locked deck",
-                "GET /api/session/{session_id}": "Get session details",
-                "GET /api/session/{session_id}/results": "Get simulation results",
-                "GET /api/sessions": "Get all sessions"
-            },
-            "auth": {
-                "POST /api/auth/request-nonce": "Request nonce for wallet signature",
-                "POST /api/auth/verify-signature": "Verify signature and login"
-            },
-            "admin": {
-                "POST /panel/login": "Admin login",
-                "GET /panel/dashboard/stats": "Dashboard statistics"
-            }
-        }
-    }
-
 # Health check endpoint
 @app.get("/health", tags=["Health"])
 async def health_check():
@@ -260,14 +224,3 @@ async def health_check():
             "status": "running" if scheduler_service._started else "stopped"
         }
     }
-
-# Database info endpoint (для отладки)
-@app.get("/debug/database", tags=["Debug"])
-async def database_info():
-    """Get database connection information (for debugging)"""
-    from models.database import get_database_info
-    
-    if Config.ENVIRONMENT == "production":
-        return {"error": "Debug endpoints disabled in production"}
-    
-    return get_database_info()

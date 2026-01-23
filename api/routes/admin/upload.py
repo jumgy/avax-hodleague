@@ -4,12 +4,16 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends
+from .auth import verify_admin_token
 from fastapi.responses import JSONResponse
 from config import Config
 import aiofiles
 import uuid
 import re
+import os.path
+
+from services.card_render_service import card_render_service
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +54,11 @@ def sanitize_filename(text: str) -> str:
 @router.post("/card-template")
 async def upload_card_template(
     file: UploadFile = File(...),
-    token_symbol: str = Form(...),  # Обязательно! BTC, ETH и т.д.
-    design_type: str = Form(...),    # Обязательно! classic, neon, retro
-    rarity: str = Form(...)          # Обязательно! common, rare, epic
+    token_symbol: str = Form(...),
+    design_type: str = Form(...),
+    rarity: str = Form(...),
+    admin: dict = Depends(verify_admin_token)
+
 ):
     """
     Upload a card template image (base design without text).
@@ -139,7 +145,9 @@ async def upload_card_template(
 
 
 @router.get("/templates")
-async def list_templates():
+async def list_templates(
+    admin: dict = Depends(verify_admin_token)
+):
     """
     List all uploaded card templates.
     Useful for seeing what templates are available.
@@ -184,22 +192,37 @@ async def list_templates():
 
 
 @router.delete("/template/{filename}")
-async def delete_template(filename: str):
-    """
-    Delete a template file.
-    Use with caution - make sure no cards are using this template!
-    """
+async def delete_template(
+    filename: str,
+    admin: dict = Depends(verify_admin_token)
+):
     try:
+        # ✅ Проверка 1: Запретить path traversal символы
+        if '..' in filename or '/' in filename or '\\' in filename:
+            raise HTTPException(400, "Invalid filename: path traversal detected")
+        
+        # ✅ Проверка 2: Только разрешённые расширения
+        if not is_allowed_file(filename):
+            raise HTTPException(400, "Invalid file type")
+        
+        # ✅ Проверка 3: Построить полный путь
         file_path = os.path.join(TEMPLATES_DIR, filename)
         
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="Template not found")
+        # ✅ Проверка 4: Убедиться что путь внутри TEMPLATES_DIR
+        real_path = os.path.realpath(file_path)
+        real_templates_dir = os.path.realpath(TEMPLATES_DIR)
         
-        if not is_allowed_file(filename):
-            raise HTTPException(status_code=400, detail="Invalid file type")
+        if not real_path.startswith(real_templates_dir):
+            logger.warning(f"⚠️ Path traversal attempt blocked: {filename}")
+            raise HTTPException(403, "Access denied")
         
-        os.remove(file_path)
-        logger.info(f"🗑️ Template deleted: {filename}")
+        # ✅ Проверка 5: Файл существует
+        if not os.path.exists(real_path):
+            raise HTTPException(404, "Template not found")
+        
+        # ✅ Безопасное удаление
+        os.remove(real_path)
+        logger.info(f"🗑️ Template deleted by {admin['username']}: {filename}")
         
         return {
             "success": True,
@@ -210,12 +233,14 @@ async def delete_template(filename: str):
         raise
     except Exception as e:
         logger.error(f"❌ Failed to delete template: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(500, f"Failed to delete: {str(e)}")
 
-from services.card_render_service import card_render_service
 
 @router.post("/render-card/{card_id}")
-async def render_card_manually(card_id: int):
+async def render_card_manually(
+    card_id: int,
+    admin: dict = Depends(verify_admin_token)
+):
     """
     Manually trigger rendering for a specific card.
     Useful for testing.
@@ -241,7 +266,9 @@ async def render_card_manually(card_id: int):
 
 
 @router.post("/render-all-cards")
-async def render_all_cards_manually():
+async def render_all_cards_manually(
+    admin: dict = Depends(verify_admin_token)
+):
     """
     Manually trigger rendering for all active cards.
     Use with caution - may take a while!
