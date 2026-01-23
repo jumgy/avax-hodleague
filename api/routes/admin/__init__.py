@@ -15,6 +15,7 @@ from .user_packs import router as user_packs_router
 from .tournament_details import router as tournament_details_router
 from .reward import router as reward_router
 from .user_rewards import router as admin_user_rewards
+from .alpha_test import router as admin_alpha_test_router
 
 
 
@@ -23,6 +24,7 @@ admin_router = APIRouter()
 
 # Include all admin route modules с отдельными тегами
 admin_router.include_router(auth_router, tags=["Admin - Auth"])
+admin_router.include_router(admin_alpha_test_router, tags=["Admin - Alpha Test"])
 admin_router.include_router(tokens_router, tags=["Admin - Tokens"])
 admin_router.include_router(cards_router, tags=["Admin - Cards"])
 admin_router.include_router(upload_router, tags=["Admin - Upload"])

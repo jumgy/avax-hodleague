@@ -94,16 +94,15 @@ router = APIRouter(prefix="/panel")
 @router.post("/auth/signin", response_model=LoginResponse)
 @limiter.limit("5/minute")
 @limiter.limit("20/hour")
-async def system_login(request: LoginRequest, req: Request):
+async def system_login(request: Request, body: LoginRequest):
     """System authentication endpoint"""
-    
-    client_ip = req.client.host
+    client_ip = request.client.host
     
     # Аутентификация
-    if not authenticate_admin(request.username, request.password):
+    if not authenticate_admin(body.username, body.password):
         # Логируем неудачную попытку
         logger.warning(
-            f"🚨 Failed admin login attempt: username={request.username}, ip={client_ip}"
+            f"🚨 Failed admin login attempt: username={body.username}, ip={client_ip}"
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -111,11 +110,11 @@ async def system_login(request: LoginRequest, req: Request):
         )
     
     # Успешная аутентификация
-    logger.info(f"✅ Admin login successful: {request.username} from {client_ip}")
+    logger.info(f"✅ Admin login successful: {body.username} from {client_ip}")
     
     access_token = create_access_token(
         data={
-            "sub": request.username, 
+            "sub": body.username,  # 🔧 Используем body
             "role": "system_admin",
             "ip": client_ip  # Записываем IP в токен
         }

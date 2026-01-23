@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем проект
 COPY . .
 
+RUN mkdir -p /app/static/card_renders /app/static/card_templates
+
 # Меняем владельца (важно для non-root)
 RUN chown -R appuser:appuser /app
 

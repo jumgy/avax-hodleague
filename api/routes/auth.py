@@ -166,16 +166,16 @@ def verify_jwt_dependency(
 
 @router.post("/nonce")
 @limiter.limit("10/minute")
-async def get_nonce(request: Request, nonce_request: NonceRequest):
+async def get_nonce(request: Request, body: NonceRequest):
     """
     Generate nonce for wallet signature authentication
     Returns a message that should be signed by the user's wallet.
     """
     try:
-        message = web3_auth_service.generate_nonce(nonce_request.wallet_address)
+        message = web3_auth_service.generate_nonce(body.wallet_address)
         return {
             "message": message,
-            "wallet_address": request.wallet_address
+            "wallet_address": body.wallet_address
         }
     except Exception as e:
         logger.error(f"Error generating nonce: {e}")
@@ -185,8 +185,8 @@ async def get_nonce(request: Request, nonce_request: NonceRequest):
 @router.post("/verify", response_model=AuthResponse)
 @limiter.limit("5/minute")
 async def verify_signature(
-    http_request: Request,
-    request: VerifyRequest,
+    request: Request,
+    body: VerifyRequest,
     response: Response,
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -196,23 +196,24 @@ async def verify_signature(
     """
     try:
         is_valid = await web3_auth_service.verify_signature(
-            request.wallet_address, 
-            request.signature
+            body.wallet_address,
+            body.signature
         )
+        
         if not is_valid:
             raise HTTPException(status_code=401, detail="Invalid signature")
         
         # Проверяем, существует ли уже пользователь
         existing_user = await web3_auth_service.get_user_by_wallet(
-            request.wallet_address, 
+            body.wallet_address,
             db
         )
         is_new_user = existing_user is None
         
         user = await web3_auth_service.create_or_get_user(
-            wallet_address=request.wallet_address,
-            nickname=request.nickname,
-            avatar_url=request.avatar_url,
+            wallet_address=body.wallet_address,
+            nickname=body.nickname,
+            avatar_url=body.avatar_url,
             db=db
         )
         
@@ -234,7 +235,7 @@ async def verify_signature(
         
         # Создаем JWT токен
         access_token = web3_auth_service.create_jwt_token(user)
-
+        
         cookie_secure = Config.ENVIRONMENT == "production"  # True только на HTTPS
         cookie_samesite = "lax"
         

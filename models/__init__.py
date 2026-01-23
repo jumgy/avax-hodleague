@@ -16,6 +16,8 @@ from .tournament_deck_models import TournamentDeck, TournamentPrizeConfig, Tourn
 from .reward_models import RewardType, UserReward, RewardCategory, ClaimStatus
 from .audit_models import AuditLog, AuditAction, AuditEntity
 from .token_score_models import TokenScore
+from .alpha_test_models import AlphaTestAccess
+from .job_lock_models import JobLock
 
 __all__ = [
     "Base",
@@ -49,4 +51,6 @@ __all__ = [
     "AuditAction",
     "AuditEntity",
     "TokenScore",
+    "AlphaTestAccess",
+    "JobLock"
 ]
