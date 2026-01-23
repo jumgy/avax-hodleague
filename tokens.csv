@@ -1,0 +1,52 @@
+id,name,symbol,weight,image_url,is_active,created_at,updated_at
+3,Bitcoin,BTC,10,https://s2.coinmarketcap.com/static/img/coins/200x200/1.png,t,2025-12-09 23:50:34.58429+00,2025-12-09 23:50:34.584292+00
+4,Ethereum,ETH,10,https://s2.coinmarketcap.com/static/img/coins/200x200/1027.png,t,2025-12-09 23:50:34.586412+00,2025-12-09 23:50:34.586412+00
+7,Solana,SOL,9,https://s2.coinmarketcap.com/static/img/coins/200x200/5426.png,t,2025-12-09 23:50:34.588496+00,2025-12-09 23:50:34.588497+00
+8,TRON,TRX,9,https://s2.coinmarketcap.com/static/img/coins/200x200/1958.png,t,2025-12-09 23:50:34.588943+00,2025-12-09 23:50:34.588944+00
+9,Dogecoin,DOGE,8,https://s2.coinmarketcap.com/static/img/coins/200x200/74.png,t,2025-12-09 23:50:34.589526+00,2025-12-09 23:50:34.589527+00
+12,Hyperliquid,HYPE,7,https://s2.coinmarketcap.com/static/img/coins/200x200/32196.png,t,2025-12-09 23:50:34.591191+00,2025-12-09 23:50:34.591191+00
+27,Decred,DCR,2,https://s2.coinmarketcap.com/static/img/coins/200x200/1168.png,f,2025-12-09 23:50:34.60093+00,2026-01-17 22:26:36.206585+00
+28,IOTA,IOTA,2,https://s2.coinmarketcap.com/static/img/coins/200x200/1720.png,f,2025-12-09 23:50:34.601516+00,2026-01-17 22:26:42.227587+00
+20,Polygon,POL,5,https://s2.coinmarketcap.com/static/img/coins/200x200/28321.png,t,2025-12-09 23:50:34.595925+00,2026-01-17 21:49:27.950221+00
+11,Avalanche,AVAX,8,https://s2.coinmarketcap.com/static/img/coins/200x200/5805.png,f,2025-12-09 23:50:34.590866+00,2026-01-17 22:23:15.410358+00
+14,Zcash,ZEC,7,https://s2.coinmarketcap.com/static/img/coins/200x200/1437.png,f,2025-12-09 23:50:34.592202+00,2026-01-17 22:23:21.703798+00
+13,World Liberty Financial,WLFI,7,https://s2.coinmarketcap.com/static/img/coins/200x200/33251.png,t,2025-12-09 23:50:34.591679+00,2026-01-17 22:23:29.612839+00
+15,Ethena,ENA,6,https://s2.coinmarketcap.com/static/img/coins/200x200/30171.png,f,2025-12-09 23:50:34.592795+00,2026-01-17 22:23:37.873646+00
+17,MemeCore,M,6,https://s2.coinmarketcap.com/static/img/coins/200x200/35491.png,f,2025-12-09 23:50:34.593964+00,2026-01-17 22:23:44.729354+00
+36,OFFICIAL TRUMP,TRUMP,6,https://s2.coinmarketcap.com/static/img/coins/200x200/35336.png,f,2025-12-21 18:22:08.528776+00,2026-01-17 22:23:48.1475+00
+37,Midnight,NIGHT,6,https://s2.coinmarketcap.com/static/img/coins/200x200/39064.png,f,2025-12-21 18:22:31.840497+00,2026-01-17 22:23:52.542954+00
+19,KuCoin Token,KCS,5,https://s2.coinmarketcap.com/static/img/coins/200x200/2087.png,f,2025-12-09 23:50:34.595404+00,2026-01-17 22:23:57.838332+00
+21,Kaspa,KAS,4,https://s2.coinmarketcap.com/static/img/coins/200x200/20396.png,f,2025-12-09 23:50:34.59645+00,2026-01-17 22:24:06.954319+00
+22,Flare,FLR,4,https://s2.coinmarketcap.com/static/img/coins/200x200/7950.png,f,2025-12-09 23:50:34.596919+00,2026-01-17 22:24:11.709238+00
+33,Story,IP,4,https://s2.coinmarketcap.com/static/img/coins/200x200/35626.png,f,2025-12-21 18:20:47.930585+00,2026-01-17 22:26:15.527457+00
+24,Artificial Superintelligence Alliance,FET,3,https://s2.coinmarketcap.com/static/img/coins/200x200/3773.png,f,2025-12-09 23:50:34.598058+00,2026-01-17 22:26:21.206445+00
+26,Tezos,XTZ,3,https://s2.coinmarketcap.com/static/img/coins/200x200/2011.png,f,2025-12-09 23:50:34.599952+00,2026-01-17 22:26:26.194197+00
+29,AB,AB,2,https://s2.coinmarketcap.com/static/img/coins/200x200/3871.png,f,2025-12-09 23:50:34.602078+00,2026-01-17 22:26:29.713215+00
+30,Kaia,KAIA,1,https://s2.coinmarketcap.com/static/img/coins/200x200/32880.png,f,2025-12-09 23:50:34.602942+00,2026-01-17 22:26:45.52774+00
+41,Uniswap,UNI,6,https://s2.coinmarketcap.com/static/img/coins/200x200/7083.png,t,2026-01-17 22:37:48.234472+00,2026-01-17 22:37:48.234476+00
+44,Arbitrum,ARB,5,https://s2.coinmarketcap.com/static/img/coins/200x200/11841.png,t,2026-01-17 22:49:16.739392+00,2026-01-17 22:49:16.739484+00
+47,Optimism,OP,3,https://s2.coinmarketcap.com/static/img/coins/200x200/11840.png,t,2026-01-17 22:55:43.925817+00,2026-01-17 22:55:43.925822+00
+49,Jupiter,JUP,4,https://s2.coinmarketcap.com/static/img/coins/200x200/29210.png,t,2026-01-17 22:59:36.931243+00,2026-01-17 22:59:36.93125+00
+51,Aborean,ABX,1,https://cdn.dexscreener.com/cms/images/d63b5e68c37e44d5ca5ebd4307460f5293c23fd74bd9a31ede6bd9fc184daba8?width=800&height=800&fit=crop&quality=95&format=auto,t,2026-01-19 22:15:26.531572+00,2026-01-19 22:15:26.531576+00
+52,Abster,ABSTER,1,https://cdn.dexscreener.com/cms/images/30LO9K6i77KRcroL?width=800&height=800&fit=crop&quality=95&format=auto,t,2026-01-19 22:35:54.480128+00,2026-01-19 22:35:54.480135+00
+6,BNB,BNB,10,https://s2.coinmarketcap.com/static/img/coins/200x200/1839.png,t,2025-12-09 23:50:34.5877+00,2026-01-21 17:42:19.246309+00
+5,XRP,XRP,9,https://s2.coinmarketcap.com/static/img/coins/200x200/52.png,t,2025-12-09 23:50:34.586852+00,2026-01-21 17:42:19.249084+00
+34,Bitcoin Cash,BCH,8,https://s2.coinmarketcap.com/static/img/coins/200x200/1831.png,t,2025-12-21 18:21:29.784432+00,2026-01-21 17:42:19.250151+00
+10,Cardano,ADA,7,https://s2.coinmarketcap.com/static/img/coins/200x200/2010.png,t,2025-12-09 23:50:34.590038+00,2026-01-21 17:42:19.251095+00
+40,Toncoin,TON,7,https://s2.coinmarketcap.com/static/img/coins/200x200/11419.png,t,2026-01-17 22:36:07.605682+00,2026-01-21 17:42:19.251886+00
+42,Mantle,MNT,7,https://s2.coinmarketcap.com/static/img/coins/200x200/27075.png,t,2026-01-17 22:38:21.144753+00,2026-01-21 17:42:19.252942+00
+43,Aster,ASTER,6,https://s2.coinmarketcap.com/static/img/coins/200x200/36341.png,t,2026-01-17 22:40:09.497364+00,2026-01-21 17:42:19.25411+00
+38,Sui,SUI,6,https://s2.coinmarketcap.com/static/img/coins/200x200/20947.png,t,2026-01-17 22:31:20.703891+00,2026-01-21 17:42:19.254802+00
+39,Litecoin,LTC,6,https://s2.coinmarketcap.com/static/img/coins/200x200/2.png,t,2026-01-17 22:34:15.483324+00,2026-01-21 17:42:19.255554+00
+53,Near,NEAR,6,https://s2.coinmarketcap.com/static/img/coins/200x200/6535.png,t,2026-01-19 22:46:59.738059+00,2026-01-21 17:42:19.256591+00
+16,Aptos,APT,5,https://s2.coinmarketcap.com/static/img/coins/200x200/21794.png,t,2025-12-09 23:50:34.593355+00,2026-01-21 17:42:19.257135+00
+23,Dash,DASH,5,https://s2.coinmarketcap.com/static/img/coins/200x200/131.png,t,2025-12-09 23:50:34.597369+00,2026-01-21 17:42:19.25769+00
+48,BONK,BONK,5,https://s2.coinmarketcap.com/static/img/coins/200x200/23095.png,t,2026-01-17 22:58:00.199567+00,2026-01-21 17:42:19.259028+00
+46,Pepe,PEPE,5,https://s2.coinmarketcap.com/static/img/coins/200x200/24478.png,t,2026-01-17 22:54:19.04502+00,2026-01-21 17:42:19.259716+00
+25,Lido DAO,LDO,4,https://s2.coinmarketcap.com/static/img/coins/200x200/8000.png,t,2025-12-09 23:50:34.599111+00,2026-01-21 17:42:19.260326+00
+31,FLOKI,FLOKI,4,https://s2.coinmarketcap.com/static/img/coins/200x200/10804.png,t,2025-12-09 23:50:34.603448+00,2026-01-21 17:42:19.260753+00
+35,Pudgy Penguins,PENGU,3,https://s2.coinmarketcap.com/static/img/coins/200x200/34466.png,t,2025-12-21 18:21:51.747498+00,2026-01-21 17:42:19.261792+00
+18,Pump.fun,PUMP,3,https://s2.coinmarketcap.com/static/img/coins/200x200/36507.png,t,2025-12-09 23:50:34.594629+00,2026-01-21 17:42:19.262343+00
+32,SPX6900,SPX,2,https://s2.coinmarketcap.com/static/img/coins/200x200/28081.png,t,2025-12-09 23:50:34.603862+00,2026-01-21 17:42:19.262856+00
+45,Virtuals,VIRTUAL,1,https://s2.coinmarketcap.com/static/img/coins/200x200/29420.png,t,2026-01-17 22:50:58.841099+00,2026-01-21 17:42:19.263532+00
+50,Aerodrome,AERO,1,https://s2.coinmarketcap.com/static/img/coins/200x200/29270.png,t,2026-01-17 23:08:39.415691+00,2026-01-21 17:42:19.264118+00
