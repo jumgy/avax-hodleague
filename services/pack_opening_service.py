@@ -206,34 +206,11 @@ class PackOpeningService:
     async def _calculate_expires_at(self, db: AsyncSession) -> datetime:
         """
         Рассчитывает expires_at для карт.
-        Логика:
-        - Если есть турнир в REGISTRATION → ближайшая пятница 17:00 UTC
-        - Если НЕТ → пятница через неделю 17:00 UTC
+        Всегда возвращает ближайшую пятницу 17:00 UTC.
         """
-        from sqlalchemy import select
-        from models.tournament_models import Tournament, TournamentStatus
-        
-        # Проверяем, есть ли турнир с ОТКРЫТОЙ регистрацией
-        result = await db.execute(
-            select(Tournament).where(
-                Tournament.status == TournamentStatus.REGISTRATION,
-                Tournament.is_active == True
-            ).order_by(Tournament.start_date.asc())
-        )
-        open_tournament = result.scalars().first()
-        
-        # Получаем ближайшую пятницу 17:00
         nearest_friday = self._get_next_friday_17utc()
-        
-        if open_tournament:
-            # Есть турнир с ОТКРЫТОЙ регистрацией → карты до ближайшей пятницы
-            logger.info(f"📅 Open REGISTRATION tournament found → expires_at: nearest Friday {nearest_friday}")
-            return nearest_friday
-        else:
-            # Нет турнира с открытой регистрацией → карты до пятницы через неделю
-            next_week_friday = nearest_friday + timedelta(days=7)
-            logger.info(f"📅 No open REGISTRATION tournament → expires_at: next week Friday {next_week_friday}")
-            return next_week_friday
+        logger.info(f"📅 Cards expire at: {nearest_friday}")
+        return nearest_friday
 
 
     def _get_next_friday_17utc(self) -> datetime:
