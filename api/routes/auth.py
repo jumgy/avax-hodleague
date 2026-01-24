@@ -284,7 +284,19 @@ async def verify_signature(
 @router.post("/logout")
 async def logout(response: Response):
     """Clear authentication cookie"""
-    response.delete_cookie(key="access_token", path="/")
+    if Config.ENVIRONMENT == "production":
+        cookie_secure = True
+        cookie_samesite = "lax"
+    else:
+        cookie_secure = True    # На всех стендах, если https
+        cookie_samesite = "none"
+    response.delete_cookie(
+        key="access_token",
+        path="/",
+        domain=None,
+        samesite=cookie_samesite,
+        secure=cookie_secure
+    )
     return {"success": True, "message": "Logged out successfully"}
 
 @router.get("/me")
