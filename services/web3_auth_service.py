@@ -66,6 +66,29 @@ class Web3AuthService:
         logger.info(f"Generated nonce for wallet: {wallet_address[:10]}...")
         return message
 
+    def _decode_abstract_signature(self, signature: str) -> str:
+        """Декодирует ABI-encoded подпись от Abstract Global Wallet"""
+        try:
+            sig = signature[2:] if signature.startswith('0x') else signature
+            
+            if len(sig) <= 132:
+                return signature
+            
+
+            data = sig[128:]
+            
+            sig_length_hex = data[:64]
+            sig_length = int(sig_length_hex, 16)
+            
+            actual_signature = data[64:64 + (sig_length * 2)]
+            
+            logger.info(f"✅ Decoded Abstract signature: {len(actual_signature)//2} bytes")
+            return f"0x{actual_signature}"
+            
+        except Exception as e:
+            logger.debug(f"Not an Abstract signature, using as-is: {e}")
+            return signature
+
     async def verify_signature(self, wallet_address: str, signature: str) -> bool:
         """Верифицируем подпись для EOA и смарт-контрактных кошельков"""
         wallet_address = wallet_address.lower()
@@ -87,9 +110,11 @@ class Web3AuthService:
             message = nonce_data['message']
             message_hash = encode_defunct(text=message)
             
+            decoded_signature = self._decode_abstract_signature(signature)
+            
             # 1. Сначала пробуем как обычный кошелек (EOA)
             try:
-                recovered_address = Account.recover_message(message_hash, signature=signature)
+                recovered_address = Account.recover_message(message_hash, signature=decoded_signature)
                 if recovered_address.lower() == wallet_address.lower():
                     logger.info(f"✅ Valid EOA signature for wallet: {wallet_address[:10]}...")
                     del self.nonce_storage[wallet_address]
@@ -101,7 +126,7 @@ class Web3AuthService:
             is_valid = await self._verify_eip1271_signature(
                 wallet_address, 
                 message, 
-                signature
+                decoded_signature
             )
             
             if is_valid:
