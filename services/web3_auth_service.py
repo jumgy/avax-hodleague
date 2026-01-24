@@ -134,30 +134,24 @@ class Web3AuthService:
             return False
 
     async def _verify_eoa_signature(self, wallet_address: str, message: str, signature: str) -> bool:
-        """EOA verification - как в viem"""
+        """EOA verification"""
         try:
             message_hash = encode_defunct(text=message)
             recovered_address = Account.recover_message(message_hash, signature=signature)
             
-            is_valid = recovered_address.lower() == wallet_address.lower()
-            
-            if is_valid:
-                logger.warning(f"✅ VALID EOA signature")
+            if recovered_address.lower() == wallet_address.lower():
                 del self.nonce_storage[wallet_address]
-            else:
-                logger.warning(f"❌ Address mismatch: got {recovered_address}, expected {wallet_address}")
+                return True
             
-            return is_valid
+            return False
             
         except Exception as e:
-            logger.warning(f"❌ EOA verification failed: {e}")
+            logger.error(f"EOA verification failed: {e}")
             return False
 
+
     async def _verify_eip1271_viem_style(self, wallet_address: str, message: str, signature: str) -> bool:
-        """
-        EIP-1271 verification - точно как viem.verifyMessage()
-        https://github.com/wevm/viem/blob/main/src/utils/signature/verifyMessage.ts
-        """
+        """EIP-1271 verification для смарт-контрактных кошельков"""
         try:
             checksum_address = to_checksum_address(wallet_address)
             
@@ -178,76 +172,38 @@ class Web3AuthService:
                 abi=eip1271_abi
             )
             
-            # 🔥 Формируем hash ТОЧНО как viem (EIP-191)
-            # "\x19Ethereum Signed Message:\n" + len(message) + message
+            # Формируем EIP-191 hash
             message_bytes = message.encode('utf-8')
             prefix = b'\x19Ethereum Signed Message:\n'
             length = str(len(message_bytes)).encode('utf-8')
-            hash_input = prefix + length + message_bytes
-            message_hash = Web3.keccak(hash_input)
-            
-            logger.warning(f"   Message: {message[:50]}...")
-            logger.warning(f"   Message hash: {message_hash.hex()}")
+            message_hash = Web3.keccak(prefix + length + message_bytes)
             
             # Преобразуем подпись в bytes
-            if signature.startswith('0x'):
-                signature = signature[2:]
-            signature_bytes = bytes.fromhex(signature)
-            
-            logger.warning(f"   Signature length: {len(signature_bytes)} bytes")
-            logger.warning(f"   Calling isValidSignature...")
+            signature_bytes = bytes.fromhex(signature[2:] if signature.startswith('0x') else signature)
             
             # Вызываем контракт
-            try:
-                magic_value = contract.functions.isValidSignature(
-                    message_hash,  # bytes32
-                    signature_bytes  # bytes
-                ).call()
-                
-                # Преобразуем результат
-                if isinstance(magic_value, bytes):
-                    result_hex = magic_value.hex()
-                elif isinstance(magic_value, int):
-                    result_hex = format(magic_value, '08x')
-                else:
-                    result_hex = str(magic_value).replace('0x', '')
-                
-                # EIP-1271 magic value
-                MAGIC_VALUE = "1626ba7e"
-                
-                logger.warning(f"   Result: 0x{result_hex}")
-                logger.warning(f"   Expected: 0x{MAGIC_VALUE}")
-                
-                is_valid = result_hex.lower() == MAGIC_VALUE.lower()
-                
-                if is_valid:
-                    logger.warning(f"✅ VALID EIP-1271 signature")
-                    del self.nonce_storage[wallet_address]
-                else:
-                    logger.warning(f"❌ INVALID - magic value mismatch")
-                    
-                    if result_hex == "00000000":
-                        logger.warning(f"   → Contract returned 0x00000000")
-                        logger.warning(f"   → This means the wallet rejected the signature")
-                        logger.warning(f"   → Possible reasons:")
-                        logger.warning(f"     1. Message doesn't match what was signed")
-                        logger.warning(f"     2. Signature format is incorrect")
-                        logger.warning(f"     3. Signer is not authorized on this wallet")
-                
-                return is_valid
-                
-            except Exception as call_error:
-                logger.warning(f"❌ Contract call failed: {call_error}")
-                logger.warning(f"   This might mean:")
-                logger.warning(f"   - Contract doesn't implement EIP-1271")
-                logger.warning(f"   - RPC error")
-                logger.warning(f"   - Invalid parameters")
-                return False
+            magic_value = contract.functions.isValidSignature(
+                message_hash,
+                signature_bytes
+            ).call()
+            
+            # Проверяем magic value
+            if isinstance(magic_value, bytes):
+                result_hex = magic_value.hex()
+            elif isinstance(magic_value, int):
+                result_hex = format(magic_value, '08x')
+            else:
+                result_hex = str(magic_value).replace('0x', '')
+            
+            is_valid = result_hex.lower() == "1626ba7e"
+            
+            if is_valid:
+                del self.nonce_storage[wallet_address]
+            
+            return is_valid
             
         except Exception as e:
-            logger.warning(f"❌ EIP-1271 error: {e}")
-            import traceback
-            logger.warning(traceback.format_exc())
+            logger.error(f"EIP-1271 verification error: {e}")
             return False
 
     async def get_user_by_wallet(self, wallet_address: str, db: AsyncSession) -> Optional[User]:
