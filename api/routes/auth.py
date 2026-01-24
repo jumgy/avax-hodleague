@@ -236,8 +236,14 @@ async def verify_signature(
         # Создаем JWT токен
         access_token = web3_auth_service.create_jwt_token(user)
         
-        cookie_secure = Config.ENVIRONMENT == "production"  # True только на HTTPS
-        cookie_samesite = "lax"
+        # Для UAT нужен SameSite=None (cross-origin с localhost)
+        # Для production нужен SameSite=lax (same-site)
+        if Config.ENVIRONMENT == "production":
+            cookie_secure = True
+            cookie_samesite = "lax"
+        else:
+            cookie_secure = True  # На UAT есть HTTPS
+            cookie_samesite = "none"  # Разрешаем cross-origin
         
         response.set_cookie(
             key="access_token",
