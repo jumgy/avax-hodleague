@@ -8,6 +8,7 @@ from eth_account.messages import encode_defunct
 from eth_account import Account
 import jwt
 import logging
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from web3 import Web3
@@ -18,6 +19,7 @@ from models.user_models import User
 from config import Config
 
 logger = logging.getLogger(__name__)
+
 
 class Web3AuthService:
     def __init__(self):
@@ -88,7 +90,6 @@ class Web3AuthService:
             # 1. Сначала пробуем как обычный кошелек (EOA)
             try:
                 recovered_address = Account.recover_message(message_hash, signature=signature)
-                
                 if recovered_address.lower() == wallet_address.lower():
                     logger.info(f"✅ Valid EOA signature for wallet: {wallet_address[:10]}...")
                     del self.nonce_storage[wallet_address]
@@ -181,8 +182,8 @@ class Web3AuthService:
             expected_magic = self.EIP1271_MAGIC_VALUE[2:]
             
             is_valid = magic_hex == expected_magic
-            
             logger.info(f"EIP-1271 verification: {'✅ VALID' if is_valid else '❌ INVALID'} (magic: 0x{magic_hex})")
+            
             return is_valid
             
         except Exception as e:
@@ -200,6 +201,53 @@ class Web3AuthService:
         except Exception as e:
             logger.error(f"Error getting user by wallet: {e}")
             return None
+
+    async def fetch_abstract_profile(self, wallet_address: str) -> Dict[str, Optional[str]]:
+        """
+        Получить профиль пользователя из Abstract API
+        
+        Returns:
+            dict: {'nickname': str, 'avatar_url': str} или пустой dict при ошибке
+        """
+        try:
+            url = f"https://backend.portal.abs.xyz/api/user/address/{wallet_address.lower()}"
+            
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    url,
+                    headers={
+                        'Accept': 'application/json',
+                        'User-Agent': 'Hodleague/1.0'
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    user_data = data.get('user', {})
+                    
+                    nickname = user_data.get('name')
+                    avatar_url = user_data.get('overrideProfilePictureUrl')
+                    
+                    logger.info(
+                        f"✅ Fetched Abstract profile for {wallet_address[:10]}...: "
+                        f"nickname={nickname}, avatar={'Yes' if avatar_url else 'No'}"
+                    )
+                    
+                    return {
+                        'nickname': nickname,
+                        'avatar_url': avatar_url
+                    }
+                else:
+                    logger.debug(
+                        f"Abstract API returned {response.status_code} for {wallet_address[:10]}..."
+                    )
+                    
+        except httpx.TimeoutException:
+            logger.warning(f"Abstract API timeout for {wallet_address[:10]}...")
+        except Exception as e:
+            logger.debug(f"Failed to fetch Abstract profile: {e}")
+        
+        return {}
 
     async def create_or_get_user(
         self, 
@@ -221,9 +269,23 @@ class Web3AuthService:
                 logger.info(f"Existing user login: {existing_user.nickname}")
                 return existing_user
             
-            # Создаем нового пользователя
+
+            if not nickname or not avatar_url:
+                logger.info(f"Fetching profile from Abstract API for {wallet_address[:10]}...")
+                abstract_profile = await self.fetch_abstract_profile(wallet_address)
+                
+                # Используем данные из Abstract, если они есть
+                if not nickname and abstract_profile.get('nickname'):
+                    nickname = abstract_profile['nickname']
+                    logger.info(f"Using Abstract nickname: {nickname}")
+                
+                if not avatar_url and abstract_profile.get('avatar_url'):
+                    avatar_url = abstract_profile['avatar_url']
+                    logger.info(f"Using Abstract avatar")
+            
             if not nickname:
                 nickname = f"Player{wallet_address[2:8].upper()}"
+                logger.info(f"Using default nickname: {nickname}")
             
             # Проверяем уникальность nickname
             counter = 1
@@ -245,9 +307,10 @@ class Web3AuthService:
                     break
                 referral_route = f"{nickname}{secrets.randbelow(9999):04d}"
             
-            # Дефолтный avatar
+            # Дефолтный avatar если не нашли в Abstract
             if not avatar_url:
                 avatar_url = f"https://api.dicebear.com/7.x/avataaars/svg?seed={wallet_address}"
+                logger.info(f"Using default avatar (Dicebear)")
             
             # Создаем пользователя
             new_user = User(

@@ -271,7 +271,7 @@ async def get_my_tournament_history(
                 detail="Invalid user data in token"
             )
         
-        # Получаем все турниры пользователя с результатами
+        # Получаем все ЗАВЕРШЕННЫЕ турниры пользователя с результатами
         tournaments_query = select(
             Tournament,
             TournamentDeck,
@@ -283,9 +283,11 @@ async def get_my_tournament_history(
                 TournamentDeck.user_id == user_id,
                 TournamentDeck.is_active == True
             )
-        ).outerjoin(
+        ).join(
             TournamentResult,
             TournamentResult.tournament_deck_id == TournamentDeck.id
+        ).where(
+            Tournament.status == 'finished'
         ).order_by(
             Tournament.start_date.desc()
         )
@@ -298,26 +300,7 @@ async def get_my_tournament_history(
         best_score = None
         
         for tournament, deck, tournament_result in rows:
-            # Если нет результатов (турнир еще идет)
-            if not tournament_result:
-                cards_info = await _get_deck_cards_info(deck.deck_composition, db)
-                
-                tournaments_history.append(UserTournamentHistory(
-                    tournament_id=tournament.id,
-                    tournament_number=tournament.tournament_number,
-                    status=tournament.status,
-                    start_date=tournament.start_date.isoformat(),
-                    end_date=tournament.end_date.isoformat(),
-                    position=0,
-                    final_score=0.0,
-                    deck_id=deck.id,
-                    deck_composition=deck.deck_composition if isinstance(deck.deck_composition, list) else [],
-                    cards=cards_info,
-                    prizes=[],
-                    registered_at=deck.submitted_at.isoformat(),
-                    calculated_at=None
-                ))
-                continue
+            # Убираем проверку if not tournament_result, т.к. теперь результат всегда есть
             
             # Получаем информацию о картах деки
             deck_card_ids = []
