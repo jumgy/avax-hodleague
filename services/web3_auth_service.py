@@ -93,52 +93,67 @@ class Web3AuthService:
         """Верифицируем подпись для EOA и смарт-контрактных кошельков"""
         wallet_address = wallet_address.lower()
         
-        # Проверяем, есть ли nonce для этого кошелька
         if wallet_address not in self.nonce_storage:
-            logger.warning(f"No nonce found for wallet: {wallet_address[:10]}...")
+            logger.warning(f"❌ No nonce found for wallet: {wallet_address[:10]}...")
             return False
         
         nonce_data = self.nonce_storage[wallet_address]
         
-        # Проверяем, не истек ли nonce
         if time.time() > nonce_data['expires_at']:
-            logger.warning(f"Nonce expired for wallet: {wallet_address[:10]}...")
+            logger.warning(f"❌ Nonce expired for wallet: {wallet_address[:10]}...")
             del self.nonce_storage[wallet_address]
             return False
         
         try:
             message = nonce_data['message']
-            message_hash = encode_defunct(text=message)
             
-            decoded_signature = self._decode_abstract_signature(signature)
+            logger.warning(f"🔍 VERIFYING: {wallet_address[:10]}...")
+            logger.warning(f"   Signature length: {len(signature)}")
             
-            # 1. Сначала пробуем как обычный кошелек (EOA)
-            try:
-                recovered_address = Account.recover_message(message_hash, signature=decoded_signature)
-                if recovered_address.lower() == wallet_address.lower():
-                    logger.info(f"✅ Valid EOA signature for wallet: {wallet_address[:10]}...")
-                    del self.nonce_storage[wallet_address]
-                    return True
-            except Exception as eoa_error:
-                logger.debug(f"EOA recovery failed, trying EIP-1271: {eoa_error}")
+            # Проверяем - это контракт или EOA?
+            checksum_address = to_checksum_address(wallet_address)
+            code = self.w3.eth.get_code(checksum_address)
+            is_contract = code != b'' and code != b'\x00' and code.hex() != '0x'
             
-            # 2. Если EOA не сработало, пробуем EIP-1271 (смарт-контракт)
+            logger.warning(f"   Is contract: {is_contract}")
+            
+            if not is_contract:
+                # Обычный кошелек (Rabby)
+                logger.warning(f"   Trying EOA...")
+                message_hash = encode_defunct(text=message)
+                decoded_signature = self._decode_abstract_signature(signature)
+                
+                try:
+                    recovered_address = Account.recover_message(message_hash, signature=decoded_signature)
+                    if recovered_address.lower() == wallet_address.lower():
+                        logger.warning(f"✅ VALID EOA signature!")
+                        del self.nonce_storage[wallet_address]
+                        return True
+                except Exception as e:
+                    logger.warning(f"   EOA failed: {str(e)[:50]}")
+                
+                return False
+            
+            # Смарт-контракт (Abstract)
+            logger.warning(f"   Smart contract detected, using EIP-1271...")
+            
+            # 🔥 ДЛЯ EIP-1271 ПЕРЕДАЕМ ОРИГИНАЛЬНУЮ ПОДПИСЬ БЕЗ ДЕКОДИРОВАНИЯ
             is_valid = await self._verify_eip1271_signature(
-                wallet_address, 
-                message, 
-                decoded_signature
+                wallet_address,
+                message,
+                signature  # ОРИГИНАЛ!
             )
             
             if is_valid:
-                logger.info(f"✅ Valid EIP-1271 signature for wallet: {wallet_address[:10]}...")
+                logger.warning(f"✅ VALID EIP-1271 signature!")
                 del self.nonce_storage[wallet_address]
                 return True
             
-            logger.warning(f"❌ Invalid signature for wallet: {wallet_address[:10]}...")
+            logger.warning(f"❌ INVALID signature")
             return False
             
         except Exception as e:
-            logger.error(f"Error verifying signature: {e}", exc_info=True)
+            logger.warning(f"❌ ERROR: {e}")
             return False
 
     async def _verify_eip1271_signature(
@@ -147,33 +162,17 @@ class Web3AuthService:
         message: str, 
         signature: str
     ) -> bool:
-        """Проверка подписи через EIP-1271 для смарт-контрактных кошельков"""
+        """Проверка подписи через EIP-1271 для Abstract Global Wallet"""
         try:
-            # Проверяем, что Web3 инициализирован
             if not self.w3:
-                logger.error("Web3 provider not initialized")
+                logger.warning("❌ Web3 not initialized")
                 return False
             
-            # Проверяем, является ли адрес контрактом
+            # Проверяем сеть
+            chain_id = self.w3.eth.chain_id
+            logger.warning(f"   Chain ID: {chain_id}")
+            
             checksum_address = to_checksum_address(contract_address)
-            code = self.w3.eth.get_code(checksum_address)
-            
-            if code == b'' or code == b'\x00' or code.hex() == '0x':
-                logger.debug(f"Address {contract_address[:10]}... is not a contract (EOA)")
-                return False
-            
-            logger.info(f"Address {contract_address[:10]}... is a smart contract, verifying with EIP-1271")
-            
-            # Кодируем сообщение так же, как для EOA
-            message_hash = encode_defunct(text=message)
-            
-            # Получаем hash bytes
-            if hasattr(message_hash, 'body'):
-                hash_bytes = message_hash.body
-            elif hasattr(message_hash, 'message_hash'):
-                hash_bytes = message_hash.message_hash
-            else:
-                hash_bytes = message_hash
             
             # EIP-1271 ABI
             eip1271_abi = [{
@@ -187,32 +186,84 @@ class Web3AuthService:
                 "type": "function"
             }]
             
-            # Создаем контракт
             contract = self.w3.eth.contract(
                 address=checksum_address,
                 abi=eip1271_abi
             )
             
-            # Убираем '0x' из подписи если есть
-            signature_bytes = bytes.fromhex(signature[2:] if signature.startswith('0x') else signature)
+            # Подпись как bytes (БЕЗ декодирования!)
+            signature_bytes = bytes.fromhex(
+                signature[2:] if signature.startswith('0x') else signature
+            )
             
-            # Вызываем isValidSignature
-            magic_value = contract.functions.isValidSignature(
-                hash_bytes,
-                signature_bytes
-            ).call()
+            logger.warning(f"   Signature bytes: {len(signature_bytes)}")
             
-            # Проверяем magic value
-            magic_hex = magic_value.hex() if isinstance(magic_value, bytes) else hex(magic_value)[2:]
-            expected_magic = self.EIP1271_MAGIC_VALUE[2:]
+            # 🔥 ПРОБУЕМ ТРИ ВАРИАНТА HASH
             
-            is_valid = magic_hex == expected_magic
-            logger.info(f"EIP-1271 verification: {'✅ VALID' if is_valid else '❌ INVALID'} (magic: 0x{magic_hex})")
+            # Вариант 1: EIP-191 prefixed
+            message_hash_v1 = encode_defunct(text=message)
+            if hasattr(message_hash_v1, 'body'):
+                hash_v1 = message_hash_v1.body
+            else:
+                hash_v1 = Web3.keccak(
+                    b'\x19Ethereum Signed Message:\n' + 
+                    str(len(message)).encode('utf-8') + 
+                    message.encode('utf-8')
+                )
             
-            return is_valid
+            # Вариант 2: Просто keccak256(message)
+            hash_v2 = Web3.keccak(text=message)
+            
+            # Вариант 3: keccak256(bytes(message))
+            hash_v3 = Web3.keccak(message.encode('utf-8'))
+            
+            hashes = [
+                ('EIP-191', hash_v1),
+                ('keccak(text)', hash_v2),
+                ('keccak(bytes)', hash_v3)
+            ]
+            
+            logger.warning(f"   Trying {len(hashes)} hash variants...")
+            
+            for name, hash_bytes in hashes:
+                try:
+                    logger.warning(f"   → Testing {name}: {hash_bytes.hex()[:20]}...")
+                    
+                    magic_value = contract.functions.isValidSignature(
+                        hash_bytes,
+                        signature_bytes
+                    ).call()
+                    
+                    if isinstance(magic_value, bytes):
+                        magic_hex = '0x' + magic_value.hex()
+                    elif isinstance(magic_value, int):
+                        magic_hex = hex(magic_value)
+                    else:
+                        magic_hex = str(magic_value)
+                    
+                    expected = self.EIP1271_MAGIC_VALUE
+                    
+                    logger.warning(f"     Received: {magic_hex}")
+                    logger.warning(f"     Expected: {expected}")
+                    
+                    received_clean = magic_hex.lower().replace('0x', '')
+                    expected_clean = expected.lower().replace('0x', '')
+                    
+                    if received_clean == expected_clean:
+                        logger.warning(f"     ✅ MATCH with {name}!")
+                        return True
+                    else:
+                        logger.warning(f"     ❌ No match")
+                        
+                except Exception as e:
+                    logger.warning(f"     ❌ Failed: {str(e)[:80]}")
+                    continue
+            
+            logger.warning(f"   ❌ All variants failed")
+            return False
             
         except Exception as e:
-            logger.error(f"EIP-1271 verification error: {e}", exc_info=True)
+            logger.warning(f"❌ EIP-1271 error: {e}")
             return False
 
     async def get_user_by_wallet(self, wallet_address: str, db: AsyncSession) -> Optional[User]:
