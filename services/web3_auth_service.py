@@ -247,7 +247,7 @@ class Web3AuthService:
         except Exception as e:
             logger.error(f"Failed to fetch Abstract profile: {e}")
         
-        return {'nickname': None, 'avatar_url': None}t
+        return {'nickname': None, 'avatar_url': None}
 
     async def create_or_get_user(
         self, 
