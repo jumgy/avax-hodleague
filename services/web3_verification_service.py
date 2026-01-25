@@ -1,3 +1,5 @@
+import asyncio
+from web3.exceptions import TransactionNotFound
 from web3 import Web3
 from typing import Dict
 import logging
@@ -49,26 +51,42 @@ class Web3VerificationService:
         :param user_wallet: Адрес кошелька пользователя
         :return: {"valid": bool, "error": str (если invalid), "block_number": int, "gas_used": int}
         """
+        await asyncio.sleep(2)  # Первая задержка
         
+        tx_receipt = None
+        max_attempts = 3
+        
+        for attempt in range(max_attempts):
+            try:
+                tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
+                if tx_receipt and tx_receipt.blockNumber is not None:
+                    break
+            except TransactionNotFound:
+                pass
+            except Exception as e:
+                logger.error(f"Error fetching transaction receipt {tx_hash}: {str(e)}")
+            
+            if attempt < max_attempts - 1:
+                logger.info(f"Transaction {tx_hash} not found, retry {attempt+1}/{max_attempts}")
+                await asyncio.sleep(2)
+        
+        # Если после всех попыток не нашли
+        if not tx_receipt:
+            return {
+                "valid": False,
+                "error": "Transaction not found or not yet mined. Please wait a few seconds and try again."
+            }
+        
+        # Проверка статуса (1 = success, 0 = failed)
+        if tx_receipt.status != 1:
+            return {
+                "valid": False,
+                "error": "Transaction failed on blockchain"
+            }
+        
+        # Получаем саму транзакцию
         try:
-            # 1. Получить транзакцию и receipt
-            tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
-            
-            if not tx_receipt:
-                return {
-                    "valid": False,
-                    "error": "Transaction not found or not yet mined"
-                }
-            
-            # Проверка статуса (1 = success, 0 = failed)
-            if tx_receipt.status != 1:
-                return {
-                    "valid": False,
-                    "error": "Transaction failed on blockchain"
-                }
-            
             tx = self.web3.eth.get_transaction(tx_hash)
-            
         except Exception as e:
             logger.error(f"Error fetching transaction {tx_hash}: {str(e)}")
             return {
@@ -76,27 +94,25 @@ class Web3VerificationService:
                 "error": f"Error fetching transaction: {str(e)}"
             }
         
-        # 2. Проверка отправителя (from)
+        # Проверка отправителя (from)
         tx_from = tx['from'].lower()
         expected_wallet = user_wallet.lower()
-        
         if tx_from != expected_wallet:
             return {
                 "valid": False,
                 "error": f"Transaction from wrong wallet. Expected: {expected_wallet}, got: {tx_from}"
             }
         
-        # 3. Проверка получателя (to) - должен быть наш контракт
+        # Проверка получателя (to) - должен быть наш контракт
         tx_to = tx['to'].lower() if tx['to'] else None
         expected_contract = self.contract_address.lower()
-        
         if tx_to != expected_contract:
             return {
                 "valid": False,
                 "error": f"Transaction sent to wrong contract. Expected: {expected_contract}, got: {tx_to}"
             }
         
-        # 4. Декодирование input data
+        # Декодирование input data
         try:
             function_obj, params = self.contract.decode_function_input(tx['input'])
             
@@ -115,7 +131,6 @@ class Web3VerificationService:
                 }
             
             # Проверка deckHash
-            # Контракт принимает bytes32, нужно сравнить hex представление
             actual_hash = params['deckHash'].hex() if isinstance(params['deckHash'], bytes) else params['deckHash']
             expected_hash_clean = expected_deck_hash.replace('0x', '').lower()
             actual_hash_clean = actual_hash.replace('0x', '').lower()
@@ -127,7 +142,7 @@ class Web3VerificationService:
                     "expected": expected_hash_clean,
                     "got": actual_hash_clean
                 }
-            
+                
         except Exception as e:
             logger.error(f"Error decoding transaction input: {str(e)}")
             return {
@@ -137,14 +152,12 @@ class Web3VerificationService:
         
         # ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ
         logger.info(f"✅ Transaction {tx_hash} verified successfully for tournament {tournament_id}")
-        
         return {
             "valid": True,
             "tx_hash": tx_hash,
             "block_number": tx_receipt.blockNumber,
             "gas_used": tx_receipt.gasUsed
         }
-    
     async def verify_unregister_transaction(
         self,
         tx_hash: str,
@@ -153,39 +166,71 @@ class Web3VerificationService:
     ) -> Dict:
         """
         Проверяет транзакцию отмены регистрации (unregisterDeck)
-        
         :param tx_hash: Хеш транзакции
         :param tournament_id: ID турнира
         :param user_wallet: Адрес кошелька пользователя
         :return: {"valid": bool, "error": str (если invalid)}
         """
+        # ЖДЕМ 2 СЕКУНДЫ + делаем 3 попытки (так же как в register)
+        await asyncio.sleep(2)
         
+        tx_receipt = None
+        max_attempts = 3
+        
+        for attempt in range(max_attempts):
+            try:
+                tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
+                if tx_receipt and tx_receipt.blockNumber is not None:
+                    break
+            except TransactionNotFound:
+                pass
+            except Exception as e:
+                logger.error(f"Error fetching unregister transaction receipt {tx_hash}: {str(e)}")
+            
+            if attempt < max_attempts - 1:
+                logger.info(f"Unregister transaction {tx_hash} not found, retry {attempt+1}/{max_attempts}")
+                await asyncio.sleep(2)
+        
+        # Если после всех попыток не нашли
+        if not tx_receipt:
+            return {
+                "valid": False,
+                "error": "Transaction not found or not yet mined. Please wait a few seconds and try again."
+            }
+        
+        # Проверка статуса
+        if tx_receipt.status != 1:
+            return {
+                "valid": False,
+                "error": "Transaction failed on blockchain"
+            }
+        
+        # Получаем саму транзакцию
         try:
-            tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
-            
-            if not tx_receipt or tx_receipt.status != 1:
-                return {
-                    "valid": False,
-                    "error": "Transaction not found or failed"
-                }
-            
             tx = self.web3.eth.get_transaction(tx_hash)
-            
-            # Проверка отправителя
-            if tx['from'].lower() != user_wallet.lower():
-                return {
-                    "valid": False,
-                    "error": "Transaction from wrong wallet"
-                }
-            
-            # Проверка контракта
-            if tx['to'].lower() != self.contract_address.lower():
-                return {
-                    "valid": False,
-                    "error": "Transaction sent to wrong contract"
-                }
-            
-            # Декодирование
+        except Exception as e:
+            logger.error(f"Error fetching unregister transaction {tx_hash}: {str(e)}")
+            return {
+                "valid": False,
+                "error": f"Error fetching transaction: {str(e)}"
+            }
+        
+        # Проверка отправителя
+        if tx['from'].lower() != user_wallet.lower():
+            return {
+                "valid": False,
+                "error": "Transaction from wrong wallet"
+            }
+        
+        # Проверка контракта
+        if tx['to'].lower() != self.contract_address.lower():
+            return {
+                "valid": False,
+                "error": "Transaction sent to wrong contract"
+            }
+        
+        # Декодирование
+        try:
             function_obj, params = self.contract.decode_function_input(tx['input'])
             
             if function_obj.fn_name != 'unregisterDeck':
@@ -199,7 +244,7 @@ class Web3VerificationService:
                     "valid": False,
                     "error": "Wrong tournament ID"
                 }
-            
+                
         except Exception as e:
             logger.error(f"Error verifying unregister tx: {str(e)}")
             return {
@@ -208,7 +253,6 @@ class Web3VerificationService:
             }
         
         logger.info(f"✅ Unregister transaction {tx_hash} verified successfully")
-        
         return {
             "valid": True,
             "tx_hash": tx_hash
