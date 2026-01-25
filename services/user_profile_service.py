@@ -72,20 +72,19 @@ class UserProfileService:
             
             # Balances from view
             balances_query = text("""
-                SELECT reward_category, 
-                       SUM(available_balance) as total_available
-                FROM user_balances_view
-                WHERE user_id = :user_id
-                GROUP BY reward_category
+                SELECT rt.name as reward_name, 
+                    SUM(ubv.available_balance) as total_available
+                FROM user_balances_view ubv
+                JOIN reward_types rt ON ubv.reward_type_id = rt.id
+                WHERE ubv.user_id = :user_id
+                GROUP BY rt.name
             """)
-            
             balances_result = await db.execute(balances_query, {"user_id": user_id})
             balances = {}
-            
             for row in balances_result:
-                category = row.reward_category
+                reward_name = row.reward_name
                 amount = float(row.total_available) if row.total_available else 0
-                balances[category] = amount
+                balances[reward_name] = amount
             
             stats['balances'] = balances
             
