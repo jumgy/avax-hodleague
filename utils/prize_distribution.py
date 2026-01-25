@@ -123,15 +123,16 @@ def distribute_prizes(pool: float, total_players: int, verbose: bool = False) ->
         if verbose:
             print(f"\nРаспределение остатка ({remaining_pool}):")
         top_count = min(5, len(prizes))
-        top_prizes_sum = sum(prizes[i][1] for i in range(top_count))
+        weights = [5, 3, 2, 1, 1][:top_count]
+        total_weight = sum(weights)
+        original_remainder = remaining_pool
         
         for i in range(top_count):
-            if remaining_pool <= 0:
-                break
-            
             pos, old_prize = prizes[i]
-            # Пропорционально текущему призу
-            share = int((old_prize / top_prizes_sum) * remaining_pool) if i < top_count - 1 else remaining_pool
+            if i == top_count - 1:
+                share = remaining_pool
+            else:
+                share = int((weights[i] / total_weight) * original_remainder)
             
             if share > 0:
                 prizes[i] = (pos, old_prize + share)
