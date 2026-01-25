@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Query, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 import logging
@@ -20,6 +20,7 @@ from models.rarity_models import Rarity
 from models.token_models import Token
 from services.web3_auth_service import web3_auth_service
 from services.tournament_registration_service import TournamentRegistrationService
+from services.prize_config_service import PrizeConfigService
 from models.tournament_deck_models import TournamentResult
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,10 @@ class TournamentListItem(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class PrizePoolInfo(BaseModel):
+    amount: str
+    currency_name: str
+
 class TournamentDetail(BaseModel):
     id: int
     tournament_number: int
@@ -134,6 +139,8 @@ class TournamentDetail(BaseModel):
     end_date: datetime
     gameplay_start_date: Optional[datetime]
     weight_limit: int
+    prize_pools: Optional[Dict[str, PrizePoolInfo]] = None  # Базовые prize pools
+    estimated_final_prize_pools: Optional[Dict[str, PrizePoolInfo]] = None  # Расчётные с учётом участников
     participants_count: int
     is_active: bool
     duration_days: int
@@ -386,13 +393,13 @@ async def get_tournament_details(
         query = select(Tournament).where(Tournament.id == tournament_id)
         result = await db.execute(query)
         tournament = result.scalar_one_or_none()
-
+        
         if not tournament:
             raise HTTPException(
                 status_code=404, 
                 detail=f"Tournament with id {tournament_id} not found"
             )
-
+        
         # Count participants
         participants_count_query = select(func.count()).select_from(TournamentDeck).where(
             TournamentDeck.tournament_id == tournament.id,
@@ -400,12 +407,55 @@ async def get_tournament_details(
         )
         participants_result = await db.execute(participants_count_query)
         participants_count = participants_result.scalar() or 0
-
+        
+        # Initialize prize config service
+        prize_service = PrizeConfigService(db)
+        
+        # Get prize pools information (базовые + расчётные)
+        prize_pools_info = None
+        estimated_final_prize_pools_info = None
+        
+        if tournament.prize_pools:
+            prize_pools_info = {}
+            estimated_final_prize_pools_info = {}
+            
+            # Получаем все reward types за один запрос
+            reward_type_ids = [int(rid) for rid in tournament.prize_pools.keys()]
+            reward_types_query = select(RewardType).where(
+                RewardType.id.in_(reward_type_ids)
+            )
+            reward_types_result = await db.execute(reward_types_query)
+            reward_types = reward_types_result.scalars().all()
+            
+            # Создаем словарь для быстрого доступа
+            reward_types_dict = {str(rt.id): rt for rt in reward_types}
+            
+            # Формируем prize_pools_info (базовые) и estimated_final_prize_pools (расчётные)
+            for reward_type_id, base_amount in tournament.prize_pools.items():
+                reward_type = reward_types_dict.get(reward_type_id)
+                if reward_type:
+                    # Базовый prize pool
+                    base_amount_float = float(base_amount)
+                    prize_pools_info[reward_type_id] = {
+                        "amount": str(base_amount_float),
+                        "currency_name": reward_type.name
+                    }
+                    
+                    # Расчётный финальный prize pool с учётом участников
+                    final_amount = prize_service.calculate_dynamic_prize_pool(
+                        base_prize_pool=float(base_amount),
+                        total_participants=participants_count
+                    )
+                    estimated_final_prize_pools_info[reward_type_id] = {
+                        "amount": str(round(final_amount, 2)),
+                        "currency_name": reward_type.name
+                    }
+        
         # Get user info if authenticated
         user_id = current_user.get('user_id') if current_user else None
         is_registered = False
         my_deck = None
-
+        
         if user_id:
             deck_query = select(TournamentDeck).where(
                 TournamentDeck.tournament_id == tournament.id,
@@ -414,11 +464,11 @@ async def get_tournament_details(
             )
             deck_result = await db.execute(deck_query)
             deck = deck_result.scalar_one_or_none()
-
+            
             if deck:
                 is_registered = True
                 deck_composition = deck.deck_composition if isinstance(deck.deck_composition, list) else None
-
+                
                 if deck_composition:
                     if include_deck:
                         # Получаем полную информацию о картах через материализованное представление
@@ -445,13 +495,12 @@ async def get_tournament_details(
                             AND uc.is_active = true
                             AND ac.is_active = true
                         """)
-
                         cards_result = await db.execute(
                             cards_query, 
                             {"user_card_ids": deck_composition}
                         )
                         cards_rows = cards_result.fetchall()
-
+                        
                         # Создаем словарь для сохранения порядка карт
                         cards_dict = {}
                         for row in cards_rows:
@@ -472,14 +521,13 @@ async def get_tournament_details(
                                 tournament_change=float(row.tournament_change) if row.tournament_change else None,
                                 calculated_score=float(row.calculated_score) if row.calculated_score else 0.0
                             )
-
+                        
                         # Возвращаем карты в правильном порядке
                         my_deck = [cards_dict[card_id] for card_id in deck_composition if card_id in cards_dict]
-
                     else:
                         # Возвращаем только ID карт
                         my_deck = deck_composition
-
+        
         return TournamentDetail(
             id=tournament.id,
             tournament_number=tournament.tournament_number,
@@ -488,6 +536,8 @@ async def get_tournament_details(
             end_date=tournament.end_date,
             gameplay_start_date=tournament.gameplay_start_date,
             weight_limit=tournament.weight_limit,
+            prize_pools=prize_pools_info,  # Базовые prize pools
+            estimated_final_prize_pools=estimated_final_prize_pools_info,  # Расчётные prize pools
             participants_count=participants_count,
             is_active=tournament.is_active,
             duration_days=tournament.duration_days,
@@ -496,7 +546,7 @@ async def get_tournament_details(
             created_at=tournament.created_at,
             updated_at=tournament.updated_at
         )
-
+        
     except HTTPException:
         raise
     except Exception as e:
