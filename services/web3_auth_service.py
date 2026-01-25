@@ -113,16 +113,12 @@ class Web3AuthService:
             code = self.w3.eth.get_code(checksum_address)
             is_contract = len(code) > 0 and code != b'\x00'
             
-            logger.warning(f"   Is contract: {is_contract}")
-            logger.warning(f"   Code length: {len(code)}")
             
             if not is_contract:
                 # EOA verification
-                logger.warning(f"   → EOA verification")
                 return await self._verify_eoa_signature(wallet_address, message, signature)
             else:
                 # Smart contract (EIP-1271) verification
-                logger.warning(f"   → EIP-1271 verification")
                 return await self._verify_eip1271_viem_style(wallet_address, message, signature)
             
         except Exception as e:
@@ -224,7 +220,6 @@ class Web3AuthService:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(url)
                 
-                # 🔥 304 тоже считается успешным (данные в кеше)
                 if response.status_code in [200, 304]:
                     data = response.json()
                     user_data = data.get('user', {})
@@ -232,10 +227,11 @@ class Web3AuthService:
                     nickname = user_data.get('name')
                     avatar_url = user_data.get('overrideProfilePictureUrl')
                     
-                    logger.warning(
-                        f"Abstract profile ({response.status_code}): "
-                        f"nickname={nickname}, avatar={'Yes' if avatar_url else 'No'}"
-                    )
+                    logger.warning(f"🔍 Abstract API response:")
+                    logger.warning(f"   Raw user_data keys: {list(user_data.keys())}")
+                    logger.warning(f"   Extracted nickname: '{nickname}'")
+                    logger.warning(f"   Extracted avatar: '{avatar_url}'")
+                    logger.warning(f"   Returning: {{'nickname': {nickname}, 'avatar_url': {avatar_url}}}")
                     
                     return {
                         'nickname': nickname,
@@ -246,6 +242,8 @@ class Web3AuthService:
                     
         except Exception as e:
             logger.error(f"Failed to fetch Abstract profile: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         
         return {'nickname': None, 'avatar_url': None}
 
@@ -271,21 +269,25 @@ class Web3AuthService:
             
             # Получаем профиль из Abstract если не передали данные
             if not nickname or not avatar_url:
-                logger.info(f"Fetching Abstract profile...")
+                logger.warning(f"🔍 Before Abstract fetch: nickname={nickname}, avatar={avatar_url}")
                 abstract_profile = await self.fetch_abstract_profile(wallet_address)
+                logger.warning(f"🔍 After Abstract fetch: {abstract_profile}")
                 
                 if abstract_profile:
                     if not nickname and abstract_profile.get('nickname'):
                         nickname = abstract_profile['nickname']
-                        logger.info(f"Got nickname from Abstract: {nickname}")
+                        logger.warning(f"✅ Set nickname from Abstract: '{nickname}'")
                     
                     if not avatar_url and abstract_profile.get('avatar_url'):
                         avatar_url = abstract_profile['avatar_url']
-                        logger.info(f"Got avatar from Abstract")
-            
+                        logger.warning(f"✅ Set avatar from Abstract")
+
             # Default nickname
             if not nickname:
                 nickname = f"Player{wallet_address[2:8].upper()}"
+                logger.warning(f"⚠️ Using default nickname: {nickname}")
+            else:
+                logger.warning(f"✅ Using nickname: '{nickname}'")
             
             # Проверяем уникальность nickname
             counter = 1
