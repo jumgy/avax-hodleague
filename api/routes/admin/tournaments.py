@@ -476,7 +476,6 @@ async def delete_tournament(
 
     # Проверка что турнир можно деактивировать
     if tournament.status in [
-        TournamentStatus.FEATURED,
         TournamentStatus.REGISTRATION, 
         TournamentStatus.ONGOING
     ]:

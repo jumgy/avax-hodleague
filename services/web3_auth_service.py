@@ -227,18 +227,12 @@ class Web3AuthService:
                     nickname = user_data.get('name')
                     avatar_url = user_data.get('overrideProfilePictureUrl')
                     
-                    logger.warning(f"🔍 Abstract API response:")
-                    logger.warning(f"   Raw user_data keys: {list(user_data.keys())}")
-                    logger.warning(f"   Extracted nickname: '{nickname}'")
-                    logger.warning(f"   Extracted avatar: '{avatar_url}'")
-                    logger.warning(f"   Returning: {{'nickname': {nickname}, 'avatar_url': {avatar_url}}}")
                     
                     return {
                         'nickname': nickname,
                         'avatar_url': avatar_url
                     }
-                else:
-                    logger.warning(f"Abstract API returned {response.status_code}")
+
                     
         except Exception as e:
             logger.error(f"Failed to fetch Abstract profile: {e}")
@@ -269,25 +263,18 @@ class Web3AuthService:
             
             # Получаем профиль из Abstract если не передали данные
             if not nickname or not avatar_url:
-                logger.warning(f"🔍 Before Abstract fetch: nickname={nickname}, avatar={avatar_url}")
                 abstract_profile = await self.fetch_abstract_profile(wallet_address)
-                logger.warning(f"🔍 After Abstract fetch: {abstract_profile}")
                 
                 if abstract_profile:
                     if not nickname and abstract_profile.get('nickname'):
                         nickname = abstract_profile['nickname']
-                        logger.warning(f"✅ Set nickname from Abstract: '{nickname}'")
                     
                     if not avatar_url and abstract_profile.get('avatar_url'):
                         avatar_url = abstract_profile['avatar_url']
-                        logger.warning(f"✅ Set avatar from Abstract")
 
             # Default nickname
             if not nickname:
                 nickname = f"Player{wallet_address[2:8].upper()}"
-                logger.warning(f"⚠️ Using default nickname: {nickname}")
-            else:
-                logger.warning(f"✅ Using nickname: '{nickname}'")
             
             # Проверяем уникальность nickname
             counter = 1
