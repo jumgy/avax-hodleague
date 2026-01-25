@@ -70,23 +70,8 @@ class UserProfileService:
             stats['best_position'] = result_data.best_position if result_data else None
             stats['best_score'] = float(result_data.best_score) if result_data and result_data.best_score else None
             
-            # Balances from view
-            balances_query = text("""
-                SELECT rt.name as reward_name, 
-                    SUM(ubv.available_balance) as total_available
-                FROM user_balances_view ubv
-                JOIN reward_types rt ON ubv.reward_type_id = rt.id
-                WHERE ubv.user_id = :user_id
-                GROUP BY rt.name
-            """)
-            balances_result = await db.execute(balances_query, {"user_id": user_id})
-            balances = {}
-            for row in balances_result:
-                reward_name = row.reward_name
-                amount = float(row.total_available) if row.total_available else 0
-                balances[reward_name] = amount
-            
-            stats['balances'] = balances
+            # Balances (временно отключено - TODO: исправить user_balances_view)
+            stats['balances'] = {}
             
             return stats
             
