@@ -40,7 +40,7 @@ class SchedulerService:
             # Job 1: Price & Score - каждые 5 минут, НЕ в :00 и :30
             self.scheduler.add_job(
                 func=self._price_and_score_job,
-                trigger=CronTrigger(minute='3,8,13,18,23,28,33,38,43,48,53,58'),
+                trigger=CronTrigger(minute='5,20,35,50'),
                 id='price_and_score',
                 name='Price Update & Score Calculation',
                 replace_existing=True,
