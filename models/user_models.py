@@ -15,7 +15,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     wallet_address = Column(String(42), nullable=False, unique=True)  # Ethereum address format
     nickname = Column(String(50), nullable=False, unique=True)
-    referral_route = Column(String(20), nullable=False, unique=True)  # Short referral code
+    referral_route = Column(String(100), nullable=False, unique=True)  # Short referral code
     avatar_url = Column(String(500), nullable=False)  # User avatar image
     is_active = Column(Boolean, nullable=False, default=True)
 
