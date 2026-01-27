@@ -364,9 +364,7 @@ async def get_my_tournament_history(
         )
 
 
-# ============================================
 # HELPER FUNCTIONS
-# ============================================
 
 async def _get_deck_cards_info(card_ids: List[int], db: AsyncSession) -> List[TournamentCardInfo]:
     """Получить информацию о картах деки"""
