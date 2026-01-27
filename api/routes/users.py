@@ -424,7 +424,6 @@ async def _get_prizes_with_claim_status(
     из таблицы user_rewards
     """
     try:
-        # Получаем все награды пользователя за этот турнир
         rewards_query = select(
             UserReward,
             RewardType
