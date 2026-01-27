@@ -262,6 +262,7 @@ class LeaderboardEntry(BaseModel):
     position: int
     user_id: int
     wallet_address: Optional[str] = None
+    nickname: str
     final_score: float
     deck_composition: List[int]
     cards: List[CardInDeck]
@@ -726,7 +727,8 @@ async def get_tournament_leaderboard(
         leaderboard_query = select(
             TournamentResult,
             TournamentDeck,
-            User.wallet_address
+            User.wallet_address,
+            User.nickname
         ).join(
             TournamentDeck, TournamentResult.tournament_deck_id == TournamentDeck.id
         ).join(
@@ -742,7 +744,7 @@ async def get_tournament_leaderboard(
         
         # Формируем список лидеров
         leaderboard = []
-        for result, deck, wallet_address in leaderboard_rows:
+        for result, deck, wallet_address, nickname in leaderboard_rows:
             # Поддержка двух форматов deck_composition
             card_ids = []
             if deck.deck_composition:
@@ -762,10 +764,11 @@ async def get_tournament_leaderboard(
                 position=result.final_position,
                 user_id=deck.user_id,
                 wallet_address=wallet_address,
+                nickname=nickname,
                 final_score=float(result.final_score),
                 deck_composition=card_ids,
                 cards=cards_info,
-                prizes=prizes_info,  # НОВОЕ
+                prizes=prizes_info,
                 calculated_at=result.calculated_at
             ))
         
@@ -776,7 +779,8 @@ async def get_tournament_leaderboard(
         if user_id:
             user_deck_query = select(
                 TournamentDeck,
-                User.wallet_address
+                User.wallet_address,
+                User.nickname
             ).join(
                 User, TournamentDeck.user_id == User.id
             ).where(
@@ -788,7 +792,7 @@ async def get_tournament_leaderboard(
             user_deck_row = user_deck_result.first()
             
             if user_deck_row:
-                user_deck, user_wallet = user_deck_row
+                user_deck, user_wallet, user_nickname  = user_deck_row
                 
                 # Получаем результат пользователя
                 user_result_query = select(TournamentResult).where(
@@ -817,10 +821,11 @@ async def get_tournament_leaderboard(
                         position=user_result.final_position,
                         user_id=user_deck.user_id,
                         wallet_address=user_wallet,
+                        nickname=user_nickname,
                         final_score=float(user_result.final_score),
                         deck_composition=user_card_ids,
                         cards=user_cards_info,
-                        prizes=user_prizes_info,  # НОВОЕ
+                        prizes=user_prizes_info,
                         calculated_at=user_result.calculated_at
                     )
         
