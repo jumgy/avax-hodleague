@@ -47,6 +47,7 @@ class UserCard(BaseModel):
     market_cap: Optional[int]
     tournament_change: Optional[float]
     obtained_at: Optional[str]
+    expires_at: Optional[str]
     status: str
 
 
@@ -241,9 +242,7 @@ async def get_user_profile(
         )
 
 
-# ============================================
 # ROUTES - New Tournament History
-# ============================================
 
 @router.get(
     "/users/me/tournaments",
