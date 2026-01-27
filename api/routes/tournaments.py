@@ -263,6 +263,7 @@ class LeaderboardEntry(BaseModel):
     user_id: int
     wallet_address: Optional[str] = None
     nickname: str
+    avatar_url: str
     final_score: float
     deck_composition: List[int]
     cards: List[CardInDeck]
@@ -728,7 +729,8 @@ async def get_tournament_leaderboard(
             TournamentResult,
             TournamentDeck,
             User.wallet_address,
-            User.nickname
+            User.nickname,
+            User.avatar_url
         ).join(
             TournamentDeck, TournamentResult.tournament_deck_id == TournamentDeck.id
         ).join(
@@ -744,7 +746,7 @@ async def get_tournament_leaderboard(
         
         # Формируем список лидеров
         leaderboard = []
-        for result, deck, wallet_address, nickname in leaderboard_rows:
+        for result, deck, wallet_address, nickname, avatar_url in leaderboard_rows:
             # Поддержка двух форматов deck_composition
             card_ids = []
             if deck.deck_composition:
@@ -765,6 +767,7 @@ async def get_tournament_leaderboard(
                 user_id=deck.user_id,
                 wallet_address=wallet_address,
                 nickname=nickname,
+                avatar_url=avatar_url,
                 final_score=float(result.final_score),
                 deck_composition=card_ids,
                 cards=cards_info,
@@ -780,7 +783,8 @@ async def get_tournament_leaderboard(
             user_deck_query = select(
                 TournamentDeck,
                 User.wallet_address,
-                User.nickname
+                User.nickname,
+                User.avatar_url
             ).join(
                 User, TournamentDeck.user_id == User.id
             ).where(
