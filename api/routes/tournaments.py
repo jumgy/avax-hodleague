@@ -796,7 +796,7 @@ async def get_tournament_leaderboard(
             user_deck_row = user_deck_result.first()
             
             if user_deck_row:
-                user_deck, user_wallet, user_nickname  = user_deck_row
+                user_deck, user_wallet, user_nickname, user_avatar = user_deck_row
                 
                 # Получаем результат пользователя
                 user_result_query = select(TournamentResult).where(
@@ -826,6 +826,7 @@ async def get_tournament_leaderboard(
                         user_id=user_deck.user_id,
                         wallet_address=user_wallet,
                         nickname=user_nickname,
+                        avatar_url=user_avatar,
                         final_score=float(user_result.final_score),
                         deck_composition=user_card_ids,
                         cards=user_cards_info,
