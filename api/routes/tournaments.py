@@ -301,7 +301,6 @@ class DeckDetailResponse(BaseModel):
     deck_composition: List[int]
     cards: List[CardInDeckInfo]
     total_weight: float
-    deck_hash: str
     submitted_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
@@ -789,7 +788,6 @@ async def get_deck_details(
             deck_composition=card_ids,
             cards=cards_info,
             total_weight=float(deck.total_weight),
-            deck_hash=deck.deck_hash,
             submitted_at=deck.submitted_at
         )
         
