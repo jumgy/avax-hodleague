@@ -301,6 +301,10 @@ class DeckDetailResponse(BaseModel):
     cards: List[CardInDeckInfo]
     total_weight: float
     submitted_at: datetime
+
+    position: Optional[int] = None
+    final_score: Optional[float] = None
+    prizes: Optional[List[PrizeInfo]] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -688,25 +692,13 @@ async def get_prizes_info(prizes_json: dict, db: AsyncSession) -> List[PrizeInfo
 @router.get("/{tournament_id}/decks/{deck_id}",
            response_model=DeckDetailResponse,
            summary="Get specific deck details",
-           description="Get full deck information by deck_id. Public access for ongoing/finished tournaments only.")
+           description="Get full deck information by deck_id with leaderboard position")
 async def get_deck_details(
     tournament_id: int,
     deck_id: int,
     current_user: Optional[dict] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    Получить детальную информацию о конкретной деке
-    
-    - **tournament_id**: ID турнира
-    - **deck_id**: ID деки (tournament_deck.id из лидерборда)
-    - **Ограничения доступа:**
-        - Свою деку можно смотреть всегда
-        - Чужие деки можно смотреть только при статусе "ongoing" или "finished"
-        - При статусе "registration" доступны только свои деки
-    
-    Возвращает полную информацию: nickname, avatar, карты со скором, tournament_change, картинками
-    """
     try:
         # 1. Проверяем существование турнира
         tournament_query = select(Tournament).where(Tournament.id == tournament_id)
@@ -719,14 +711,19 @@ async def get_deck_details(
                 detail=f"Tournament {tournament_id} not found"
             )
         
-        # 2. Получаем деку с информацией о пользователе
+        # 2. Получаем деку с информацией о пользователе И результатом
         deck_query = select(
             TournamentDeck,
             User.wallet_address,
             User.nickname,
-            User.avatar_url
+            User.avatar_url,
+            TournamentResult.final_position,
+            TournamentResult.final_score,
+            TournamentResult.prizes
         ).join(
             User, TournamentDeck.user_id == User.id
+        ).outerjoin(
+            TournamentResult, TournamentResult.tournament_deck_id == TournamentDeck.id
         ).where(
             TournamentDeck.id == deck_id,
             TournamentDeck.tournament_id == tournament_id,
@@ -741,18 +738,17 @@ async def get_deck_details(
                 detail=f"Deck {deck_id} not found in tournament {tournament_id}"
             )
         
-        deck, wallet_address, nickname, avatar_url = deck_row
+        deck, wallet_address, nickname, avatar_url, position, score, prizes_json = deck_row
         
         # 3. ПРОВЕРКА ДОСТУПА: чужие деки только при ongoing/finished
         user_id = current_user.get('user_id') if current_user else None
         is_own_deck = (user_id == deck.user_id)
         
         if not is_own_deck:
-            # Чужую деку можно смотреть только при ongoing или finished
             if tournament.status not in [TournamentStatus.ONGOING, TournamentStatus.FINISHED]:
                 raise HTTPException(
                     status_code=403,
-                    detail=f"Cannot view other players' decks during '{tournament.status}' phase. Only available during 'ongoing' or 'finished' phases."
+                    detail=f"Cannot view other players' decks during '{tournament.status}' phase"
                 )
         
         # 4. Парсим deck_composition
@@ -770,7 +766,13 @@ async def get_deck_details(
                 detail="Deck composition is empty"
             )
         
+        # 5. Получаем полную информацию о картах
         cards_info = await get_full_cards_info(card_ids, db)
+        
+        # 6.
+        prizes_info = None
+        if prizes_json:
+            prizes_info = await get_prizes_info(prizes_json, db)
         
         # 7. Формируем ответ
         return DeckDetailResponse(
@@ -785,7 +787,10 @@ async def get_deck_details(
             deck_composition=card_ids,
             cards=cards_info,
             total_weight=float(deck.total_weight),
-            submitted_at=deck.submitted_at
+            submitted_at=deck.submitted_at,
+            position=position,
+            final_score=float(score) if score else None,
+            prizes=prizes_info
         )
         
     except HTTPException:
