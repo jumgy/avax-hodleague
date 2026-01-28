@@ -81,24 +81,39 @@ class ScoreService:
 
             for token in scored_tokens:
                 mc_factor = self._calculate_mc_factor(token['market_cap'], all_market_caps)
+                
                 weekly_points = total_tokens - token['change_rank'] + 1
                 activity_points = total_tokens - token['activity_rank'] + 1
-                raw_score = (weekly_points * mc_factor * 4) + (activity_points * mc_factor * 1)
+                
+                base_raw_score = weekly_points * mc_factor * 4
+                
+                change = float(token['period_change'])
+                if change > 0:
+                    growth_raw_bonus = (change ** 1.3) * mc_factor * 1.5
+                elif change < 0:
+                    growth_raw_bonus = (abs(change) ** 1.3) * mc_factor * (-1.5)
+                else:
+                    growth_raw_bonus = 0
+                
+                activity_raw_score = activity_points * mc_factor * 1
+                
+                raw_score = max(0, base_raw_score + growth_raw_bonus + activity_raw_score)
+                
                 token['raw_score'] = raw_score
                 raw_scores.append(raw_score)
 
             # Normalize scores to 1000
-            min_raw = min(raw_scores)
-            max_raw = max(raw_scores)
-            range_raw = max_raw - min_raw
-
+            median_raw = sorted(raw_scores)[len(raw_scores) // 2]
+            dynamic_divider = median_raw / 400
+                
             for token in scored_tokens:
-                if range_raw == 0:
+                raw_score = token['raw_score']
+                
+                if raw_score <= 0:
                     final_score = 0
                 else:
-                    normalized = (token['raw_score'] - min_raw) / range_raw
-                    final_score = min(int(1000 * (normalized ** 0.7)), 1000)
-
+                    final_score = min(int(raw_score / dynamic_divider), 1000)
+                
                 token_score = TokenScore(
                     tournament_id=tournament_id,
                     token_id=token['token_id'],
@@ -267,34 +282,17 @@ class ScoreService:
 
     def _calculate_mc_factor(self, market_cap: int, all_market_caps: List[int]) -> float:
         """
-        Calculate market cap factor using the EXACT formula from crypto_simulation.py
-        
-        Larger market cap = HIGHER factor = easier to get 1000 score
-        Smaller market cap = LOWER factor = need bigger % gains
-        
-        Args:
-            market_cap: Market cap in dollars (not billions)
-            all_market_caps: List of all market caps in dollars
+        Calculate market cap factor using DEGREE formula (simplified).
+        Степенная функция дает плавный рост без сильной асимметрии.
         """
         if not all_market_caps or market_cap <= 0:
             return 1.0
         
-        # Convert to billions (assuming market_cap is in dollars)
+        # Переводим в миллиарды
         market_cap_billions = market_cap / 1_000_000_000
-        all_market_caps_billions = [mc / 1_000_000_000 for mc in all_market_caps]
         
-        # Calculate average market cap
-        avg_market_cap_billions = sum(all_market_caps_billions) / len(all_market_caps_billions)
-        
-        # Relative to average
-        rel = market_cap_billions / avg_market_cap_billions if avg_market_cap_billions > 0 else 1.0
-        
-        # EXACT formula from simulation
-        mc_factor = (
-            math.log(1 + rel * 2.5) * 12 +  # логарифмическое сглаживание отношения к средней капе
-            math.sqrt(math.log10(market_cap_billions + 1)) * 15 +  # корень из логарифма абсолютной капы
-            (rel / (1 + rel * 0.1)) * 8  # гиперболическое сглаживание для очень больших rel
-        )
+        # Степенная формула
+        mc_factor = (market_cap_billions ** 0.12) * 12
         
         return mc_factor
     
