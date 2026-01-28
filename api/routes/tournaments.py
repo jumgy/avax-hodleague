@@ -260,6 +260,7 @@ class PrizeInfo(BaseModel):
 class LeaderboardEntry(BaseModel):
     """Запись в лидерборде"""
     position: int
+    deck_id: int
     user_id: int
     wallet_address: Optional[str] = None
     nickname: str
@@ -764,6 +765,7 @@ async def get_tournament_leaderboard(
             
             leaderboard.append(LeaderboardEntry(
                 position=result.final_position,
+                deck_id=deck.id,
                 user_id=deck.user_id,
                 wallet_address=wallet_address,
                 nickname=nickname,
@@ -823,6 +825,7 @@ async def get_tournament_leaderboard(
                     
                     my_position = LeaderboardEntry(
                         position=user_result.final_position,
+                        deck_id=user_deck.id,
                         user_id=user_deck.user_id,
                         wallet_address=user_wallet,
                         nickname=user_nickname,
