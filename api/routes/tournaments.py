@@ -288,6 +288,24 @@ class LeaderboardResponse(BaseModel):
     last_updated: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class DeckDetailResponse(BaseModel):
+    deck_id: int
+    tournament_id: int
+    tournament_number: int
+    tournament_status: str
+    user_id: int
+    wallet_address: Optional[str] = None
+    nickname: str
+    avatar_url: Optional[str] = None
+    deck_composition: List[int]
+    cards: List[CardInDeckInfo]
+    total_weight: float
+    deck_hash: str
+    submitted_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
+
 # ==================== Endpoints ====================
 
 @router.get("",
@@ -474,61 +492,8 @@ async def get_tournament_details(
                 
                 if deck_composition:
                     if include_deck:
-                        # Получаем полную информацию о картах через материализованное представление
-                        cards_query = text("""
-                            SELECT 
-                                uc.id as user_card_id,
-                                ac.card_id,
-                                ac.token_symbol,
-                                ac.token_name,
-                                ac.token_image_url,
-                                ac.token_weight,
-                                ac.rarity_name,
-                                ac.rarity_color,
-                                ac.rarity_score_bonus,
-                                ac.design_type,
-                                ac.rendered_image_url,
-                                ac.current_price,
-                                ac.market_cap,
-                                ac.tournament_change,
-                                ac.calculated_score
-                            FROM user_cards uc
-                            JOIN active_cards_with_score ac ON uc.card_id = ac.card_id
-                            WHERE uc.id = ANY(:user_card_ids)
-                            AND uc.is_active = true
-                            AND ac.is_active = true
-                        """)
-                        cards_result = await db.execute(
-                            cards_query, 
-                            {"user_card_ids": deck_composition}
-                        )
-                        cards_rows = cards_result.fetchall()
-                        
-                        # Создаем словарь для сохранения порядка карт
-                        cards_dict = {}
-                        for row in cards_rows:
-                            cards_dict[row.user_card_id] = CardInDeckInfo(
-                                user_card_id=row.user_card_id,
-                                card_id=row.card_id,
-                                token_symbol=row.token_symbol,
-                                token_name=row.token_name,
-                                token_image_url=row.token_image_url,
-                                token_weight=row.token_weight,
-                                rarity_name=row.rarity_name,
-                                rarity_color=row.rarity_color,
-                                rarity_score_bonus=row.rarity_score_bonus,
-                                design_type=row.design_type,
-                                rendered_image_url=row.rendered_image_url,
-                                current_price=float(row.current_price) if row.current_price else None,
-                                market_cap=int(row.market_cap) if row.market_cap else None,
-                                tournament_change=float(row.tournament_change) if row.tournament_change else None,
-                                calculated_score=float(row.calculated_score) if row.calculated_score else 0.0
-                            )
-                        
-                        # Возвращаем карты в правильном порядке
-                        my_deck = [cards_dict[card_id] for card_id in deck_composition if card_id in cards_dict]
+                        my_deck = await get_full_cards_info(deck_composition, db)
                     else:
-                        # Возвращаем только ID карт
                         my_deck = deck_composition
         
         return TournamentDetail(
@@ -619,6 +584,74 @@ async def get_cards_info(user_card_ids: List[int], db: AsyncSession) -> List[Car
     # Возвращаем в том же порядке что и user_card_ids
     return [cards_dict[user_card_id] for user_card_id in user_card_ids if user_card_id in cards_dict]
 
+async def get_full_cards_info(user_card_ids: List[int], db: AsyncSession) -> List[CardInDeckInfo]:
+    """
+    Получить ПОЛНУЮ детальную информацию о картах из деки
+    Используется:
+    - В GET /tournaments/{id}?include_deck=true (для своей деки)
+    - В GET /tournaments/{id}/decks/{deck_id} (для любой деки с проверкой доступа)
+    
+    Args:
+        user_card_ids: Список user_cards.id из deck_composition
+        db: Database session
+        
+    Returns:
+        Список CardInDeckInfo с полной информацией (score, tournament_change, market_cap, images)
+    """
+    if not user_card_ids:
+        return []
+    
+    cards_query = text("""
+        SELECT 
+            uc.id as user_card_id,
+            ac.card_id,
+            ac.token_symbol,
+            ac.token_name,
+            ac.token_image_url,
+            ac.token_weight,
+            ac.rarity_name,
+            ac.rarity_color,
+            ac.rarity_score_bonus,
+            ac.design_type,
+            ac.rendered_image_url,
+            ac.current_price,
+            ac.market_cap,
+            ac.tournament_change,
+            ac.calculated_score
+        FROM user_cards uc
+        JOIN active_cards_with_score ac ON uc.card_id = ac.card_id
+        WHERE uc.id = ANY(:user_card_ids)
+        AND uc.is_active = true
+        AND ac.is_active = true
+    """)
+    
+    cards_result = await db.execute(cards_query, {"user_card_ids": user_card_ids})
+    cards_rows = cards_result.fetchall()
+    
+    # Сохраняем порядок карт из deck_composition
+    cards_dict = {}
+    for row in cards_rows:
+        cards_dict[row.user_card_id] = CardInDeckInfo(
+            user_card_id=row.user_card_id,
+            card_id=row.card_id,
+            token_symbol=row.token_symbol,
+            token_name=row.token_name,
+            token_image_url=row.token_image_url,
+            token_weight=row.token_weight,
+            rarity_name=row.rarity_name,
+            rarity_color=row.rarity_color,
+            rarity_score_bonus=row.rarity_score_bonus,
+            design_type=row.design_type,
+            rendered_image_url=row.rendered_image_url,
+            current_price=float(row.current_price) if row.current_price else None,
+            market_cap=int(row.market_cap) if row.market_cap else None,
+            tournament_change=float(row.tournament_change) if row.tournament_change else None,
+            calculated_score=float(row.calculated_score) if row.calculated_score else 0.0
+        )
+    
+    # Возвращаем в том же порядке что в deck_composition
+    return [cards_dict[card_id] for card_id in user_card_ids if card_id in cards_dict]
+
 async def get_prizes_info(prizes_json: dict, db: AsyncSession) -> List[PrizeInfo]:
     """
     Преобразует prizes JSON в список PrizeInfo с названиями наград.
@@ -655,6 +688,119 @@ async def get_prizes_info(prizes_json: dict, db: AsyncSession) -> List[PrizeInfo
             logger.warning(f"RewardType {reward_type_id} not found")
     
     return prize_list
+
+@router.get("/{tournament_id}/decks/{deck_id}",
+           response_model=DeckDetailResponse,
+           summary="Get specific deck details",
+           description="Get full deck information by deck_id. Public access for ongoing/finished tournaments only.")
+async def get_deck_details(
+    tournament_id: int,
+    deck_id: int,
+    current_user: Optional[dict] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Получить детальную информацию о конкретной деке
+    
+    - **tournament_id**: ID турнира
+    - **deck_id**: ID деки (tournament_deck.id из лидерборда)
+    - **Ограничения доступа:**
+        - Свою деку можно смотреть всегда
+        - Чужие деки можно смотреть только при статусе "ongoing" или "finished"
+        - При статусе "registration" доступны только свои деки
+    
+    Возвращает полную информацию: nickname, avatar, карты со скором, tournament_change, картинками
+    """
+    try:
+        # 1. Проверяем существование турнира
+        tournament_query = select(Tournament).where(Tournament.id == tournament_id)
+        tournament_result = await db.execute(tournament_query)
+        tournament = tournament_result.scalar_one_or_none()
+        
+        if not tournament:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tournament {tournament_id} not found"
+            )
+        
+        # 2. Получаем деку с информацией о пользователе
+        deck_query = select(
+            TournamentDeck,
+            User.wallet_address,
+            User.nickname,
+            User.avatar_url
+        ).join(
+            User, TournamentDeck.user_id == User.id
+        ).where(
+            TournamentDeck.id == deck_id,
+            TournamentDeck.tournament_id == tournament_id,
+            TournamentDeck.is_active == True
+        )
+        deck_result = await db.execute(deck_query)
+        deck_row = deck_result.first()
+        
+        if not deck_row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Deck {deck_id} not found in tournament {tournament_id}"
+            )
+        
+        deck, wallet_address, nickname, avatar_url = deck_row
+        
+        # 3. ПРОВЕРКА ДОСТУПА: чужие деки только при ongoing/finished
+        user_id = current_user.get('user_id') if current_user else None
+        is_own_deck = (user_id == deck.user_id)
+        
+        if not is_own_deck:
+            # Чужую деку можно смотреть только при ongoing или finished
+            if tournament.status not in [TournamentStatus.ONGOING, TournamentStatus.FINISHED]:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Cannot view other players' decks during '{tournament.status}' phase. Only available during 'ongoing' or 'finished' phases."
+                )
+        
+        # 4. Парсим deck_composition
+        card_ids = []
+        if deck.deck_composition:
+            for card_entry in deck.deck_composition:
+                if isinstance(card_entry, dict):
+                    card_ids.append(card_entry.get('card_id'))
+                elif isinstance(card_entry, int):
+                    card_ids.append(card_entry)
+        
+        if not card_ids:
+            raise HTTPException(
+                status_code=404,
+                detail="Deck composition is empty"
+            )
+        
+        cards_info = await get_full_cards_info(card_ids, db)
+        
+        # 7. Формируем ответ
+        return DeckDetailResponse(
+            deck_id=deck.id,
+            tournament_id=tournament.id,
+            tournament_number=tournament.tournament_number,
+            tournament_status=tournament.status,
+            user_id=deck.user_id,
+            wallet_address=wallet_address,
+            nickname=nickname,
+            avatar_url=avatar_url,
+            deck_composition=card_ids,
+            cards=cards_info,
+            total_weight=float(deck.total_weight),
+            deck_hash=deck.deck_hash,
+            submitted_at=deck.submitted_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting deck {deck_id} details: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve deck details: {str(e)}"
+        )
 
 
 @router.get("/{tournament_id}/leaderboard",
@@ -859,6 +1005,7 @@ async def get_tournament_leaderboard(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve leaderboard: {str(e)}"
         )
+
 
 # ==================== Blockchain-Verified Registration ====================
 
