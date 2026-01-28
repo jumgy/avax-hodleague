@@ -55,7 +55,7 @@ class UserProfileResponse(BaseModel):
     user_id: int
     wallet_address: str
     nickname: str
-    avatar_url: str
+    avatar_url: Optional[str] = None
     referral_route: str
     created_at: str
     stats: UserStats

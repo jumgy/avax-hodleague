@@ -263,7 +263,7 @@ class LeaderboardEntry(BaseModel):
     user_id: int
     wallet_address: Optional[str] = None
     nickname: str
-    avatar_url: str
+    avatar_url: Optional[str] = None
     final_score: float
     deck_composition: List[int]
     cards: List[CardInDeck]
