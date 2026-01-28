@@ -106,7 +106,6 @@ class CardInDeckInfo(BaseModel):
     token_weight: int
     rarity_name: str
     rarity_color: str
-    rarity_score_bonus: int
     design_type: str
     rendered_image_url: str
     current_price: Optional[float]
@@ -610,7 +609,6 @@ async def get_full_cards_info(user_card_ids: List[int], db: AsyncSession) -> Lis
             ac.token_weight,
             ac.rarity_name,
             ac.rarity_color,
-            ac.rarity_score_bonus,
             ac.design_type,
             ac.rendered_image_url,
             ac.current_price,
@@ -639,7 +637,6 @@ async def get_full_cards_info(user_card_ids: List[int], db: AsyncSession) -> Lis
             token_weight=row.token_weight,
             rarity_name=row.rarity_name,
             rarity_color=row.rarity_color,
-            rarity_score_bonus=row.rarity_score_bonus,
             design_type=row.design_type,
             rendered_image_url=row.rendered_image_url,
             current_price=float(row.current_price) if row.current_price else None,
