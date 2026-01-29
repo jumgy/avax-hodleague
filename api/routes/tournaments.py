@@ -108,8 +108,6 @@ class CardInDeckInfo(BaseModel):
     rarity_color: str
     design_type: str
     rendered_image_url: str
-    current_price: Optional[float]
-    market_cap: Optional[int]
     tournament_change: Optional[float]
     calculated_score: float
 
@@ -691,7 +689,7 @@ async def get_prizes_info(prizes_json: dict, db: AsyncSession) -> List[PrizeInfo
 
 async def get_historical_cards_info(
     user_card_ids: List[int],
-    card_scores: Optional[dict],
+    card_scores: Optional[Union[dict, list]], 
     tournament_id: int,
     db: AsyncSession
 ) -> List[CardInDeckInfo]:
@@ -700,7 +698,8 @@ async def get_historical_cards_info(
     
     Args:
         user_card_ids: Список user_cards.id из deck_composition
-        card_scores: JSON из TournamentResult.card_scores {"card_id": score}
+        card_scores: JSON из TournamentResult.card_scores 
+                    Может быть dict {"card_id": score} или list [score1, score2, score3]
         tournament_id: ID турнира для получения price_change из token_scores
         db: Database session
         
@@ -766,11 +765,23 @@ async def get_historical_cards_info(
     # Словарь {token_id: price_change_percent}
     token_changes = {row.token_id: float(row.price_change_percent) for row in changes_rows}
     
-    # 4. Словарь скоров из TournamentResult.card_scores
     scores_dict = {}
-    if card_scores and isinstance(card_scores, dict):
-        for card_id_str, score_value in card_scores.items():
-            scores_dict[int(card_id_str)] = float(score_value)
+    
+    if card_scores:
+        if isinstance(card_scores, dict):
+            # Формат: {"card_id": score}
+            for card_id_str, score_value in card_scores.items():
+                scores_dict[int(card_id_str)] = float(score_value)
+        elif isinstance(card_scores, list):
+            # Формат: [score1, score2, score3]
+            # Сопоставляем индексы с user_card_ids (порядок важен!)
+            for idx, user_card_id in enumerate(user_card_ids):
+                if idx < len(card_scores):
+                    # Находим card_id по user_card_id
+                    for row in cards_rows:
+                        if row.user_card_id == user_card_id:
+                            scores_dict[row.card_id] = float(card_scores[idx])
+                            break
     
     # 5. Формируем результат
     cards_dict = {}
@@ -868,7 +879,8 @@ async def get_deck_details(
         
         cards_info = await get_historical_cards_info(
             user_card_ids=card_ids,
-            card_scores=card_scores,  # Передаём исторические скоры из TournamentResult
+            card_scores=card_scores,
+            tournament_id=tournament_id,
             db=db
         )
         
