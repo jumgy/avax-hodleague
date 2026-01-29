@@ -620,7 +620,6 @@ async def get_full_cards_info(user_card_ids: List[int], db: AsyncSession) -> Lis
         FROM user_cards uc
         JOIN active_cards_with_score ac ON uc.card_id = ac.card_id
         WHERE uc.id = ANY(:user_card_ids)
-        AND uc.is_active = true
         AND ac.is_active = true
     """)
     
@@ -728,7 +727,6 @@ async def get_historical_cards_info(
         JOIN tokens t ON c.token_id = t.id
         JOIN rarities r ON c.rarity_id = r.id
         WHERE uc.id = ANY(:user_card_ids)
-        AND uc.is_active = true
     """)
     
     cards_result = await db.execute(cards_query, {"user_card_ids": user_card_ids})
