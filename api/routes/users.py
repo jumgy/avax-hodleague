@@ -23,12 +23,23 @@ router = APIRouter()
 # MODELS - Existing
 # ============================================
 
+class BalanceDetail(BaseModel):
+    reward_type_id: int
+    name: str
+    category: str
+    currency_type: str
+    available: float
+    pending: float
+    pending_count: int
+    claimed_count: int
+    last_earned: Optional[str] = None
+
 class UserStats(BaseModel):
     total_cards: int
     tournaments_participated: int
     best_position: Optional[int]
     best_score: Optional[float]
-    balances: Dict[str, float]
+    balances: List[BalanceDetail]
 
 
 class UserCard(BaseModel):

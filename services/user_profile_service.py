@@ -36,7 +36,7 @@ class UserProfileService:
             return None
 
     async def get_user_stats(self, user_id: int, db: AsyncSession) -> Dict[str, Any]:
-        """Get user statistics"""
+        """Get user statistics with detailed balance information"""
         try:
             stats = {}
             
@@ -56,7 +56,7 @@ class UserProfileService:
             )
             stats['tournaments_participated'] = tournaments_result.scalar() or 0
             
-            # Best position and score from tournament results
+            # Best position and score
             results_query = await db.execute(
                 select(
                     func.min(TournamentResult.final_position).label('best_position'),
@@ -66,15 +66,52 @@ class UserProfileService:
                 .where(TournamentDeck.user_id == user_id)
             )
             result_data = results_query.one_or_none()
-            
             stats['best_position'] = result_data.best_position if result_data else None
             stats['best_score'] = float(result_data.best_score) if result_data and result_data.best_score else None
             
-            # Balances (временно отключено - TODO: исправить user_balances_view)
-            stats['balances'] = {}
+            # Balances (плоский список)
+            try:
+                balances_query = await db.execute(
+                    text("""
+                        SELECT 
+                            reward_type_id,
+                            reward_name,
+                            reward_category,
+                            currency_type,
+                            available_balance,
+                            pending_balance,
+                            pending_count,
+                            claimed_count,
+                            last_reward_date
+                        FROM user_balances_view
+                        WHERE user_id = :user_id
+                        ORDER BY reward_type_id
+                    """),
+                    {"user_id": user_id}
+                )
+                
+                balances = []
+                for row in balances_query.fetchall():
+                    balances.append({
+                        'reward_type_id': row.reward_type_id,
+                        'name': row.reward_name,
+                        'category': row.reward_category,
+                        'currency_type': row.currency_type,
+                        'available': float(row.available_balance),
+                        'pending': float(row.pending_balance),
+                        'pending_count': row.pending_count,
+                        'claimed_count': row.claimed_count,
+                        'last_earned': row.last_reward_date.isoformat() if row.last_reward_date else None
+                    })
+                
+                stats['balances'] = balances
+                
+            except Exception as balance_error:
+                logger.error(f"Error loading balances for user {user_id}: {balance_error}")
+                stats['balances'] = []
             
             return stats
-            
+                
         except Exception as e:
             logger.error(f"Error getting stats for user {user_id}: {e}")
             return {
