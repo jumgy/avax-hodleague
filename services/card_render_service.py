@@ -5,7 +5,7 @@ from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 from decimal import Decimal
 from models.database import DatabaseSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, text
 from models.card_models import Card
 from models.token_models import Token, TokenPrice
 from config import Config
@@ -323,6 +323,15 @@ class CardRenderService:
                 else:
                     failed_count += 1
             
+            logger.info("🔄 Refreshing materialized view active_cards_with_score...")
+            try:
+                async with DatabaseSession() as db:
+                    await db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY active_cards_with_score"))
+                    await db.commit()
+                logger.info("✅ Materialized view refreshed successfully")
+            except Exception as view_error:
+                logger.error(f"❌ Failed to refresh materialized view: {view_error}", exc_info=True)
+
             logger.info(f"✅ Complete: {success_count} success, {failed_count} failed")
             
             return {
