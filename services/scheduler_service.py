@@ -357,7 +357,7 @@ class SchedulerService:
                         try:
                             await user_pack_grant_service.grant_all_active_packs_to_user(
                                 user_id=user.id,
-                                source=PackSource.WEEKLY
+                                source=PackSource.REWARD
                             )
                             logger.info(f"🎁 Granted weekly packs to user {user.id}")
                         except Exception as e:

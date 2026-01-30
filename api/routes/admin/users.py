@@ -44,7 +44,7 @@ class UserResponse(BaseModel):
     wallet_address: str
     nickname: str
     referral_route: str
-    avatar_url: str
+    avatar_url: Optional[str] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

@@ -23,12 +23,23 @@ router = APIRouter()
 # MODELS - Existing
 # ============================================
 
+class BalanceDetail(BaseModel):
+    reward_type_id: int
+    name: str
+    category: str
+    currency_type: str
+    available: float
+    pending: float
+    pending_count: int
+    claimed_count: int
+    last_earned: Optional[str] = None
+
 class UserStats(BaseModel):
     total_cards: int
     tournaments_participated: int
     best_position: Optional[int]
     best_score: Optional[float]
-    balances: Dict[str, float]
+    balances: List[BalanceDetail]
 
 
 class UserCard(BaseModel):
@@ -47,6 +58,7 @@ class UserCard(BaseModel):
     market_cap: Optional[int]
     tournament_change: Optional[float]
     obtained_at: Optional[str]
+    expires_at: Optional[str]
     status: str
 
 
@@ -54,7 +66,7 @@ class UserProfileResponse(BaseModel):
     user_id: int
     wallet_address: str
     nickname: str
-    avatar_url: str
+    avatar_url: Optional[str] = None
     referral_route: str
     created_at: str
     stats: UserStats
@@ -241,9 +253,7 @@ async def get_user_profile(
         )
 
 
-# ============================================
 # ROUTES - New Tournament History
-# ============================================
 
 @router.get(
     "/users/me/tournaments",
@@ -365,9 +375,7 @@ async def get_my_tournament_history(
         )
 
 
-# ============================================
 # HELPER FUNCTIONS
-# ============================================
 
 async def _get_deck_cards_info(card_ids: List[int], db: AsyncSession) -> List[TournamentCardInfo]:
     """Получить информацию о картах деки"""
@@ -427,7 +435,6 @@ async def _get_prizes_with_claim_status(
     из таблицы user_rewards
     """
     try:
-        # Получаем все награды пользователя за этот турнир
         rewards_query = select(
             UserReward,
             RewardType

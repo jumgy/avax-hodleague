@@ -298,7 +298,7 @@ class Web3AuthService:
             
             # Default avatar
             if not avatar_url:
-                avatar_url = f"https://api.dicebear.com/7.x/avataaars/svg?seed={wallet_address}"
+                avatar_url = None
             
             # Создаем
             new_user = User(

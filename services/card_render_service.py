@@ -5,7 +5,7 @@ from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 from decimal import Decimal
 from models.database import DatabaseSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, text
 from models.card_models import Card
 from models.token_models import Token, TokenPrice
 from config import Config
@@ -241,7 +241,6 @@ class CardRenderService:
             return False
 
     async def render_card_by_id(self, card_id: int) -> Optional[str]:
-        """Render a card by its database ID"""
         try:
             async with DatabaseSession() as db:
                 result = await db.execute(
@@ -250,13 +249,10 @@ class CardRenderService:
                     .where(Card.id == card_id)
                 )
                 row = result.first()
-                
                 if not row:
                     logger.error(f"Card {card_id} not found")
                     return None
-                
                 card, token = row
-                
                 price_result = await db.execute(
                     select(TokenPrice)
                     .where(TokenPrice.token_id == token.id)
@@ -264,33 +260,44 @@ class CardRenderService:
                     .limit(1)
                 )
                 price = price_result.scalar_one_or_none()
-                
                 template_filename = card.template_image_url.split('/')[-1]
                 template_path = os.path.join(self.TEMPLATES_DIR, template_filename)
-                
-                output_filename = f"card_{card.id}.png"
+
+                timestamp = int(datetime.utcnow().timestamp())
+                output_filename = f"card_{card.id}_{timestamp}.png"
                 output_path = os.path.join(self.RENDERS_DIR, output_filename)
-                
+
+                old_rendered_url = card.rendered_image_url
                 success = self.render_card(
                     template_path=template_path,
                     output_path=output_path,
                     market_cap=price.market_cap if price else None,
                     weight=token.weight
                 )
-                
                 if not success:
                     return None
-                
                 base_url = os.getenv("STATIC_BASE_URL", "http://localhost:8080")
                 rendered_url = f"{base_url}/static/card_renders/{output_filename}"
-                
                 card.rendered_image_url = rendered_url
                 card.last_rendered_at = datetime.utcnow()
                 await db.commit()
-                
                 logger.info(f"✅ Card {card_id} rendered: {rendered_url}")
+
+
+                if old_rendered_url and old_rendered_url != rendered_url:
+                    old_filename = old_rendered_url.split("/")[-1]
+                    in_use = await db.execute(
+                        select(Card.id).where(Card.rendered_image_url == old_rendered_url, Card.id != card.id)
+                    )
+                    if not in_use.first():
+                        old_filepath = os.path.join(self.RENDERS_DIR, old_filename)
+                        if os.path.exists(old_filepath):
+                            try:
+                                os.remove(old_filepath)
+                                logger.info(f"Удалён старый рендер {old_filepath}")
+                            except Exception as e:
+                                logger.warning(f"Не удалось удалить {old_filepath}: {e}")
                 return rendered_url
-                
         except Exception as e:
             logger.error(f"❌ Failed to render card {card_id}: {e}", exc_info=True)
             return None
@@ -316,6 +323,15 @@ class CardRenderService:
                 else:
                     failed_count += 1
             
+            logger.info("🔄 Refreshing materialized view active_cards_with_score...")
+            try:
+                async with DatabaseSession() as db:
+                    await db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY active_cards_with_score"))
+                    await db.commit()
+                logger.info("✅ Materialized view refreshed successfully")
+            except Exception as view_error:
+                logger.error(f"❌ Failed to refresh materialized view: {view_error}", exc_info=True)
+
             logger.info(f"✅ Complete: {success_count} success, {failed_count} failed")
             
             return {
