@@ -27,7 +27,6 @@ _logging_configured = False
 def setup_logging():
     """Настройка логирования без дублирования"""
     global _logging_configured
-    
     if _logging_configured:
         return
     
@@ -58,6 +57,11 @@ def setup_logging():
         logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
         logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
         logging.getLogger('sqlalchemy.dialects').setLevel(logging.WARNING)
+    
+    logging.getLogger('botocore').setLevel(logging.WARNING)
+    logging.getLogger('boto3').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('s3transfer').setLevel(logging.WARNING)
     
     # Очищаем uvicorn handlers и отключаем propagation
     for logger_name in ['uvicorn', 'uvicorn.access', 'uvicorn.error']:

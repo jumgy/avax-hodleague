@@ -9,15 +9,16 @@ from sqlalchemy import select, and_, text
 from models.card_models import Card
 from models.token_models import Token, TokenPrice
 from config import Config
+import tempfile
+import requests
+from services.r2_storage import r2_storage
 
 logger = logging.getLogger(__name__)
+
 
 class CardRenderService:
     """Service for rendering card images with dynamic text overlay"""
     
-    # Paths
-    TEMPLATES_DIR = "/app/static/card_templates"
-    RENDERS_DIR = "/app/static/card_renders"
     FONTS_DIR = "/app/static/fonts"
     
     # Card dimensions (4x scale from Figma)
@@ -31,10 +32,10 @@ class CardRenderService:
     
     # Text opacity
     TEXT_OPACITY = 0.8  # 80%
-
+    
     def __init__(self):
-        os.makedirs(self.RENDERS_DIR, exist_ok=True)
-
+        pass
+    
     def _get_weight_text(self, weight: int) -> str:
         """Convert weight number to text: Low/Medium/High"""
         if weight in [8, 9, 10]:
@@ -45,7 +46,7 @@ class CardRenderService:
             return "LOW"
         else:
             return "MEDIUM"
-
+    
     def _format_market_cap(self, market_cap: Optional[int]) -> str:
         """Format market cap to readable string: $353B (without decimals)"""
         if not market_cap or market_cap == 0:
@@ -53,7 +54,7 @@ class CardRenderService:
         
         if market_cap >= 1_000_000_000:
             value = market_cap / 1_000_000_000
-            return f"${int(round(value))}B"  # Округляем до целого
+            return f"${int(round(value))}B"
         elif market_cap >= 1_000_000:
             value = market_cap / 1_000_000
             return f"${int(round(value))}M"
@@ -62,51 +63,35 @@ class CardRenderService:
             return f"${int(round(value))}K"
         else:
             return f"${int(market_cap)}"
-
+    
     def _load_fonts(self):
         """Load fonts with exact Figma specifications"""
         try:
-            # Все мелкие тексты: Instrument Sans Semibold, 19.6px (~20px)
             font_small = ImageFont.truetype(self.FONT_INSTRUMENT_SANS_SEMIBOLD, size=20)
             
-            # Большое число: пробуем сначала Condensed версию, если нет - обычную
             if os.path.exists(self.FONT_LEAGUE_GOTHIC_CONDENSED):
                 font_large = ImageFont.truetype(self.FONT_LEAGUE_GOTHIC_CONDENSED, size=105)
             else:
-                # Если Condensed нет, берём обычную, но будем сжимать
                 font_large = ImageFont.truetype(self.FONT_LEAGUE_GOTHIC, size=105)
             
             return font_small, font_large
-            
         except Exception as e:
             logger.error(f"Failed to load fonts: {e}")
             default = ImageFont.load_default()
             return default, default
-
+    
     def _draw_condensed_number(self, draw, text, position, font, fill, anchor="lb", squeeze_factor=0.75):
         """
         Рисует число с эффектом сжатия по горизонтали (condensed).
-        
-        Args:
-            draw: ImageDraw object
-            text: текст для отрисовки
-            position: (x, y) координаты
-            font: шрифт
-            fill: цвет
-            anchor: тип якоря
-            squeeze_factor: коэффициент сжатия (0.75 = 75% ширины, более узкий)
         """
-        # Создаём временный слой для числа
         bbox = draw.textbbox((0, 0), text, font=font, anchor="lt")
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        # Добавляем padding
         temp_size = (int(text_width * 1.5), int(text_height * 1.5))
         temp_layer = Image.new('RGBA', temp_size, (255, 255, 255, 0))
         temp_draw = ImageDraw.Draw(temp_layer)
         
-        # Рисуем текст на временном слое
         temp_draw.text(
             (text_width // 4, text_height // 4),
             text,
@@ -115,13 +100,11 @@ class CardRenderService:
             anchor="lt"
         )
         
-        # Сжимаем по горизонтали
         new_width = int(temp_size[0] * squeeze_factor)
         condensed = temp_layer.resize((new_width, temp_size[1]), Image.Resampling.LANCZOS)
         
-        # Вычисляем позицию для вставки
         x, y = position
-        if anchor == "lb":  # left-baseline
+        if anchor == "lb":
             paste_x = int(x)
             paste_y = int(y - temp_size[1] + text_height // 4)
         else:
@@ -129,7 +112,7 @@ class CardRenderService:
             paste_y = int(y)
         
         return condensed, (paste_x, paste_y)
-
+    
     def render_card(
         self,
         template_path: str,
@@ -140,13 +123,11 @@ class CardRenderService:
         """
         Render a card by overlaying text on template image.
         
-        Coordinates based on Figma 4x export (666 × 1044):
-        - "MARKET CAP": left 59px, bottom 101px
-        - Market cap value: left 59px, bottom 68px (rounded to integer)
-        - "WEIGHT": left 268px, bottom 101px
-        - Weight text (HIGH/MEDIUM/LOW): left 268px, bottom 68px
-        - Weight number (large): left 578px, bottom 52px (condensed)
-        All text: 80% opacity
+        Args:
+            template_path: путь к локальному файлу темплейта (временный файл)
+            output_path: путь для сохранения результата (временный файл)
+            market_cap: капитализация
+            weight: вес карты
         """
         try:
             if not os.path.exists(template_path):
@@ -154,15 +135,11 @@ class CardRenderService:
                 return False
             
             img = Image.open(template_path).convert("RGBA")
-            
-            # Создаём отдельный прозрачный слой для текста
             text_layer = Image.new('RGBA', img.size, (255, 255, 255, 0))
             draw = ImageDraw.Draw(text_layer)
             
-            # Load fonts
             font_small, font_large = self._load_fonts()
             
-            # Prepare text
             market_cap_text = self._format_market_cap(market_cap)
             weight_text = self._get_weight_text(weight)
             weight_number = str(weight)
@@ -204,7 +181,6 @@ class CardRenderService:
             )
             
             # === WEIGHT NUMBER (большое, condensed) ===
-            # Создаём сжатое число на отдельном слое
             number_layer, number_pos = self._draw_condensed_number(
                 draw,
                 weight_number,
@@ -212,35 +188,40 @@ class CardRenderService:
                 font_large,
                 (0, 0, 0, 255),
                 anchor="lb",
-                squeeze_factor=0.70  # Сжимаем до 70% ширины
+                squeeze_factor=0.70
             )
             
-            # Применяем 80% прозрачность ко всему текстовому слою
+            # Применяем прозрачность
             alpha = text_layer.split()[3]
             alpha = alpha.point(lambda p: int(p * self.TEXT_OPACITY))
             text_layer.putalpha(alpha)
             
-            # Накладываем текст на основное изображение
             img = Image.alpha_composite(img, text_layer)
             
-            # Накладываем сжатое число (оно уже отдельно)
             number_alpha = number_layer.split()[3]
             number_alpha = number_alpha.point(lambda p: int(p * self.TEXT_OPACITY))
             number_layer.putalpha(number_alpha)
-            
             img.paste(number_layer, number_pos, number_layer)
             
             # Save rendered image
             img.save(output_path, "PNG", quality=95)
             logger.info(f"✅ Card rendered: {os.path.basename(output_path)}")
-            
             return True
-            
+        
         except Exception as e:
             logger.error(f"❌ Failed to render card: {e}", exc_info=True)
             return False
-
+    
     async def render_card_by_id(self, card_id: int) -> Optional[str]:
+        """
+        Рендерит карту и загружает результат в R2.
+        
+        Returns:
+            CDN URL отрендеренной картинки или None при ошибке
+        """
+        template_temp_path = None
+        output_temp_path = None
+        
         try:
             async with DatabaseSession() as db:
                 result = await db.execute(
@@ -249,10 +230,13 @@ class CardRenderService:
                     .where(Card.id == card_id)
                 )
                 row = result.first()
+                
                 if not row:
                     logger.error(f"Card {card_id} not found")
                     return None
+                
                 card, token = row
+                
                 price_result = await db.execute(
                     select(TokenPrice)
                     .where(TokenPrice.token_id == token.id)
@@ -260,48 +244,114 @@ class CardRenderService:
                     .limit(1)
                 )
                 price = price_result.scalar_one_or_none()
-                template_filename = card.template_image_url.split('/')[-1]
-                template_path = os.path.join(self.TEMPLATES_DIR, template_filename)
-
-                timestamp = int(datetime.utcnow().timestamp())
-                output_filename = f"card_{card.id}_{timestamp}.png"
-                output_path = os.path.join(self.RENDERS_DIR, output_filename)
-
-                old_rendered_url = card.rendered_image_url
+                
+                template_url = card.template_image_url
+                
+                # ⬇️ ДОБАВЛЕНО: Быстрый skip для placeholder и невалидных URL
+                if not template_url or not template_url.startswith('http'):
+                    logger.warning(f"⚠️ Skipping card {card_id}: invalid URL '{template_url}'")
+                    return None
+                
+                if 'placeholder' in template_url.lower():
+                    logger.warning(f"⚠️ Skipping card {card_id}: placeholder template")
+                    return None
+                
+                # ⬇️ ИЗМЕНЕНО: Добавлен timeout 5 секунд
+                logger.info(f"📥 Downloading template from: {template_url}")
+                
+                try:
+                    response = requests.get(template_url, timeout=5)  # ⬅️ timeout!
+                    response.raise_for_status()
+                except requests.exceptions.Timeout:
+                    logger.error(f"❌ Card {card_id}: template download timeout ({template_url})")
+                    return None
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"❌ Card {card_id}: failed to download template - {e}")
+                    return None
+                
+                # Сохраняем темплейт во временный файл
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as f:
+                    f.write(response.content)
+                    template_temp_path = f.name
+                
+                # Создаём временный файл для результата
+                output_temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                output_temp_path = output_temp_file.name
+                output_temp_file.close()
+                
+                # Рендерим карту
                 success = self.render_card(
-                    template_path=template_path,
-                    output_path=output_path,
+                    template_path=template_temp_path,
+                    output_path=output_temp_path,
                     market_cap=price.market_cap if price else None,
                     weight=token.weight
                 )
+                
                 if not success:
                     return None
-                base_url = os.getenv("STATIC_BASE_URL", "http://localhost:8080")
-                rendered_url = f"{base_url}/static/card_renders/{output_filename}"
+                
+                # ⬇️ ИЗМЕНЕНО: Загружаем результат в R2
+                timestamp = int(datetime.utcnow().timestamp())
+                output_filename = f"card_{card.id}_{timestamp}.png"
+                object_key = f"card_renders/{output_filename}"
+                
+                rendered_url = r2_storage.upload_file(
+                    output_temp_path,
+                    object_key,
+                    content_type="image/png"
+                )
+                
+                old_rendered_url = card.rendered_image_url
+                
+                # Обновляем БД
                 card.rendered_image_url = rendered_url
                 card.last_rendered_at = datetime.utcnow()
                 await db.commit()
-                logger.info(f"✅ Card {card_id} rendered: {rendered_url}")
-
-
+                
+                logger.info(f"✅ Card {card_id} rendered and uploaded to R2: {rendered_url}")
+                
+                # ⬇️ ИЗМЕНЕНО: Удаляем старый рендер из R2 (если он был)
                 if old_rendered_url and old_rendered_url != rendered_url:
-                    old_filename = old_rendered_url.split("/")[-1]
-                    in_use = await db.execute(
-                        select(Card.id).where(Card.rendered_image_url == old_rendered_url, Card.id != card.id)
-                    )
-                    if not in_use.first():
-                        old_filepath = os.path.join(self.RENDERS_DIR, old_filename)
-                        if os.path.exists(old_filepath):
+                    # Проверяем что старый URL из нашего R2
+                    if r2_storage.public_url in old_rendered_url:
+                        # Проверяем что этот URL больше не используется другими картами
+                        in_use = await db.execute(
+                            select(Card.id).where(
+                                Card.rendered_image_url == old_rendered_url,
+                                Card.id != card.id
+                            )
+                        )
+                        
+                        if not in_use.first():
+                            # Извлекаем object_key из URL
+                            old_object_key = old_rendered_url.replace(f"{r2_storage.public_url}/", "")
+                            
                             try:
-                                os.remove(old_filepath)
-                                logger.info(f"Удалён старый рендер {old_filepath}")
+                                r2_storage.delete_file(old_object_key)
+                                logger.info(f"🗑️ Удалён старый рендер из R2: {old_object_key}")
                             except Exception as e:
-                                logger.warning(f"Не удалось удалить {old_filepath}: {e}")
+                                logger.warning(f"⚠️ Не удалось удалить старый рендер {old_object_key}: {e}")
+                
                 return rendered_url
+        
         except Exception as e:
             logger.error(f"❌ Failed to render card {card_id}: {e}", exc_info=True)
             return None
-
+        
+        finally:
+            # Удаляем временные файлы
+            if template_temp_path and os.path.exists(template_temp_path):
+                try:
+                    os.remove(template_temp_path)
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to delete temp template: {e}")
+            
+            if output_temp_path and os.path.exists(output_temp_path):
+                try:
+                    os.remove(output_temp_path)
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to delete temp output: {e}")
+    
     async def render_all_active_cards(self) -> dict:
         """Render all active cards"""
         try:
@@ -331,7 +381,7 @@ class CardRenderService:
                 logger.info("✅ Materialized view refreshed successfully")
             except Exception as view_error:
                 logger.error(f"❌ Failed to refresh materialized view: {view_error}", exc_info=True)
-
+            
             logger.info(f"✅ Complete: {success_count} success, {failed_count} failed")
             
             return {
@@ -339,10 +389,11 @@ class CardRenderService:
                 "success": success_count,
                 "failed": failed_count
             }
-            
+        
         except Exception as e:
             logger.error(f"❌ Failed to render cards: {e}", exc_info=True)
             return {"total": 0, "success": 0, "failed": 0}
+
 
 # Singleton instance
 card_render_service = CardRenderService()
