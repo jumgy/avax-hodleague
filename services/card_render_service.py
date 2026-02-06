@@ -201,11 +201,36 @@ class CardRenderService:
             number_alpha = number_layer.split()[3]
             number_alpha = number_alpha.point(lambda p: int(p * self.TEXT_OPACITY))
             number_layer.putalpha(number_alpha)
+            
             img.paste(number_layer, number_pos, number_layer)
             
+            if img.mode == "RGBA":
+                rgb_img = Image.new("RGB", img.size, (255, 255, 255))
+                rgb_img.paste(img, mask=img.split()[3])
+                img = rgb_img
+
+            img = img.quantize(
+                colors=256,           # Максимум 256 цветов
+                method=Image.MEDIANCUT,  # Лучший алгоритм квантизации
+                kmeans=0,
+                dither=Image.FLOYDSTEINBERG  # Дизеринг для плавности
+            )
+            
+            # Логируем режим перед сохранением
+            logger.info(f"📊 Image mode before save: {img.mode}, size: {img.size}")
+            
             # Save rendered image
-            img.save(output_path, "PNG", quality=95)
-            logger.info(f"✅ Card rendered: {os.path.basename(output_path)}")
+            img.save(
+                output_path, 
+                "PNG",
+                optimize=True,
+                compress_level=9
+            )
+            
+            # Log file size
+            file_size_kb = os.path.getsize(output_path) / 1024
+            logger.info(f"✅ Card rendered: {os.path.basename(output_path)} ({file_size_kb:.1f} KB)")
+            
             return True
         
         except Exception as e:
@@ -289,12 +314,16 @@ class CardRenderService:
                 
                 if not success:
                     return None
-                
+
                 # ⬇️ ИЗМЕНЕНО: Загружаем результат в R2
                 timestamp = int(datetime.utcnow().timestamp())
                 output_filename = f"card_{card.id}_{timestamp}.png"
                 object_key = f"card_renders/{output_filename}"
-                
+
+                # Логируем размер перед загрузкой
+                file_size_kb = os.path.getsize(output_temp_path) / 1024
+                logger.info(f"📦 Uploading to R2: {output_filename} ({file_size_kb:.1f} KB)")
+
                 rendered_url = r2_storage.upload_file(
                     output_temp_path,
                     object_key,
