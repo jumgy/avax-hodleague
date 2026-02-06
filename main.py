@@ -27,7 +27,6 @@ _logging_configured = False
 def setup_logging():
     """Настройка логирования без дублирования"""
     global _logging_configured
-    
     if _logging_configured:
         return
     
@@ -58,6 +57,11 @@ def setup_logging():
         logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
         logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
         logging.getLogger('sqlalchemy.dialects').setLevel(logging.WARNING)
+    
+    logging.getLogger('botocore').setLevel(logging.WARNING)
+    logging.getLogger('boto3').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('s3transfer').setLevel(logging.WARNING)
     
     # Очищаем uvicorn handlers и отключаем propagation
     for logger_name in ['uvicorn', 'uvicorn.access', 'uvicorn.error']:
@@ -195,6 +199,16 @@ async def get_redoc_documentation(authorized: bool = get_swagger_dependency()):
         openapi_url="/openapi.json",
         title=f"{app.title} - ReDoc"
     )
+
+from fastapi.responses import HTMLResponse
+from pathlib import Path
+@app.get("/panel/bulk-upload", response_class=HTMLResponse)
+async def bulk_upload_page(authorized: bool = get_swagger_dependency()):
+    """Страница для bulk загрузки темплейтов"""
+    html_path = Path(__file__).parent / "static" / "bulk_upload.html"
+    if html_path.exists():
+        return html_path.read_text(encoding='utf-8')
+    raise HTTPException(404, "Page not found")
 # ============ MAIN ENDPOINTS ============
 
 # Health check endpoint

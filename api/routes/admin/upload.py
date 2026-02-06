@@ -1,5 +1,4 @@
 # api/routes/admin_upload.py
-
 import os
 import logging
 from datetime import datetime
@@ -8,24 +7,14 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends
 from .auth import verify_admin_token
 from fastapi.responses import JSONResponse
 from config import Config
-import aiofiles
 import uuid
 import re
-import os.path
-
+import tempfile
+from services.r2_storage import r2_storage
 from services.card_render_service import card_render_service
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/panel/upload")
-
-# Путь к папке с шаблонами
-TEMPLATES_DIR = "/app/static/card_templates"
-RENDERS_DIR = "/app/static/card_renders"
-
-# Создаём папки если их нет
-os.makedirs(TEMPLATES_DIR, exist_ok=True)
-os.makedirs(RENDERS_DIR, exist_ok=True)
 
 # Разрешённые форматы
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg"}
@@ -45,9 +34,7 @@ def sanitize_filename(text: str) -> str:
     Removes special characters, converts to lowercase.
     Example: "Bitcoin (BTC)" -> "bitcoin_btc"
     """
-    # Remove special characters, keep only alphanumeric and spaces
     text = re.sub(r'[^\w\s-]', '', text.lower())
-    # Replace spaces with underscores
     text = re.sub(r'[\s_]+', '_', text)
     return text.strip('_')
 
@@ -58,12 +45,10 @@ async def upload_card_template(
     design_type: str = Form(...),
     rarity: str = Form(...),
     admin: dict = Depends(verify_admin_token)
-
 ):
     """
-    Upload a card template image (base design without text).
-    
-    Returns URL that can be used in template_image_url field when creating a card.
+    Upload a card template image to Cloudflare R2.
+    Returns CDN URL that can be used in template_image_url field.
     
     Example:
         curl -X POST http://localhost:6000/panel/upload/card-template \
@@ -103,7 +88,7 @@ async def upload_card_template(
                 detail=f"File too large. Max size: {MAX_FILE_SIZE / 1024 / 1024}MB"
             )
         
-        # Generate filename: token_design_rarity_timestamp.png
+        # Generate filename
         file_ext = get_file_extension(file.filename)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -114,34 +99,164 @@ async def upload_card_template(
         
         # Build filename
         filename = f"{token_clean}_{design_clean}_{rarity_clean}_{timestamp}{file_ext}"
-        file_path = os.path.join(TEMPLATES_DIR, filename)
         
-        # Save file
-        async with aiofiles.open(file_path, 'wb') as f:
-            await f.write(content)
+        # Сохраняем во временный файл и загружаем в R2
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
         
-        # Generate URL
-        base_url = os.getenv("STATIC_BASE_URL", "http://localhost:8080")
-        file_url = f"{base_url}/static/card_templates/{filename}"
+        try:
+            # Загружаем в R2 в папку card_templates/
+            object_key = f"card_templates/{filename}"
+            file_url = r2_storage.upload_file(
+                temp_path,
+                object_key,
+                content_type=f"image/{file_ext[1:]}"  # image/png, image/jpeg
+            )
+            
+            logger.info(f"✅ Template uploaded to R2: {filename} ({file_size / 1024:.2f} KB)")
+            
+            return {
+                "success": True,
+                "filename": filename,
+                "url": file_url,
+                "size_kb": round(file_size / 1024, 2),
+                "token_symbol": token_symbol,
+                "design_type": design_type,
+                "rarity": rarity,
+                "message": "Template uploaded successfully to CDN. Use this URL in template_image_url field."
+            }
         
-        logger.info(f"✅ Template uploaded: {filename} ({file_size / 1024:.2f} KB)")
-        
-        return {
-            "success": True,
-            "filename": filename,
-            "url": file_url,
-            "size_kb": round(file_size / 1024, 2),
-            "token_symbol": token_symbol,
-            "design_type": design_type,
-            "rarity": rarity,
-            "message": "Template uploaded successfully. Use this URL in template_image_url field."
-        }
-        
+        finally:
+            # Удаляем временный файл
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+    
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ Upload failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    
+from typing import List
+
+@router.post("/card-templates-bulk")
+async def upload_card_templates_bulk(
+    files: List[UploadFile] = File(...),
+    design_type: str = Form("classic"),
+    rarity: str = Form("common"),
+    admin: dict = Depends(verify_admin_token)
+):
+    """
+    Bulk upload card templates.
+    Token symbol is extracted from filename (btc.png → BTC).
+    
+    Example:
+        Upload files: btc.png, eth.png, sol.png
+        All will get design_type=classic, rarity=common
+    """
+    results = []
+    errors = []
+    
+    for file in files:
+        try:
+            # Валидация файла
+            if not file.filename:
+                errors.append({
+                    "filename": "unknown",
+                    "error": "No filename"
+                })
+                continue
+                
+            if not is_allowed_file(file.filename):
+                errors.append({
+                    "filename": file.filename,
+                    "error": f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+                })
+                continue
+            
+            # ⬇️ ИЗВЛЕКАЕМ ТИКЕР ИЗ ИМЕНИ ФАЙЛА
+            # btc.png → btc
+            # BTC_template.png → btc
+            # solana-logo.png → solana
+            filename_without_ext = os.path.splitext(file.filename)[0]
+            # Берём первую часть до _, -, или пробела
+            token_symbol = re.split(r'[_\-\s]', filename_without_ext)[0].upper()
+            
+            if not token_symbol:
+                errors.append({
+                    "filename": file.filename,
+                    "error": "Cannot extract token symbol from filename"
+                })
+                continue
+            
+            logger.info(f"📁 Processing: {file.filename} → Token: {token_symbol}")
+            
+            # Читаем файл
+            content = await file.read()
+            file_size = len(content)
+            
+            if file_size > MAX_FILE_SIZE:
+                errors.append({
+                    "filename": file.filename,
+                    "error": f"File too large: {file_size/1024/1024:.1f}MB (max 5MB)"
+                })
+                continue
+            
+            # Генерируем имя файла
+            file_ext = get_file_extension(file.filename)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            token_clean = sanitize_filename(token_symbol)
+            design_clean = sanitize_filename(design_type)
+            rarity_clean = sanitize_filename(rarity)
+            
+            new_filename = f"{token_clean}_{design_clean}_{rarity_clean}_{timestamp}{file_ext}"
+            
+            # Сохраняем во временный файл
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+                temp_file.write(content)
+                temp_path = temp_file.name
+            
+            try:
+                # Загружаем в R2
+                object_key = f"card_templates/{new_filename}"
+                file_url = r2_storage.upload_file(
+                    temp_path,
+                    object_key,
+                    content_type=f"image/{file_ext[1:]}"
+                )
+                
+                logger.info(f"✅ Uploaded: {new_filename} ({file_size/1024:.1f}KB)")
+                
+                results.append({
+                    "original_filename": file.filename,
+                    "uploaded_filename": new_filename,
+                    "token_symbol": token_symbol,
+                    "url": file_url,
+                    "size_kb": round(file_size / 1024, 2)
+                })
+                
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to upload {file.filename}: {e}")
+            errors.append({
+                "filename": file.filename,
+                "error": str(e)
+            })
+    
+    return {
+        "success": len(errors) == 0,
+        "uploaded": len(results),
+        "failed": len(errors),
+        "design_type": design_type,
+        "rarity": rarity,
+        "results": results,
+        "errors": errors if errors else None,
+        "message": f"Uploaded {len(results)} templates. {len(errors)} failed." if errors else f"Successfully uploaded {len(results)} templates."
+    }
 
 
 @router.get("/templates")
@@ -149,27 +264,35 @@ async def list_templates(
     admin: dict = Depends(verify_admin_token)
 ):
     """
-    List all uploaded card templates.
-    Useful for seeing what templates are available.
+    List all uploaded card templates from R2.
     """
     try:
-        templates = []
-        base_url = os.getenv("STATIC_BASE_URL", "http://localhost:8080")
+        # Получаем список объектов из R2
+        response = r2_storage.client.list_objects_v2(
+            Bucket=r2_storage.bucket_name,
+            Prefix="card_templates/"
+        )
         
-        for filename in os.listdir(TEMPLATES_DIR):
-            if is_allowed_file(filename):
-                file_path = os.path.join(TEMPLATES_DIR, filename)
-                file_size = os.path.getsize(file_path)
-                file_url = f"{base_url}/static/card_templates/{filename}"
+        templates = []
+        
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                filename = obj['Key'].replace('card_templates/', '')
+                
+                # Пропускаем если это просто папка
+                if not filename:
+                    continue
+                
+                file_url = f"{r2_storage.public_url}/{obj['Key']}"
+                file_size = obj['Size']
                 
                 # Parse filename to extract info
-                # Format: token_design_rarity_timestamp.png
                 parts = filename.rsplit('.', 1)[0].split('_')
-                
                 info = {
                     "filename": filename,
                     "url": file_url,
-                    "size_kb": round(file_size / 1024, 2)
+                    "size_kb": round(file_size / 1024, 2),
+                    "last_modified": obj['LastModified'].isoformat()
                 }
                 
                 # Try to parse metadata from filename
@@ -185,7 +308,7 @@ async def list_templates(
             "total": len(templates),
             "templates": sorted(templates, key=lambda x: x['filename'])
         }
-        
+    
     except Exception as e:
         logger.error(f"❌ Failed to list templates: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -196,6 +319,9 @@ async def delete_template(
     filename: str,
     admin: dict = Depends(verify_admin_token)
 ):
+    """
+    Delete a template from R2.
+    """
     try:
         # ✅ Проверка 1: Запретить path traversal символы
         if '..' in filename or '/' in filename or '\\' in filename:
@@ -205,30 +331,25 @@ async def delete_template(
         if not is_allowed_file(filename):
             raise HTTPException(400, "Invalid file type")
         
-        # ✅ Проверка 3: Построить полный путь
-        file_path = os.path.join(TEMPLATES_DIR, filename)
+        # Удаляем из R2
+        object_key = f"card_templates/{filename}"
         
-        # ✅ Проверка 4: Убедиться что путь внутри TEMPLATES_DIR
-        real_path = os.path.realpath(file_path)
-        real_templates_dir = os.path.realpath(TEMPLATES_DIR)
-        
-        if not real_path.startswith(real_templates_dir):
-            logger.warning(f"⚠️ Path traversal attempt blocked: {filename}")
-            raise HTTPException(403, "Access denied")
-        
-        # ✅ Проверка 5: Файл существует
-        if not os.path.exists(real_path):
+        # Проверяем существование
+        if not r2_storage.file_exists(object_key):
             raise HTTPException(404, "Template not found")
         
-        # ✅ Безопасное удаление
-        os.remove(real_path)
-        logger.info(f"🗑️ Template deleted by {admin['username']}: {filename}")
+        # Удаляем
+        success = r2_storage.delete_file(object_key)
         
-        return {
-            "success": True,
-            "message": f"Template {filename} deleted successfully"
-        }
-        
+        if success:
+            logger.info(f"🗑️ Template deleted from R2 by {admin['username']}: {filename}")
+            return {
+                "success": True,
+                "message": f"Template {filename} deleted successfully from CDN"
+            }
+        else:
+            raise HTTPException(500, "Failed to delete from CDN")
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -247,7 +368,6 @@ async def render_card_manually(
     """
     try:
         logger.info(f"🎨 Manual render requested for card {card_id}")
-        
         result_url = await card_render_service.render_card_by_id(card_id)
         
         if result_url:
@@ -259,7 +379,7 @@ async def render_card_manually(
             }
         else:
             raise HTTPException(status_code=500, detail="Rendering failed")
-            
+    
     except Exception as e:
         logger.error(f"❌ Manual render failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -275,7 +395,6 @@ async def render_all_cards_manually(
     """
     try:
         logger.info("🎨 Manual render requested for ALL cards")
-        
         result = await card_render_service.render_all_active_cards()
         
         return {
@@ -285,7 +404,7 @@ async def render_all_cards_manually(
             "failed_count": result["failed"],
             "message": f"Rendered {result['success']} out of {result['total']} cards"
         }
-            
+    
     except Exception as e:
         logger.error(f"❌ Batch render failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
