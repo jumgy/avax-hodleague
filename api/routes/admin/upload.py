@@ -137,6 +137,126 @@ async def upload_card_template(
     except Exception as e:
         logger.error(f"❌ Upload failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    
+from typing import List
+
+@router.post("/card-templates-bulk")
+async def upload_card_templates_bulk(
+    files: List[UploadFile] = File(...),
+    design_type: str = Form("classic"),
+    rarity: str = Form("common"),
+    admin: dict = Depends(verify_admin_token)
+):
+    """
+    Bulk upload card templates.
+    Token symbol is extracted from filename (btc.png → BTC).
+    
+    Example:
+        Upload files: btc.png, eth.png, sol.png
+        All will get design_type=classic, rarity=common
+    """
+    results = []
+    errors = []
+    
+    for file in files:
+        try:
+            # Валидация файла
+            if not file.filename:
+                errors.append({
+                    "filename": "unknown",
+                    "error": "No filename"
+                })
+                continue
+                
+            if not is_allowed_file(file.filename):
+                errors.append({
+                    "filename": file.filename,
+                    "error": f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+                })
+                continue
+            
+            # ⬇️ ИЗВЛЕКАЕМ ТИКЕР ИЗ ИМЕНИ ФАЙЛА
+            # btc.png → btc
+            # BTC_template.png → btc
+            # solana-logo.png → solana
+            filename_without_ext = os.path.splitext(file.filename)[0]
+            # Берём первую часть до _, -, или пробела
+            token_symbol = re.split(r'[_\-\s]', filename_without_ext)[0].upper()
+            
+            if not token_symbol:
+                errors.append({
+                    "filename": file.filename,
+                    "error": "Cannot extract token symbol from filename"
+                })
+                continue
+            
+            logger.info(f"📁 Processing: {file.filename} → Token: {token_symbol}")
+            
+            # Читаем файл
+            content = await file.read()
+            file_size = len(content)
+            
+            if file_size > MAX_FILE_SIZE:
+                errors.append({
+                    "filename": file.filename,
+                    "error": f"File too large: {file_size/1024/1024:.1f}MB (max 5MB)"
+                })
+                continue
+            
+            # Генерируем имя файла
+            file_ext = get_file_extension(file.filename)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            token_clean = sanitize_filename(token_symbol)
+            design_clean = sanitize_filename(design_type)
+            rarity_clean = sanitize_filename(rarity)
+            
+            new_filename = f"{token_clean}_{design_clean}_{rarity_clean}_{timestamp}{file_ext}"
+            
+            # Сохраняем во временный файл
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+                temp_file.write(content)
+                temp_path = temp_file.name
+            
+            try:
+                # Загружаем в R2
+                object_key = f"card_templates/{new_filename}"
+                file_url = r2_storage.upload_file(
+                    temp_path,
+                    object_key,
+                    content_type=f"image/{file_ext[1:]}"
+                )
+                
+                logger.info(f"✅ Uploaded: {new_filename} ({file_size/1024:.1f}KB)")
+                
+                results.append({
+                    "original_filename": file.filename,
+                    "uploaded_filename": new_filename,
+                    "token_symbol": token_symbol,
+                    "url": file_url,
+                    "size_kb": round(file_size / 1024, 2)
+                })
+                
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                    
+        except Exception as e:
+            logger.error(f"❌ Failed to upload {file.filename}: {e}")
+            errors.append({
+                "filename": file.filename,
+                "error": str(e)
+            })
+    
+    return {
+        "success": len(errors) == 0,
+        "uploaded": len(results),
+        "failed": len(errors),
+        "design_type": design_type,
+        "rarity": rarity,
+        "results": results,
+        "errors": errors if errors else None,
+        "message": f"Uploaded {len(results)} templates. {len(errors)} failed." if errors else f"Successfully uploaded {len(results)} templates."
+    }
 
 
 @router.get("/templates")

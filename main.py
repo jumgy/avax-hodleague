@@ -199,6 +199,16 @@ async def get_redoc_documentation(authorized: bool = get_swagger_dependency()):
         openapi_url="/openapi.json",
         title=f"{app.title} - ReDoc"
     )
+
+from fastapi.responses import HTMLResponse
+from pathlib import Path
+@app.get("/panel/bulk-upload", response_class=HTMLResponse)
+async def bulk_upload_page(authorized: bool = get_swagger_dependency()):
+    """Страница для bulk загрузки темплейтов"""
+    html_path = Path(__file__).parent / "static" / "bulk_upload.html"
+    if html_path.exists():
+        return html_path.read_text(encoding='utf-8')
+    raise HTTPException(404, "Page not found")
 # ============ MAIN ENDPOINTS ============
 
 # Health check endpoint
