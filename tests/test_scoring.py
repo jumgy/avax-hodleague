@@ -67,7 +67,7 @@ def calculate_scores(tokens: List[Dict]) -> List[Dict]:
         activity_raw_score = activity_points * mc_factor * 1
         
         # ИТОГО
-        raw_score = max(0, base_raw_score + growth_raw_bonus + activity_raw_score)
+        raw_score = base_raw_score + growth_raw_bonus + activity_raw_score
         
         token['raw_score'] = raw_score
         token['weekly_points'] = weekly_points
@@ -76,26 +76,39 @@ def calculate_scores(tokens: List[Dict]) -> List[Dict]:
     
     # После расчета всех raw_scores
     raw_scores = [t['raw_score'] for t in tokens]
-    median_raw = sorted(raw_scores)[len(raw_scores) // 2]
 
-    print(median_raw)
+    # Считаем среднее и стандартное отклонение
+    mean_raw = sum(raw_scores) / len(raw_scores)
+    variance = sum((x - mean_raw) ** 2 for x in raw_scores) / len(raw_scores)
+    std_raw = variance ** 0.5
 
-    # Хотим, чтобы медиана давала 500 очков
-    # median_raw / divider = 500
-    # divider = median_raw / 500
-    dynamic_divider = median_raw / 400
+    print(f"Mean: {mean_raw:.1f}, Std: {std_raw:.1f}")
 
-    print(dynamic_divider)
-
-    # Нормализация
+    # Находим максимальные z-scores отдельно для положительных и отрицательных
+    if std_raw > 0:
+        z_scores = [(r - mean_raw) / std_raw for r in raw_scores]
+        max_positive_z = max(z for z in z_scores if z > 0) if any(z > 0 for z in z_scores) else 1
+        max_negative_z = abs(min(z for z in z_scores if z < 0)) if any(z < 0 for z in z_scores) else 1
+    else:
+        max_positive_z = max_negative_z = 1
+    
+    print(f"Max positive z: {max_positive_z:.2f}, Max negative z: {max_negative_z:.2f}")
+    
+    # Z-score нормализация с раздельным масштабом
     for token in tokens:
         raw_score = token['raw_score']
         
-        if raw_score <= 0:
-            final_score = 0
+        if std_raw == 0:
+            normalized = 500
         else:
-            final_score = min(int(raw_score / dynamic_divider), 1000)
+            z_score = (raw_score - mean_raw) / std_raw
+            
+            if z_score >= 0:
+                normalized = 500 + (z_score / max_positive_z) * 500
+            else:
+                normalized = 500 + (z_score / max_negative_z) * 500
         
+        final_score = max(0, min(1000, int(normalized)))
         token['new_score'] = final_score
     
     return tokens

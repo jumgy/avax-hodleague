@@ -97,22 +97,38 @@ class ScoreService:
                 
                 activity_raw_score = activity_points * mc_factor * 1
                 
-                raw_score = max(0, base_raw_score + growth_raw_bonus + activity_raw_score)
+                raw_score = base_raw_score + growth_raw_bonus + activity_raw_score
                 
                 token['raw_score'] = raw_score
                 raw_scores.append(raw_score)
 
             # Normalize scores to 1000
-            median_raw = sorted(raw_scores)[len(raw_scores) // 2]
-            dynamic_divider = median_raw / 400
-                
+            # Z-score normalization with separate scales for positive/negative
+            mean_raw = sum(raw_scores) / len(raw_scores)
+            variance = sum((x - mean_raw) ** 2 for x in raw_scores) / len(raw_scores)
+            std_raw = variance ** 0.5
+
+            if std_raw > 0:
+                z_scores = [(r - mean_raw) / std_raw for r in raw_scores]
+                max_positive_z = max((z for z in z_scores if z > 0), default=1)
+                max_negative_z = abs(min((z for z in z_scores if z < 0), default=-1))
+            else:
+                max_positive_z = max_negative_z = 1
+
             for token in scored_tokens:
                 raw_score = token['raw_score']
                 
-                if raw_score <= 0:
-                    final_score = 0
+                if std_raw == 0:
+                    final_score = 500
                 else:
-                    final_score = min(int(raw_score / dynamic_divider), 1000)
+                    z_score = (raw_score - mean_raw) / std_raw
+                    
+                    if z_score >= 0:
+                        normalized = 500 + (z_score / max_positive_z) * 500
+                    else:
+                        normalized = 500 + (z_score / max_negative_z) * 500
+                
+                final_score = max(0, min(1000, int(normalized)))
                 
                 token_score = TokenScore(
                     tournament_id=tournament_id,
