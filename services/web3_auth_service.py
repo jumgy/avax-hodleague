@@ -246,7 +246,8 @@ class Web3AuthService:
         wallet_address: str, 
         db: AsyncSession,
         nickname: str = None, 
-        avatar_url: str = None
+        avatar_url: str = None,
+        referral_code: str = None
     ) -> User:
         """Создаем или получаем пользователя"""
         try:
@@ -299,13 +300,28 @@ class Web3AuthService:
             # Default avatar
             if not avatar_url:
                 avatar_url = None
+
+            referrer_id = None
+            if referral_code:
+                referrer_query = select(User).where(User.referral_route == referral_code)
+                referrer_result = await db.execute(referrer_query)
+                referrer = referrer_result.scalar_one_or_none()
+                
+                if referrer:
+                    referrer_id = referrer.id
+                    # Увеличиваем счётчик рефералов
+                    referrer.referral_count += 1
+                    logger.info(f"✅ User registered via referral: {referral_code} (referrer: {referrer.nickname})")
+                else:
+                    logger.warning(f"⚠️ Invalid referral code: {referral_code}")
             
             # Создаем
             new_user = User(
                 wallet_address=wallet_address,
                 nickname=nickname,
                 referral_route=referral_route,
-                avatar_url=avatar_url
+                avatar_url=avatar_url,
+                referred_by_id=referrer_id
             )
             
             db.add(new_user)

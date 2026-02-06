@@ -68,10 +68,11 @@ class UserProfileResponse(BaseModel):
     nickname: str
     avatar_url: Optional[str] = None
     referral_route: str
+    referral_link: str
+    referral_count: int 
     created_at: str
     stats: UserStats
     cards: Optional[List[UserCard]] = None
-
 
 # ============================================
 # MODELS - New for Tournament History
@@ -176,6 +177,8 @@ async def get_my_profile(
             "nickname": user.nickname,
             "avatar_url": user.avatar_url,
             "referral_route": user.referral_route,
+            "referral_link": f"https://hodleague.com?ref={user.referral_route}",
+            "referral_count": user.referral_count or 0,
             "created_at": user.created_at.isoformat(),
             "stats": stats
         }

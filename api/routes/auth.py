@@ -27,6 +27,7 @@ router = APIRouter(prefix="/auth")
 
 class NonceRequest(BaseModel):
     wallet_address: str
+    referral_code: Optional[str] = None
 
     @validator('wallet_address')
     def validate_wallet_address(cls, v):
@@ -47,6 +48,7 @@ class VerifyRequest(BaseModel):
     signature: str
     nickname: Optional[str] = None
     avatar_url: Optional[str] = None
+    referral_code: Optional[str] = None
 
     @validator('wallet_address')
     def validate_wallet_address(cls, v):
@@ -66,6 +68,14 @@ class VerifyRequest(BaseModel):
             v = v.strip()
             if len(v) < 2 or len(v) > 30:
                 raise ValueError('Nickname must be between 2 and 30 characters')
+        return v
+    
+    @validator('referral_code')
+    def validate_referral_code(cls, v):
+        if v is not None:
+            v = v.strip()
+            if len(v) < 3 or len(v) > 100:
+                raise ValueError('Invalid referral code format')
         return v
 
 
@@ -214,6 +224,7 @@ async def verify_signature(
             wallet_address=body.wallet_address,
             nickname=body.nickname,
             avatar_url=body.avatar_url,
+            referral_code=body.referral_code,
             db=db
         )
         
@@ -331,6 +342,7 @@ if Config.ENVIRONMENT != "production":
             user = await web3_auth_service.create_or_get_user(
                 wallet_address=request.wallet_address,
                 nickname=f"TestUser{request.wallet_address[2:8]}",
+                referral_code=request.referral_code,
                 db=db
             )
             
