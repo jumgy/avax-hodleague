@@ -219,3 +219,177 @@ async def get_card_details(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve card details"
         )
+    
+# ==================== Tournament Statistics ====================
+
+class TournamentPricePoint(BaseModel):
+    date: str
+    price: Optional[float]
+
+class TournamentScorePoint(BaseModel):
+    tournament_number: int
+    base_score: float
+    final_score: float
+    score_multiplier: float
+
+class TournamentWeightPoint(BaseModel):
+    tournament_number: int
+    weight: Optional[int]
+
+class CardTournamentStatsResponse(BaseModel):
+    card_id: int
+    token_id: int
+    token_symbol: str
+    rarity: dict
+    tournaments_count: int
+    data: dict
+
+@router.get(
+    "/cards/{card_id}/tournament-stats",
+    response_model=CardTournamentStatsResponse,
+    summary="Get tournament statistics for card",
+    description="Get price, score (with rarity multiplier), and weight data for last N tournaments"
+)
+async def get_card_tournament_stats(
+    card_id: int,
+    limit: int = Query(20, ge=1, le=50, description="Number of tournaments to return (max 50)"),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get tournament statistics for a specific card.
+    
+    Returns historical data for the last N finished tournaments:
+    - **Prices**: Token price at tournament end (Friday 17:00 UTC) with dates
+    - **Scores**: Base score multiplied by rarity bonus with tournament numbers
+    - **Weights**: Token weight at tournament end with tournament numbers
+    
+    Score calculation: base_score * rarity_score_bonus
+    """
+    try:
+        # Get card with token and rarity info
+        card_info_query = text("""
+            SELECT 
+                c.id as card_id,
+                c.token_id,
+                t.symbol as token_symbol,
+                c.rarity_id,
+                r.name as rarity_name,
+                r.score_bonus as rarity_score_bonus,
+                r.color as rarity_color
+            FROM cards c
+            JOIN tokens t ON c.token_id = t.id
+            JOIN rarities r ON c.rarity_id = r.id
+            WHERE c.id = :card_id
+              AND c.is_active = true
+            LIMIT 1
+        """)
+        
+        card_result = await db.execute(card_info_query, {"card_id": card_id})
+        card_row = card_result.fetchone()
+        
+        if not card_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Card with ID {card_id} not found or inactive"
+            )
+        
+        token_id = card_row.token_id
+        score_multiplier = float(card_row.rarity_score_bonus)
+        
+        # Get tournament statistics - ONLY LAST SCORE PER TOURNAMENT
+        stats_query = text("""
+            WITH latest_scores AS (
+                SELECT DISTINCT ON (ts.tournament_id)
+                    tour.tournament_number,
+                    tour.end_date,
+                    ts.calculated_score as base_score,
+                    ts.current_price,
+                    ts.weight,
+                    ts.calculated_at
+                FROM token_scores ts
+                JOIN tournaments tour ON ts.tournament_id = tour.id
+                WHERE ts.token_id = :token_id
+                  AND tour.status = 'finished'
+                ORDER BY ts.tournament_id, ts.calculated_at DESC
+            )
+            SELECT 
+                tournament_number,
+                end_date,
+                base_score,
+                current_price,
+                weight
+            FROM latest_scores
+            ORDER BY tournament_number DESC
+            LIMIT :limit
+        """)
+        
+        stats_result = await db.execute(
+            stats_query, 
+            {"token_id": token_id, "limit": limit}
+        )
+        rows = stats_result.fetchall()
+        
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No tournament data found for this card"
+            )
+        
+        # Reverse for chronological order (oldest first)
+        rows = list(reversed(rows))
+        
+        # Build response data
+        prices = []
+        scores = []
+        weights = []
+        
+        for row in rows:
+            # Prices with dates
+            prices.append({
+                "date": row.end_date.isoformat(),
+                "price": float(row.current_price) if row.current_price else None
+            })
+            
+            # Scores with multiplier applied
+            base_score = float(row.base_score)
+            final_score = base_score * score_multiplier
+            
+            scores.append({
+                "tournament_number": row.tournament_number,
+                "base_score": base_score,
+                "final_score": final_score,
+                "score_multiplier": score_multiplier
+            })
+            
+            # Weights
+            weights.append({
+                "tournament_number": row.tournament_number,
+                "weight": row.weight
+            })
+        
+        return CardTournamentStatsResponse(
+            card_id=card_id,
+            token_id=token_id,
+            token_symbol=card_row.token_symbol,
+            rarity={
+                "id": card_row.rarity_id,
+                "name": card_row.rarity_name,
+                "score_bonus": score_multiplier,
+                "color": card_row.rarity_color
+            },
+            tournaments_count=len(rows),
+            data={
+                "prices": prices,
+                "scores": scores,
+                "weights": weights
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching tournament stats for card_id {card_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve tournament statistics"
+        )

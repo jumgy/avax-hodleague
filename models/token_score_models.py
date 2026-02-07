@@ -19,6 +19,8 @@ class TokenScore(Base):
     
     # Score calculation
     calculated_score = Column(Numeric(20, 4), nullable=False)
+
+    weight = Column(Integer, nullable=True)
     
     # Price data at calculation time (for debugging/audit)
     current_price = Column(Numeric(20, 8), nullable=True)

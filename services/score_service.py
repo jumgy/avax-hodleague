@@ -48,6 +48,7 @@ class ScoreService:
             )
             scored_tokens.append({
                 'token_id': data['token_id'],
+                'weight': data['weight'],
                 'current_price': data['current_price'],
                 'snapshot_price': data['snapshot_price'],
                 'market_cap': data['market_cap'],
@@ -69,6 +70,7 @@ class ScoreService:
                     current_price=token['current_price'],
                     snapshot_price=token['snapshot_price'],
                     price_change_percent=token['period_change'],
+                    weight=token.get('weight'),
                     calculated_at=calculated_at
                 )
                 scores_to_insert.append(token_score)
@@ -137,6 +139,7 @@ class ScoreService:
                     current_price=token['current_price'],
                     snapshot_price=token['snapshot_price'],
                     price_change_percent=token['period_change'],
+                    weight=token.get('weight'),
                     calculated_at=calculated_at
                 )
                 scores_to_insert.append(token_score)
@@ -166,6 +169,7 @@ class ScoreService:
         query = (
             select(
                 Token.id.label('token_id'),
+                Token.weight.label('weight'),
                 TokenPrice.price.label('current_price')
             )
             .join(
@@ -199,6 +203,7 @@ class ScoreService:
                 current_price=row.current_price,
                 snapshot_price=row.current_price,
                 price_change_percent=Decimal('0'),
+                weight=row.weight if hasattr(row, 'weight') else None,
                 calculated_at=calculated_at
             )
             scores_to_insert.append(token_score)
@@ -402,6 +407,7 @@ class ScoreService:
         query = (
             select(
                 Token.id.label('token_id'),
+                Token.weight.label('weight'),
                 TokenPrice.price.label('current_price'),
                 TokenPrice.market_cap.label('market_cap'),
                 TournamentTokenSnapshot.snapshot_price.label('snapshot_price')
@@ -433,6 +439,7 @@ class ScoreService:
         return [
             {
                 'token_id': row.token_id,
+                'weight': row.weight,
                 'current_price': row.current_price,
                 'market_cap': row.market_cap,
                 'snapshot_price': row.snapshot_price,
