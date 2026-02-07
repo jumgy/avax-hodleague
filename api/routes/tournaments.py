@@ -492,10 +492,31 @@ async def get_tournament_details(
                 
                 if deck_composition:
                     if include_deck:
-                        my_deck = await get_full_cards_info(deck_composition, db)
+                        # Для FINISHED турниров используем исторические scores из TournamentResult
+                        if tournament.status == TournamentStatus.FINISHED:
+                            # Получаем result для этой деки (deck уже найден выше)
+                            result_query = select(TournamentResult).where(
+                                TournamentResult.tournament_deck_id == deck.id  # ✅ Проще!
+                            )
+                            result = (await db.execute(result_query)).scalar_one_or_none()
+                            
+                            if result:
+                                # Используем исторические scores
+                                my_deck = await get_historical_cards_info(
+                                    user_card_ids=deck_composition,
+                                    card_scores=result.card_scores,
+                                    tournament_id=tournament.id,
+                                    db=db
+                                )
+                            else:
+                                # Если результата нет - показываем просто состав
+                                my_deck = deck_composition
+                        else:
+                            # Для REGISTRATION/ONGOING используем live данные из view
+                            my_deck = await get_full_cards_info(deck_composition, db)
                     else:
                         my_deck = deck_composition
-        
+            
         return TournamentDetail(
             id=tournament.id,
             tournament_number=tournament.tournament_number,
