@@ -147,8 +147,8 @@ class ScoreService:
         # Bulk insert + refresh view + commit
         if scores_to_insert:
             self.db.add_all(scores_to_insert)
-            await self.refresh_active_cards_view() 
             await self.db.commit()
+            await self.refresh_active_cards_view()
 
         return len(scores_to_insert)
 
@@ -210,8 +210,8 @@ class ScoreService:
 
         if scores_to_insert:
             self.db.add_all(scores_to_insert)
-            await self.refresh_active_cards_view()
             await self.db.commit()
+            await self.refresh_active_cards_view()
 
         return len(scores_to_insert)
 
@@ -220,18 +220,19 @@ class ScoreService:
         Refresh materialized view after updating token scores.
         Tries CONCURRENTLY first, falls back to blocking refresh if needed.
         """
-        
         try:
             await self.db.execute(
                 text("REFRESH MATERIALIZED VIEW CONCURRENTLY active_cards_with_score")
             )
+            await self.db.commit()
         except Exception as e:
             # Fallback to non-concurrent refresh
             await self.db.rollback()
             await self.db.execute(
                 text("REFRESH MATERIALIZED VIEW active_cards_with_score")
             )
-    
+            await self.db.commit()
+        
     def _calculate_period_change(self, current_price: Decimal, snapshot_price: Decimal) -> Decimal:
         """
         Calculate percentage change from snapshot to current price.
