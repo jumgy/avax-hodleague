@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -21,48 +22,19 @@ class AlphaTestAccessCheck(BaseModel):
     "/alpha-test/check/{wallet_address}",
     response_model=AlphaTestAccessCheck,
     summary="Check alpha test access",
-    description="Check if a wallet address has access to alpha test"
+    description="ALPHA TEST COMPLETED - PUBLIC ACCESS"
 )
 async def check_alpha_test_access(
-    wallet_address: str = Path(..., description="Ethereum wallet address (0x...)"),
-    db: AsyncSession = Depends(get_async_db)
+    wallet_address: str = Path(..., description="Ethereum wallet address (0x...)")
 ):
-    """
-    Check if wallet address is whitelisted for alpha test
+    """All addresses have access (alpha test completed)"""
+    wallet_address_normalized = wallet_address.strip().lower()
     
-    - **wallet_address**: Ethereum wallet address (0x...)
-    - Returns has_access flag and added_at date if whitelisted
-    """
-    try:
-        # Normalize wallet address
-        wallet_address_normalized = wallet_address.strip().lower()
-        
-        # Check if address exists in whitelist
-        query = select(AlphaTestAccess).where(
-            AlphaTestAccess.wallet_address == wallet_address_normalized
-        )
-        result = await db.execute(query)
-        access = result.scalar_one_or_none()
-        
-        if access:
-            return AlphaTestAccessCheck(
-                wallet_address=access.wallet_address,
-                has_access=True,
-                added_at=access.created_at.isoformat()
-            )
-        else:
-            return AlphaTestAccessCheck(
-                wallet_address=wallet_address_normalized,
-                has_access=False,
-                added_at=None
-            )
-            
-    except Exception as e:
-        logger.error(f"Error checking alpha test access for {wallet_address}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to check alpha test access"
-        )
+    return AlphaTestAccessCheck(
+        wallet_address=wallet_address_normalized,
+        has_access=True,
+        added_at=datetime.utcnow().isoformat()
+    )
 
 
 @router.get(
