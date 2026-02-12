@@ -207,11 +207,7 @@ class CardRenderService:
             
             img.paste(number_layer, number_pos, number_layer)
             
-            # Конвертируем RGBA → RGB
-            if img.mode == "RGBA":
-                rgb_img = Image.new("RGB", img.size, (255, 255, 255))
-                rgb_img.paste(img, mask=img.split()[3])
-                img = rgb_img
+
             
             # ⬇️ УМЕНЬШАЕМ РАЗРЕШЕНИЕ В 2 РАЗА
             img = img.resize(
