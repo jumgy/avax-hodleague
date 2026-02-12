@@ -24,6 +24,9 @@ class CardRenderService:
     # Card dimensions (4x scale from Figma)
     CARD_WIDTH = 666
     CARD_HEIGHT = 1044
+
+    OUTPUT_WIDTH = 444
+    OUTPUT_HEIGHT = 696
     
     # Font paths
     FONT_INSTRUMENT_SANS_SEMIBOLD = os.path.join(FONTS_DIR, "InstrumentSans-SemiBold.ttf")
@@ -204,28 +207,25 @@ class CardRenderService:
             
             img.paste(number_layer, number_pos, number_layer)
             
-            if img.mode == "RGBA":
-                rgb_img = Image.new("RGB", img.size, (255, 255, 255))
-                rgb_img.paste(img, mask=img.split()[3])
-                img = rgb_img
 
-            img = img.quantize(
-                colors=256,           # Максимум 256 цветов
-                method=Image.MEDIANCUT,  # Лучший алгоритм квантизации
-                kmeans=0,
-                dither=Image.FLOYDSTEINBERG  # Дизеринг для плавности
+            
+            # ⬇️ УМЕНЬШАЕМ РАЗРЕШЕНИЕ В 2 РАЗА
+            img = img.resize(
+                (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
+                Image.Resampling.LANCZOS  # Лучший алгоритм для downscale
             )
             
-            # Логируем режим перед сохранением
-            logger.info(f"📊 Image mode before save: {img.mode}, size: {img.size}")
-            
-            # Save rendered image
+            # ⬇️ СОХРАНЯЕМ В WebP
+            output_path = output_path.replace('.png', '.webp')
             img.save(
-                output_path, 
-                "PNG",
-                optimize=True,
-                compress_level=9
+                output_path,
+                "WebP",
+                quality=85,      # Можешь попробовать 80 для ещё меньшего размера
+                method=6,        # Максимальное сжатие
+                optimize=True
             )
+            
+            logger.info(f"📊 Image saved: {img.size}, mode: {img.mode}")
             
             # Log file size
             file_size_kb = os.path.getsize(output_path) / 1024
@@ -300,7 +300,7 @@ class CardRenderService:
                     template_temp_path = f.name
                 
                 # Создаём временный файл для результата
-                output_temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                output_temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.webp')
                 output_temp_path = output_temp_file.name
                 output_temp_file.close()
                 
@@ -317,7 +317,7 @@ class CardRenderService:
 
                 # ⬇️ ИЗМЕНЕНО: Загружаем результат в R2
                 timestamp = int(datetime.utcnow().timestamp())
-                output_filename = f"card_{card.id}_{timestamp}.png"
+                output_filename = f"card_{card.id}_{timestamp}.webp"
                 object_key = f"card_renders/{output_filename}"
 
                 # Логируем размер перед загрузкой
@@ -327,7 +327,7 @@ class CardRenderService:
                 rendered_url = r2_storage.upload_file(
                     output_temp_path,
                     object_key,
-                    content_type="image/png"
+                    content_type="image/webp"
                 )
                 
                 old_rendered_url = card.rendered_image_url

@@ -299,7 +299,7 @@ class SchedulerService:
 
 
     async def _check_tournaments_to_finish(self):
-        """Финализация турнира + мягкое удаление expired карт + выдача паков"""
+        """Финализация турнира + мягкое удаление expired карт и паков + выдача паков"""
         try:
             async with AsyncSessionLocal() as db:
                 now = datetime.now(timezone.utc)
@@ -329,23 +329,48 @@ class SchedulerService:
                     except Exception as e:
                         logger.error(f"❌ Failed to finish tournament: {e}", exc_info=True)
                 
-                # 3. 🗑️ МЯГКОЕ УДАЛЕНИЕ expired карт
+                # 3. МЯГКОЕ УДАЛЕНИЕ expired карт
                 async with AsyncSessionLocal() as cleanup_db:
                     from sqlalchemy import update
                     from models.user_card_models import UserCard
                     
                     result = await cleanup_db.execute(
                         update(UserCard)
-                        .where(UserCard.expires_at <= now)
+                        .where(
+                            and_(
+                                UserCard.expires_at <= now,
+                                UserCard.is_active == True
+                            )
+                        )
                         .values(
                             is_active=False,
                             status="expired"
                         )
                     )
                     await cleanup_db.commit()
-                    logger.info(f"🗑️  Marked {result.rowcount} cards as expired")
+                    logger.info(f"🗑️  Marked {result.rowcount} expired cards as inactive")
                 
-                # 4. 🎁 Выдаём новые паки ВСЕМ юзерам
+                # 4. МЯГКОЕ УДАЛЕНИЕ expired паков
+                async with AsyncSessionLocal() as pack_cleanup_db:
+                    from sqlalchemy import update
+                    from models.user_pack_models import UserPack
+                    
+                    result = await pack_cleanup_db.execute(
+                        update(UserPack)
+                        .where(
+                            and_(
+                                UserPack.expires_at <= now,
+                                UserPack.is_opened == False  # Только неоткрытые
+                            )
+                        )
+                        .values(
+                            is_opened=True  # Помечаем как "использованный"
+                        )
+                    )
+                    await pack_cleanup_db.commit()
+                    logger.info(f"🗑️  Marked {result.rowcount} expired packs as opened")
+                
+                # 5. 🎁 Выдаём новые паки ВСЕМ юзерам
                 async with AsyncSessionLocal() as pack_db:
                     from models.user_models import User
                     
@@ -362,7 +387,7 @@ class SchedulerService:
                             logger.info(f"🎁 Granted weekly packs to user {user.id}")
                         except Exception as e:
                             logger.error(f"❌ Failed to grant packs to user {user.id}: {e}")
-                
+                            
         except Exception as e:
             logger.error(f"❌ Tournament finish checker failed: {e}", exc_info=True)
 

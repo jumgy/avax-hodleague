@@ -36,40 +36,38 @@ class TournamentRegistrationService:
     ) -> tuple:
         """
         Общая валидация деки (используется и для preview, и для финальной регистрации).
-        
         Возвращает: (tournament, cards_result, total_weight)
         """
-        
         # 1. Проверка: ровно 5 карт
         if len(deck_composition) != 5:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Deck must contain exactly 5 cards"
             )
-
-        # 2. Проверка: нет дубликатов
+        
+        # 2. Проверка: нет дубликатов user_card_id
         if len(set(deck_composition)) != 5:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Deck cannot contain duplicate cards"
             )
-
+        
         # 3. Турнир существует и status = "registration"
         tournament_query = select(Tournament).where(Tournament.id == tournament_id)
         tournament = (await db.execute(tournament_query)).scalar_one_or_none()
-
+        
         if not tournament:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Tournament not found"
             )
-
+        
         if tournament.status != "registration":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Tournament registration is closed. Current status: {tournament.status}"
             )
-
+        
         # 4. Юзер еще не зарегистрирован
         existing_deck_query = select(TournamentDeck).where(
             and_(
@@ -79,13 +77,13 @@ class TournamentRegistrationService:
             )
         )
         existing_deck = (await db.execute(existing_deck_query)).scalar_one_or_none()
-
+        
         if existing_deck:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You are already registered for this tournament"
             )
-
+        
         # 5. Получаем карты с join к Card и Token
         cards_query = select(UserCard, Card, Token, Rarity).join(
             Card, UserCard.card_id == Card.id
@@ -100,43 +98,62 @@ class TournamentRegistrationService:
             )
         )
         cards_result = (await db.execute(cards_query)).all()
-
+        
         # 6. Все карты принадлежат юзеру
         if len(cards_result) != 5:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="One or more cards do not belong to you"
             )
-
-        # 7. Валидация статуса и подсчёт веса
+        
+        # 7. Проверка: нет двух карт одного токена
+        token_ids = [token.id for _, _, token, _ in cards_result]
+        if len(set(token_ids)) != 5:
+            # Находим дубликаты для сообщения об ошибке
+            from collections import Counter
+            token_counts = Counter(token_ids)
+            duplicate_tokens = [
+                token.name 
+                for _, _, token, _ in cards_result 
+                if token_counts[token.id] > 1
+            ]
+            duplicate_tokens_unique = list(set(duplicate_tokens))
+            
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Deck cannot contain multiple cards of the same token. Duplicate token(s): {', '.join(duplicate_tokens_unique)}"
+            )
+        
+        # 8. Валидация статуса и подсчёт веса
         total_weight = 0.0
         now = datetime.now(timezone.utc)
+        
         for user_card, card, token, rarity in cards_result:
-
+            # Проверка expires_at
             if user_card.expires_at and user_card.expires_at <= now:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Card #{user_card.id} ({token.name} - {rarity.name}) has expired"
                 )
-
+            
             # Проверка статуса
             if user_card.status != "available":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Card #{user_card.id} ({token.name} - {rarity.name}) is not available. Status: {user_card.status}"
                 )
-
+            
             # Проверка is_active
             if not user_card.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Card #{user_card.id} ({token.name} - {rarity.name}) is not active"
                 )
-
+            
             # Суммируем вес
             total_weight += float(token.weight)
-
-        # 8. Проверка лимита веса
+        
+        # 9. Проверка лимита веса
         if total_weight > float(tournament.weight_limit):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

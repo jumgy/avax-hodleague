@@ -316,6 +316,7 @@ async def get_tournaments_list(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page"),
     status_filter: Optional[str] = Query(None, description="Filter by status: registration, ongoing, finished"),
+    include_featured: bool = Query(False, description="Include featured tournaments in the list"),
     current_user: Optional[dict] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -325,23 +326,29 @@ async def get_tournaments_list(
                 status_code=400,
                 detail=f"Invalid status. Must be one of: {', '.join(TournamentStatus.ALL_STATUSES)}"
             )
-
+        
         query = select(Tournament).where(Tournament.is_active == True)
+        
+        # Фильтр по статусу
         if status_filter:
             query = query.where(Tournament.status == status_filter)
-
+        else:
+            # По умолчанию НЕ показываем featured турниры
+            if not include_featured:
+                query = query.where(Tournament.status != TournamentStatus.FEATURED)
+        
         count_query = select(func.count()).select_from(query.subquery())
         total_result = await db.execute(count_query)
         total = total_result.scalar()
-
+        
         offset = (page - 1) * limit
         query = query.order_by(Tournament.tournament_number.desc()).offset(offset).limit(limit)
-
+        
         result = await db.execute(query)
         tournaments = result.scalars().all()
-
+        
         user_id = current_user.get('user_id') if current_user else None
-
+        
         items = []
         for tournament in tournaments:
             participants_count_query = select(func.count()).select_from(TournamentDeck).where(
@@ -350,7 +357,7 @@ async def get_tournaments_list(
             )
             participants_result = await db.execute(participants_count_query)
             participants_count = participants_result.scalar() or 0
-
+            
             is_registered = False
             if user_id:
                 deck_query = select(TournamentDeck).where(
@@ -361,7 +368,7 @@ async def get_tournaments_list(
                 deck_result = await db.execute(deck_query)
                 deck = deck_result.scalar_one_or_none()
                 is_registered = deck is not None
-
+            
             items.append(TournamentListItem(
                 id=tournament.id,
                 tournament_number=tournament.tournament_number,
@@ -373,7 +380,7 @@ async def get_tournaments_list(
                 participants_count=participants_count,
                 is_registered=is_registered
             ))
-
+        
         return PaginatedTournamentsResponse(
             items=items,
             total=total,
@@ -382,7 +389,7 @@ async def get_tournaments_list(
             has_next=(offset + limit) < total,
             has_prev=page > 1
         )
-
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -492,10 +499,31 @@ async def get_tournament_details(
                 
                 if deck_composition:
                     if include_deck:
-                        my_deck = await get_full_cards_info(deck_composition, db)
+                        # Для FINISHED турниров используем исторические scores из TournamentResult
+                        if tournament.status == TournamentStatus.FINISHED:
+                            # Получаем result для этой деки (deck уже найден выше)
+                            result_query = select(TournamentResult).where(
+                                TournamentResult.tournament_deck_id == deck.id  # ✅ Проще!
+                            )
+                            result = (await db.execute(result_query)).scalar_one_or_none()
+                            
+                            if result:
+                                # Используем исторические scores
+                                my_deck = await get_historical_cards_info(
+                                    user_card_ids=deck_composition,
+                                    card_scores=result.card_scores,
+                                    tournament_id=tournament.id,
+                                    db=db
+                                )
+                            else:
+                                # Если результата нет - показываем просто состав
+                                my_deck = deck_composition
+                        else:
+                            # Для REGISTRATION/ONGOING используем live данные из view
+                            my_deck = await get_full_cards_info(deck_composition, db)
                     else:
                         my_deck = deck_composition
-        
+            
         return TournamentDetail(
             id=tournament.id,
             tournament_number=tournament.tournament_number,

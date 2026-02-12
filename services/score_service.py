@@ -48,6 +48,7 @@ class ScoreService:
             )
             scored_tokens.append({
                 'token_id': data['token_id'],
+                'weight': data['weight'],
                 'current_price': data['current_price'],
                 'snapshot_price': data['snapshot_price'],
                 'market_cap': data['market_cap'],
@@ -69,6 +70,7 @@ class ScoreService:
                     current_price=token['current_price'],
                     snapshot_price=token['snapshot_price'],
                     price_change_percent=token['period_change'],
+                    weight=token.get('weight'),
                     calculated_at=calculated_at
                 )
                 scores_to_insert.append(token_score)
@@ -137,6 +139,7 @@ class ScoreService:
                     current_price=token['current_price'],
                     snapshot_price=token['snapshot_price'],
                     price_change_percent=token['period_change'],
+                    weight=token.get('weight'),
                     calculated_at=calculated_at
                 )
                 scores_to_insert.append(token_score)
@@ -144,8 +147,8 @@ class ScoreService:
         # Bulk insert + refresh view + commit
         if scores_to_insert:
             self.db.add_all(scores_to_insert)
-            await self.refresh_active_cards_view() 
             await self.db.commit()
+            await self.refresh_active_cards_view()
 
         return len(scores_to_insert)
 
@@ -166,6 +169,7 @@ class ScoreService:
         query = (
             select(
                 Token.id.label('token_id'),
+                Token.weight.label('weight'),
                 TokenPrice.price.label('current_price')
             )
             .join(
@@ -199,14 +203,15 @@ class ScoreService:
                 current_price=row.current_price,
                 snapshot_price=row.current_price,
                 price_change_percent=Decimal('0'),
+                weight=row.weight if hasattr(row, 'weight') else None,
                 calculated_at=calculated_at
             )
             scores_to_insert.append(token_score)
 
         if scores_to_insert:
             self.db.add_all(scores_to_insert)
-            await self.refresh_active_cards_view()
             await self.db.commit()
+            await self.refresh_active_cards_view()
 
         return len(scores_to_insert)
 
@@ -215,18 +220,19 @@ class ScoreService:
         Refresh materialized view after updating token scores.
         Tries CONCURRENTLY first, falls back to blocking refresh if needed.
         """
-        
         try:
             await self.db.execute(
                 text("REFRESH MATERIALIZED VIEW CONCURRENTLY active_cards_with_score")
             )
+            await self.db.commit()
         except Exception as e:
             # Fallback to non-concurrent refresh
             await self.db.rollback()
             await self.db.execute(
                 text("REFRESH MATERIALIZED VIEW active_cards_with_score")
             )
-    
+            await self.db.commit()
+        
     def _calculate_period_change(self, current_price: Decimal, snapshot_price: Decimal) -> Decimal:
         """
         Calculate percentage change from snapshot to current price.
@@ -402,6 +408,7 @@ class ScoreService:
         query = (
             select(
                 Token.id.label('token_id'),
+                Token.weight.label('weight'),
                 TokenPrice.price.label('current_price'),
                 TokenPrice.market_cap.label('market_cap'),
                 TournamentTokenSnapshot.snapshot_price.label('snapshot_price')
@@ -433,6 +440,7 @@ class ScoreService:
         return [
             {
                 'token_id': row.token_id,
+                'weight': row.weight,
                 'current_price': row.current_price,
                 'market_cap': row.market_cap,
                 'snapshot_price': row.snapshot_price,

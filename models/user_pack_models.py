@@ -14,6 +14,7 @@ class UserPack(Base):
     pack_type_id = Column(Integer, ForeignKey('pack_types.id'), nullable=False)
     obtained_at = Column(DateTime(timezone=True), nullable=False, 
                     default=lambda: datetime.now(timezone.utc))
+    expires_at = Column(DateTime(timezone=True), nullable=True)
     is_opened = Column(Boolean, nullable=False, default=False)
     source = Column(String(20), nullable=False, default="purchase")
     

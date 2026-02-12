@@ -54,7 +54,6 @@ class R2Storage:
                 )
             
             url = f"{self.public_url}/{object_key}"
-            print(f"✅ Файл загружен: {object_key}")
             return url
             
         except ClientError as e:
@@ -68,7 +67,6 @@ class R2Storage:
         """Удаляет файл из R2"""
         try:
             self.client.delete_object(Bucket=self.bucket_name, Key=object_key)
-            print(f"✅ Файл удален: {object_key}")
             return True
         except ClientError as e:
             print(f"❌ Ошибка удаления из R2: {e}")

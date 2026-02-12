@@ -68,10 +68,17 @@ class UserProfileResponse(BaseModel):
     nickname: str
     avatar_url: Optional[str] = None
     referral_route: str
+    referral_link: str
+    referral_count: int 
     created_at: str
+    onboarding_steps: Optional[Dict[str, bool]] = None
     stats: UserStats
     cards: Optional[List[UserCard]] = None
 
+class UpdateOnboardingRequest(BaseModel):
+    """Запрос на обновление шагов онбординга"""
+    step: str  # "1", "2", "3"
+    completed: bool
 
 # ============================================
 # MODELS - New for Tournament History
@@ -176,7 +183,10 @@ async def get_my_profile(
             "nickname": user.nickname,
             "avatar_url": user.avatar_url,
             "referral_route": user.referral_route,
+            "referral_link": f"https://hodleague.com?ref={user.referral_route}",
+            "referral_count": user.referral_count or 0,
             "created_at": user.created_at.isoformat(),
+            "onboarding_steps": user.onboarding_steps or {},
             "stats": stats
         }
         
@@ -186,7 +196,7 @@ async def get_my_profile(
             response_data["cards"] = cards
         
         return UserProfileResponse(**response_data)
-    
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -194,6 +204,110 @@ async def get_my_profile(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve profile"
+        )
+    
+# В конец файла, после get_my_tournament_history
+@router.patch(
+    "/users/me/onboarding",
+    summary="Update onboarding step",
+    description="Mark onboarding step as completed or not completed"
+)
+async def update_onboarding_step(
+    request: UpdateOnboardingRequest,
+    current_user: dict = Depends(verify_jwt_dependency),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Обновить статус шага онбординга
+    - **step**: Номер шага ("1", "2", "3")
+    - **completed**: true/false
+    - Требует JWT аутентификацию
+    """
+    try:
+        wallet_address = current_user["wallet_address"]
+        
+        # Find user
+        from models.user_models import User
+        user_query = select(User).where(User.wallet_address == wallet_address)
+        result = await db.execute(user_query)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        # Initialize onboarding_steps if null
+        if user.onboarding_steps is None:
+            user.onboarding_steps = {}
+        
+        # Update the step
+        user.onboarding_steps[request.step] = request.completed
+        
+        # Mark as updated (для trigger onupdate)
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(user, "onboarding_steps")
+        
+        await db.commit()
+        await db.refresh(user)
+        
+        return {
+            "success": True,
+            "onboarding_steps": user.onboarding_steps,
+            "message": f"Step {request.step} updated to {request.completed}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating onboarding step: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update onboarding step"
+        )
+
+
+@router.get(
+    "/users/me/onboarding",
+    summary="Get onboarding status",
+    description="Get current onboarding steps status"
+)
+async def get_onboarding_status(
+    current_user: dict = Depends(verify_jwt_dependency),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Получить текущий статус онбординга
+    - Требует JWT аутентификацию
+    - Возвращает только onboarding_steps
+    """
+    try:
+        wallet_address = current_user["wallet_address"]
+        
+        # Find user
+        from models.user_models import User
+        user_query = select(User).where(User.wallet_address == wallet_address)
+        result = await db.execute(user_query)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        
+        return {
+            "onboarding_steps": user.onboarding_steps or {}
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting onboarding status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get onboarding status"
         )
 
 
