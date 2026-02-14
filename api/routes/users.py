@@ -68,8 +68,8 @@ class UserProfileResponse(BaseModel):
     nickname: str
     avatar_url: Optional[str] = None
     referral_route: str
-    referral_link: str
-    referral_count: int 
+    referral_link: Optional[str] = None
+    referral_count: Optional[int] = None
     created_at: str
     onboarding_steps: Optional[Dict[str, bool]] = None
     stats: UserStats
