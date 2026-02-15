@@ -512,7 +512,6 @@ async def _get_deck_cards_info(card_ids: List[int], db: AsyncSession) -> List[To
             JOIN tokens t ON c.token_id = t.id
             JOIN rarities r ON c.rarity_id = r.id
             WHERE uc.id = ANY(:card_ids)
-            AND uc.is_active = true
         """)
         
         result = await db.execute(cards_query, {"card_ids": card_ids})
