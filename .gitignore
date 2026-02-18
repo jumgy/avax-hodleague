@@ -15,6 +15,10 @@ ENV/
 # PyCharm, VSCode, other IDE
 .idea/
 .vscode/
+!.vscode/python.code-snippets
+!.vscode/tasks.json
+.cursor
+
 
 # OS trash
 .DS_Store
@@ -39,7 +43,10 @@ instance/
 # mypy, coverage, etc
 .mypy_cache/
 .coverage
+coverage.json
 htmlcov/
+.pytest_cache/
+.ruff_cache/
 
 # Docker
 docker-compose.override.yml

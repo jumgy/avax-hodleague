@@ -1,0 +1,7 @@
+{
+  "transactions": [
+    {
+      "rpc": "https://avalanche-c-chain-rpc.publicnode.com"
+    }
+  ]
+}
