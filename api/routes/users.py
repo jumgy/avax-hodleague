@@ -1,7 +1,7 @@
 # api/routes/users.py
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from sqlalchemy.sql import text
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
@@ -74,6 +74,30 @@ class UserProfileResponse(BaseModel):
     onboarding_steps: Optional[Dict[str, bool]] = None
     stats: UserStats
     cards: Optional[List[UserCard]] = None
+
+
+class LeaderboardUserEntry(BaseModel):
+    """Публичные данные пользователя для лидерборда + активные балансы."""
+
+    user_id: int
+    wallet_address: str
+    nickname: str
+    avatar_url: Optional[str] = None
+    referral_route: str
+    created_at: str
+    balances: List[BalanceDetail]
+
+
+class PaginationMeta(BaseModel):
+    limit: int
+    offset: int
+    total: int
+
+
+class LeaderboardResponse(BaseModel):
+    success: bool = True
+    data: List[LeaderboardUserEntry]
+    pagination: PaginationMeta
 
 class UpdateOnboardingRequest(BaseModel):
     """Запрос на обновление шагов онбординга"""
@@ -308,6 +332,77 @@ async def get_onboarding_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get onboarding status"
+        )
+
+
+@router.get(
+    "/users/leaderboard",
+    response_model=LeaderboardResponse,
+    summary="Public user leaderboard",
+    description="Paginated list of users with public info and active balances. No auth required.",
+)
+async def get_leaderboard(
+    limit: int = Query(default=50, ge=1, le=100, description="Page size"),
+    offset: int = Query(default=0, ge=0, description="Offset for pagination"),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """
+    Публичный лидерборд пользователей: nickname, wallet, avatar, referral_route, created_at и балансы (как в профиле).
+    """
+    from models.user_models import User
+
+    try:
+        # Всего активных пользователей
+        count_query = select(func.count(User.id)).where(User.is_active == True)
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Страница пользователей
+        users_query = (
+            select(User)
+            .where(User.is_active == True)
+            .order_by(User.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        result = await db.execute(users_query)
+        users = result.scalars().all()
+
+        if not users:
+            return LeaderboardResponse(
+                success=True,
+                data=[],
+                pagination=PaginationMeta(limit=limit, offset=offset, total=total),
+            )
+
+        user_ids = [u.id for u in users]
+        balances_map = await user_profile_service.get_balances_batch(user_ids, db)
+
+        data = []
+        for user in users:
+            balances = balances_map.get(user.id, [])
+            data.append(
+                LeaderboardUserEntry(
+                    user_id=user.id,
+                    wallet_address=user.wallet_address,
+                    nickname=user.nickname,
+                    avatar_url=user.avatar_url,
+                    referral_route=user.referral_route,
+                    created_at=user.created_at.isoformat(),
+                    balances=[BalanceDetail(**b) for b in balances],
+                )
+            )
+
+        return LeaderboardResponse(
+            success=True,
+            data=data,
+            pagination=PaginationMeta(limit=limit, offset=offset, total=total),
+        )
+    except Exception as e:
+        logger.error(f"Error getting leaderboard: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve leaderboard",
         )
 
 

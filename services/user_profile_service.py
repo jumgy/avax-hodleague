@@ -111,16 +111,64 @@ class UserProfileService:
                 stats['balances'] = []
             
             return stats
-                
+
         except Exception as e:
             logger.error(f"Error getting stats for user {user_id}: {e}")
             return {
-                'total_cards': 0,
-                'tournaments_participated': 0,
-                'best_position': None,
-                'best_score': None,
-                'balances': {}
+                "total_cards": 0,
+                "tournaments_participated": 0,
+                "best_position": None,
+                "best_score": None,
+                "balances": [],
             }
+
+    async def get_balances_batch(
+        self, user_ids: List[int], db: AsyncSession
+    ) -> Dict[int, List[Dict[str, Any]]]:
+        """
+        Load balances for multiple users in one query.
+        Returns mapping user_id -> list of balance dicts (same shape as in get_user_stats).
+        """
+        if not user_ids:
+            return {}
+        try:
+            balances_query = await db.execute(
+                text("""
+                    SELECT
+                        user_id,
+                        reward_type_id,
+                        reward_name,
+                        reward_category,
+                        currency_type,
+                        available_balance,
+                        pending_balance,
+                        pending_count,
+                        claimed_count,
+                        last_reward_date
+                    FROM user_balances_view
+                    WHERE user_id = ANY(:user_ids)
+                    ORDER BY user_id, reward_type_id
+                """),
+                {"user_ids": user_ids},
+            )
+            rows = balances_query.fetchall()
+            result: Dict[int, List[Dict[str, Any]]] = {uid: [] for uid in user_ids}
+            for row in rows:
+                result[row.user_id].append({
+                    "reward_type_id": row.reward_type_id,
+                    "name": row.reward_name,
+                    "category": row.reward_category,
+                    "currency_type": row.currency_type,
+                    "available": float(row.available_balance),
+                    "pending": float(row.pending_balance),
+                    "pending_count": row.pending_count,
+                    "claimed_count": row.claimed_count,
+                    "last_earned": row.last_reward_date.isoformat() if row.last_reward_date else None,
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Error loading balances batch for users {user_ids}: {e}")
+            return {uid: [] for uid in user_ids}
 
     async def get_user_cards(self, user_id: int, db: AsyncSession) -> List[Dict[str, Any]]:
         """Get user cards with scores from materialized view"""
