@@ -1,0 +1,3 @@
+# Дашборды: после первого входа в Grafana — Dashboards → Import → введи 14114 (PostgreSQL Overview).
+apiVersion: 1
+providers: []
