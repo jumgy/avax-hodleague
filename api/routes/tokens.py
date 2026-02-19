@@ -3,6 +3,7 @@
 
 import logging
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -60,10 +61,20 @@ class TokenWithPriceResponse(BaseModel):
 # ==================== Routes ====================
 
 
+class TokenSortBy(str, Enum):
+    calculated_score = "calculated_score"
+    symbol = "symbol"
+
+
+class TokenSortOrder(str, Enum):
+    desc = "desc"
+    asc = "asc"
+
+
 @router.get(
     "/",
-    summary="List tokens with current rate",
-    description="Returns all tokens with full info, latest price, and score from materialized view (calculated_score, tournament_change). Supports pagination.",
+    summary="List tokens with current rate (leaderboard by score)",
+    description="Returns all tokens with full info, latest price, and score. Default sort: by calculated_score desc (token leaderboard). Supports sort_by=symbol, pagination.",
 )
 async def list_tokens_with_prices(
     limit: int = Query(default=50, ge=1, le=100, description="Page size"),
@@ -72,28 +83,64 @@ async def list_tokens_with_prices(
         default=True,
         description="Filter by is_active. Omit or true = active only, false = inactive only.",
     ),
+    sort_by: TokenSortBy = Query(
+        default=TokenSortBy.calculated_score,
+        description="Sort by calculated_score (leaderboard) or symbol",
+    ),
+    sort_order: TokenSortOrder = Query(
+        default=TokenSortOrder.desc,
+        description="Sort direction",
+    ),
     db: AsyncSession = Depends(get_async_db),
 ):
     """
     Get list of tokens with all information and current rate for each.
-    Uses latest record from token_prices per token.
+    By default sorted by calculated_score desc (token leaderboard).
     """
-    # Base: all tokens (optional filter by is_active)
     base = select(Token)
     if is_active is not None:
         base = base.where(Token.is_active == is_active)
 
-    # Count total
     count_stmt = select(func.count()).select_from(base.subquery())
     total_result = await db.execute(count_stmt)
     total = total_result.scalar_one() or 0
 
-    # Load tokens and join latest TokenPrice (optional: token may have no prices yet)
-    tokens_stmt = (
-        base.order_by(Token.symbol.asc()).limit(limit).offset(offset)
-    )
-    tokens_result = await db.execute(tokens_stmt)
-    tokens = list(tokens_result.scalars().all())
+    if sort_by == TokenSortBy.calculated_score:
+        # Лидерборд: сортировка по MAX(calculated_score) из active_cards_with_score
+        order_dir = "DESC" if sort_order == TokenSortOrder.desc else "ASC"
+        where_clause = ""
+        if is_active is not None:
+            where_clause = "WHERE t.is_active = :is_active "
+        ids_query = text(
+            "SELECT t.id FROM tokens t "
+            "LEFT JOIN ("
+            "  SELECT token_id, COALESCE(MAX(calculated_score), 0) AS score "
+            "  FROM active_cards_with_score GROUP BY token_id"
+            ") s ON t.id = s.token_id "
+            + where_clause
+            + f" ORDER BY COALESCE(s.score, 0) {order_dir} NULLS LAST, t.symbol ASC "
+            "LIMIT :limit OFFSET :offset"
+        )
+        params: dict = {"limit": limit, "offset": offset}
+        if is_active is not None:
+            params["is_active"] = is_active
+        ids_result = await db.execute(ids_query, params)
+        token_ids = [row.id for row in ids_result.fetchall()]
+        if not token_ids:
+            return {
+                "success": True,
+                "data": [],
+                "pagination": {"limit": limit, "offset": offset, "total": total},
+            }
+        tokens_stmt = select(Token).where(Token.id.in_(token_ids))
+        tokens_result = await db.execute(tokens_stmt)
+        tokens_by_id = {t.id: t for t in tokens_result.scalars().all()}
+        tokens = [tokens_by_id[tid] for tid in token_ids if tid in tokens_by_id]
+    else:
+        order_sym = Token.symbol.asc() if sort_order == TokenSortOrder.asc else Token.symbol.desc()
+        tokens_stmt = base.order_by(order_sym).limit(limit).offset(offset)
+        tokens_result = await db.execute(tokens_stmt)
+        tokens = list(tokens_result.scalars().all())
 
     if not tokens:
         return {

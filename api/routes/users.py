@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from sqlalchemy.sql import text
+from enum import Enum
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 
@@ -335,38 +336,81 @@ async def get_onboarding_status(
         )
 
 
+class LeaderboardSortBy(str, Enum):
+    balance = "balance"
+    created_at = "created_at"
+
+
+class LeaderboardSortOrder(str, Enum):
+    desc = "desc"
+    asc = "asc"
+
+
 @router.get(
     "/users/leaderboard",
     response_model=LeaderboardResponse,
     summary="Public user leaderboard",
-    description="Paginated list of users with public info and active balances. No auth required.",
+    description="Paginated list of users with public info and active balances. Sort by balance (total available) or created_at. No auth required.",
 )
 async def get_leaderboard(
     limit: int = Query(default=50, ge=1, le=100, description="Page size"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
+    sort_by: LeaderboardSortBy = Query(
+        default=LeaderboardSortBy.balance,
+        description="Sort by total available balance or created_at",
+    ),
+    sort_order: LeaderboardSortOrder = Query(
+        default=LeaderboardSortOrder.desc,
+        description="Sort direction",
+    ),
     db: AsyncSession = Depends(get_async_db),
 ):
     """
-    Публичный лидерборд пользователей: nickname, wallet, avatar, referral_route, created_at и балансы (как в профиле).
+    Публичный лидерборд: топ по балансу (сумма available по всем типам наград) или по дате регистрации.
     """
     from models.user_models import User
 
     try:
-        # Всего активных пользователей
         count_query = select(func.count(User.id)).where(User.is_active == True)
         total_result = await db.execute(count_query)
         total = total_result.scalar() or 0
 
-        # Страница пользователей
-        users_query = (
-            select(User)
-            .where(User.is_active == True)
-            .order_by(User.created_at.desc())
-            .limit(limit)
-            .offset(offset)
-        )
-        result = await db.execute(users_query)
-        users = result.scalars().all()
+        if sort_by == LeaderboardSortBy.balance:
+            # Сортировка по сумме available_balance по всем типам наград
+            order_dir = "DESC" if sort_order == LeaderboardSortOrder.desc else "ASC"
+            ids_query = text(
+                "SELECT u.id FROM users u "
+                "LEFT JOIN ("
+                "  SELECT user_id, SUM(available_balance) AS total "
+                "  FROM user_balances_view GROUP BY user_id"
+                ") bal ON u.id = bal.user_id "
+                "WHERE u.is_active = true "
+                f"ORDER BY COALESCE(bal.total, 0) {order_dir} NULLS LAST, u.created_at DESC "
+                "LIMIT :limit OFFSET :offset"
+            )
+            ids_result = await db.execute(ids_query, {"limit": limit, "offset": offset})
+            user_ids = [row.id for row in ids_result.fetchall()]
+            if not user_ids:
+                return LeaderboardResponse(
+                    success=True,
+                    data=[],
+                    pagination=PaginationMeta(limit=limit, offset=offset, total=total),
+                )
+            users_query = select(User).where(User.id.in_(user_ids))
+            users_result = await db.execute(users_query)
+            users_by_id = {u.id: u for u in users_result.scalars().all()}
+            users = [users_by_id[uid] for uid in user_ids if uid in users_by_id]
+        else:
+            order_created = User.created_at.desc() if sort_order == LeaderboardSortOrder.desc else User.created_at.asc()
+            users_query = (
+                select(User)
+                .where(User.is_active == True)
+                .order_by(order_created)
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await db.execute(users_query)
+            users = result.scalars().all()
 
         if not users:
             return LeaderboardResponse(
