@@ -1261,6 +1261,9 @@ async def register_for_tournament(
                 detail="Invalid user data in token. Missing user_id or wallet_address",
             )
 
+        # Логируем сеть для отладки
+        logger.info(f"Registering for tournament {tournament_id}: tx_hash={request.tx_hash}, network={request.network}")
+
         # Финальная регистрация с проверкой транзакции (сеть: abstract или avalanche)
         tournament_deck = await TournamentRegistrationService.register_deck_with_verification(
             db=db,

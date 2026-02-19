@@ -302,6 +302,11 @@ class TournamentRegistrationService:
 
         # 3. ПРОВЕРЯЕМ БЛОКЧЕЙН-ТРАНЗАКЦИЮ в выбранной сети
         provider_url, contract_address, chain_id = TournamentRegistrationService._web3_config_for_network(network)
+        logger.info(
+            f"🔍 Verifying transaction {tx_hash} in network={network} "
+            f"(provider={provider_url}, contract={contract_address}, chain_id={chain_id})"
+        )
+
         web3_service = Web3VerificationService(
             web3_provider_url=provider_url,
             contract_address=contract_address,
@@ -311,6 +316,54 @@ class TournamentRegistrationService:
         verification = await web3_service.verify_register_transaction(
             tx_hash=tx_hash, tournament_id=tournament_id, expected_deck_hash=deck_hash, user_wallet=user_wallet
         )
+
+        # Если транзакция не найдена в указанной сети, пробуем другую сеть (fallback)
+        if not verification["valid"] and "Transaction not found" in verification.get("error", ""):
+            fallback_network = "avalanche" if network == "abstract" else "abstract"
+
+            # Проверяем, настроена ли альтернативная сеть
+            if (
+                fallback_network == "avalanche"
+                and Config.WEB3_PROVIDER_URL_AVALANCHE
+                and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE
+            ):
+                logger.warning(
+                    f"⚠️ Transaction {tx_hash} not found in {network} network, "
+                    f"trying fallback network: {fallback_network}"
+                )
+                try:
+                    fallback_provider_url, fallback_contract_address, fallback_chain_id = (
+                        TournamentRegistrationService._web3_config_for_network(fallback_network)
+                    )
+                    logger.info(
+                        f"🔄 Fallback verification: provider={fallback_provider_url}, "
+                        f"contract={fallback_contract_address}, chain_id={fallback_chain_id}"
+                    )
+                    fallback_web3_service = Web3VerificationService(
+                        web3_provider_url=fallback_provider_url,
+                        contract_address=fallback_contract_address,
+                        contract_abi=Config.TOURNAMENT_CONTRACT_ABI,
+                    )
+                    verification = await fallback_web3_service.verify_register_transaction(
+                        tx_hash=tx_hash,
+                        tournament_id=tournament_id,
+                        expected_deck_hash=deck_hash,
+                        user_wallet=user_wallet,
+                    )
+                    if verification["valid"]:
+                        logger.info(
+                            f"✅ Transaction {tx_hash} found in fallback network {fallback_network}, "
+                            f"updating chain_id from {chain_id} to {fallback_chain_id}"
+                        )
+                        chain_id = fallback_chain_id  # Обновляем chain_id для сохранения в БД
+                        network = fallback_network  # Обновляем network для логирования
+                    else:
+                        logger.error(
+                            f"❌ Transaction {tx_hash} also not found in fallback network {fallback_network}: "
+                            f"{verification.get('error', 'Unknown error')}"
+                        )
+                except Exception as e:
+                    logger.error(f"❌ Fallback verification failed: {e}")
 
         if not verification["valid"]:
             raise HTTPException(
