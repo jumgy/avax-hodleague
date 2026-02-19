@@ -345,23 +345,25 @@ class PackOpeningService:
         user_card_ids: List[int], 
         db: AsyncSession
     ) -> List[Dict]:
-        """Get full card details for opened cards"""
+        """Get basic card details for opened cards (uses cards table, no MV needed)."""
         try:
             from sqlalchemy import text
-            
+
             query = text("""
                 SELECT 
                     uc.id as user_card_id,
-                    acs.card_id,
-                    acs.token_symbol,
-                    acs.token_name,
-                    acs.token_image_url,
-                    acs.rarity_name,
-                    acs.rarity_color,
-                    acs.design_type,
-                    acs.rendered_image_url
+                    c.id as card_id,
+                    t.symbol as token_symbol,
+                    t.name as token_name,
+                    t.image_url as token_image_url,
+                    r.name as rarity_name,
+                    r.color as rarity_color,
+                    c.design_type,
+                    c.rendered_image_url
                 FROM user_cards uc
-                JOIN active_cards_with_score acs ON uc.card_id = acs.card_id
+                JOIN cards c ON uc.card_id = c.id
+                JOIN tokens t ON c.token_id = t.id
+                JOIN rarities r ON c.rarity_id = r.id
                 WHERE uc.id = ANY(:user_card_ids)
             """)
             
@@ -519,25 +521,27 @@ class PackOpeningService:
         pack_opening_id: int, 
         db: AsyncSession
     ) -> List[Dict]:
-        """Get cards received from a specific pack opening"""
+        """Get basic card details for a pack opening (uses cards table, no MV needed)."""
         try:
             from sqlalchemy import text
-            
+
             query = text("""
                 SELECT 
                     uc.id as user_card_id,
-                    acs.card_id,
-                    acs.token_symbol,
-                    acs.token_name,
-                    acs.token_image_url,
-                    acs.rarity_name,
-                    acs.rarity_color,
-                    acs.design_type,
-                    acs.rendered_image_url
+                    c.id as card_id,
+                    t.symbol as token_symbol,
+                    t.name as token_name,
+                    t.image_url as token_image_url,
+                    r.name as rarity_name,
+                    r.color as rarity_color,
+                    c.design_type,
+                    c.rendered_image_url
                 FROM user_cards uc
-                JOIN active_cards_with_score acs ON uc.card_id = acs.card_id
+                JOIN cards c ON uc.card_id = c.id
+                JOIN tokens t ON c.token_id = t.id
+                JOIN rarities r ON c.rarity_id = r.id
                 WHERE uc.pack_opening_id = :pack_opening_id
-                ORDER BY acs.rarity_name DESC, acs.token_symbol ASC
+                ORDER BY r.name DESC, t.symbol ASC
             """)
             
             result = await db.execute(query, {"pack_opening_id": pack_opening_id})
