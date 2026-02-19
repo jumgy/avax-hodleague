@@ -1,5 +1,6 @@
 # api/routes/tournaments.py
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Literal, Optional, Union
@@ -713,15 +714,15 @@ async def get_prizes_info(prizes_json: dict, db: AsyncSession) -> list[PrizeInfo
     if not prizes_json:
         return []
 
-    prize_list = []
+    reward_type_ids = [int(rid) for rid in prizes_json.keys()]
+    reward_types_query = select(RewardType).where(RewardType.id.in_(reward_type_ids))
+    reward_types_result = await db.execute(reward_types_query)
+    reward_types = {rt.id: rt for rt in reward_types_result.scalars().all()}
 
+    prize_list = []
     for reward_type_id_str, amount_str in prizes_json.items():
         reward_type_id = int(reward_type_id_str)
-
-        # Получаем информацию о reward_type
-        reward_query = select(RewardType).where(RewardType.id == reward_type_id)
-        reward_result = await db.execute(reward_query)
-        reward_type = reward_result.scalar_one_or_none()
+        reward_type = reward_types.get(reward_type_id)
 
         if reward_type:
             prize_list.append(
@@ -758,7 +759,7 @@ async def get_historical_cards_info(
     if not user_card_ids:
         return []
 
-    # 1. Получаем базовую информацию о картах
+    # Карты + price_change одним запросом (LATERAL join)
     cards_query = text("""
         SELECT 
             uc.id as user_card_id,
@@ -771,44 +772,27 @@ async def get_historical_cards_info(
             r.name as rarity_name,
             r.color as rarity_color,
             c.design_type,
-            c.rendered_image_url
+            c.rendered_image_url,
+            ts_latest.price_change_percent
         FROM user_cards uc
         JOIN cards c ON uc.card_id = c.id
         JOIN tokens t ON c.token_id = t.id
         JOIN rarities r ON c.rarity_id = r.id
+        LEFT JOIN LATERAL (
+            SELECT price_change_percent
+            FROM token_scores
+            WHERE tournament_id = :tournament_id AND token_id = c.token_id
+            ORDER BY calculated_at DESC
+            LIMIT 1
+        ) ts_latest ON true
         WHERE uc.id = ANY(:user_card_ids)
     """)
 
-    cards_result = await db.execute(cards_query, {"user_card_ids": user_card_ids})
+    cards_result = await db.execute(cards_query, {"user_card_ids": user_card_ids, "tournament_id": tournament_id})
     cards_rows = cards_result.fetchall()
 
     if not cards_rows:
         return []
-
-    # 2. Получаем token_ids для запроса token_scores
-    token_ids = [row.token_id for row in cards_rows]
-
-    # 3. Получаем последние записи price_change для каждого токена в этом турнире
-    token_changes_query = text("""
-        WITH latest_scores AS (
-            SELECT 
-                token_id,
-                price_change_percent,
-                ROW_NUMBER() OVER (PARTITION BY token_id ORDER BY calculated_at DESC) as rn
-            FROM token_scores
-            WHERE tournament_id = :tournament_id
-            AND token_id = ANY(:token_ids)
-        )
-        SELECT token_id, price_change_percent
-        FROM latest_scores
-        WHERE rn = 1
-    """)
-
-    changes_result = await db.execute(token_changes_query, {"tournament_id": tournament_id, "token_ids": token_ids})
-    changes_rows = changes_result.fetchall()
-
-    # Словарь {token_id: price_change_percent}
-    token_changes = {row.token_id: float(row.price_change_percent) for row in changes_rows}
 
     scores_dict = {}
 
@@ -828,12 +812,10 @@ async def get_historical_cards_info(
                             scores_dict[row.card_id] = float(card_scores[idx])
                             break
 
-    # 5. Формируем результат
+    # Формируем результат
     cards_dict = {}
     for row in cards_rows:
         card_id = row.card_id
-        token_id = row.token_id
-
         cards_dict[row.user_card_id] = CardInDeckInfo(
             user_card_id=row.user_card_id,
             card_id=card_id,
@@ -845,7 +827,7 @@ async def get_historical_cards_info(
             rarity_color=row.rarity_color,
             design_type=row.design_type,
             rendered_image_url=row.rendered_image_url,
-            tournament_change=token_changes.get(token_id),
+            tournament_change=float(row.price_change_percent) if row.price_change_percent is not None else None,
             calculated_score=scores_dict.get(card_id, 0.0),
         )
 
@@ -866,17 +848,10 @@ async def get_deck_details(
     db: AsyncSession = Depends(get_async_db),
 ):
     try:
-        # 1. Проверяем турнир
-        tournament_query = select(Tournament).where(Tournament.id == tournament_id)
-        tournament_result = await db.execute(tournament_query)
-        tournament = tournament_result.scalar_one_or_none()
-
-        if not tournament:
-            raise HTTPException(status_code=404, detail=f"Tournament {tournament_id} not found")
-
-        # 2. Получаем деку + результат + пользователя
-        deck_query = (
+        # 1. Получаем турнир + деку + пользователя + результат одним запросом
+        combined_query = (
             select(
+                Tournament,
                 TournamentDeck,
                 User.wallet_address,
                 User.nickname,
@@ -886,22 +861,27 @@ async def get_deck_details(
                 TournamentResult.card_scores,
                 TournamentResult.prizes,
             )
+            .select_from(TournamentDeck)
+            .join(Tournament, TournamentDeck.tournament_id == Tournament.id)
             .join(User, TournamentDeck.user_id == User.id)
             .outerjoin(TournamentResult, TournamentResult.tournament_deck_id == TournamentDeck.id)
             .where(
+                Tournament.id == tournament_id,
                 TournamentDeck.id == deck_id,
-                TournamentDeck.tournament_id == tournament_id,
                 TournamentDeck.is_active == True,
             )
         )
+        combined_result = await db.execute(combined_query)
+        combined_row = combined_result.first()
 
-        deck_result = await db.execute(deck_query)
-        deck_row = deck_result.first()
-
-        if not deck_row:
+        if not combined_row:
+            # Различаем "турнир не найден" и "дека не найдена"
+            tournament_check = await db.execute(select(Tournament).where(Tournament.id == tournament_id))
+            if not tournament_check.scalar_one_or_none():
+                raise HTTPException(status_code=404, detail=f"Tournament {tournament_id} not found")
             raise HTTPException(status_code=404, detail=f"Deck {deck_id} not found")
 
-        deck, wallet_address, nickname, avatar_url, position, score, card_scores, prizes_json = deck_row
+        tournament, deck, wallet_address, nickname, avatar_url, position, score, card_scores, prizes_json = combined_row
 
         # 3. Проверка доступа
         user_id = current_user.get("user_id") if current_user else None
@@ -925,14 +905,19 @@ async def get_deck_details(
         if not card_ids:
             raise HTTPException(status_code=404, detail="Deck composition is empty")
 
-        cards_info = await get_historical_cards_info(
-            user_card_ids=card_ids, card_scores=card_scores, tournament_id=tournament_id, db=db
-        )
-
-        # 6. Получаем призы
-        prizes_info = None
+        # 5–6. Параллельно: карты и призы (не зависят друг от друга)
         if prizes_json:
-            prizes_info = await get_prizes_info(prizes_json, db)
+            cards_info, prizes_info = await asyncio.gather(
+                get_historical_cards_info(
+                    user_card_ids=card_ids, card_scores=card_scores, tournament_id=tournament_id, db=db
+                ),
+                get_prizes_info(prizes_json, db),
+            )
+        else:
+            cards_info = await get_historical_cards_info(
+                user_card_ids=card_ids, card_scores=card_scores, tournament_id=tournament_id, db=db
+            )
+            prizes_info = None
 
         # 7. Формируем ответ
         return DeckDetailResponse(

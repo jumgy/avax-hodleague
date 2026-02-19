@@ -297,28 +297,23 @@ async def get_card_tournament_stats(
         score_multiplier = float(card_row.rarity_score_bonus)
         
         # Get tournament statistics - ONLY LAST SCORE PER TOURNAMENT
+        # Start from token_scores (index on token_id) then join finished tournaments
         stats_query = text("""
-            WITH latest_scores AS (
-                SELECT DISTINCT ON (ts.tournament_id)
+            WITH ranked AS (
+                SELECT
                     tour.tournament_number,
                     tour.end_date,
                     ts.calculated_score as base_score,
                     ts.current_price,
                     ts.weight,
-                    ts.calculated_at
+                    ROW_NUMBER() OVER (PARTITION BY ts.tournament_id ORDER BY ts.calculated_at DESC) as rn
                 FROM token_scores ts
-                JOIN tournaments tour ON ts.tournament_id = tour.id
+                JOIN tournaments tour ON ts.tournament_id = tour.id AND tour.status = 'finished'
                 WHERE ts.token_id = :token_id
-                  AND tour.status = 'finished'
-                ORDER BY ts.tournament_id, ts.calculated_at DESC
             )
-            SELECT 
-                tournament_number,
-                end_date,
-                base_score,
-                current_price,
-                weight
-            FROM latest_scores
+            SELECT tournament_number, end_date, base_score, current_price, weight
+            FROM ranked
+            WHERE rn = 1
             ORDER BY tournament_number DESC
             LIMIT :limit
         """)
