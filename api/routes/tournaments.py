@@ -131,6 +131,14 @@ class PrizePoolInfo(BaseModel):
     currency_name: str
 
 
+class MyRegistrationNetworkInfo(BaseModel):
+    """Сеть, в которой пользователь зарегистрирован в турнире. Для unregister фронт вызывает контракт в этой сети."""
+
+    network: Literal["abstract", "avalanche"]
+    chain_id: int
+    contract_address: str
+
+
 class TournamentDetail(BaseModel):
     id: int
     tournament_number: int
@@ -148,6 +156,7 @@ class TournamentDetail(BaseModel):
     my_deck: Optional[Union[list[int], list[CardInDeckInfo]]] = None
     created_at: datetime
     updated_at: datetime
+    my_registration_network: Optional[MyRegistrationNetworkInfo] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -506,6 +515,7 @@ async def get_tournament_details(
         user_id = current_user.get("user_id") if current_user else None
         is_registered = False
         my_deck = None
+        my_registration_network = None
 
         if user_id:
             deck_query = select(TournamentDeck).where(
@@ -519,6 +529,17 @@ async def get_tournament_details(
             if deck:
                 is_registered = True
                 deck_composition = deck.deck_composition if isinstance(deck.deck_composition, list) else None
+
+                # Сеть регистрации — для unregister фронт должен вызвать контракт в этой же сети
+                my_registration_network = None
+                if deck.registration_chain_id is not None:
+                    net_info = TournamentRegistrationService.get_network_info_for_chain_id(deck.registration_chain_id)
+                    if net_info:
+                        my_registration_network = MyRegistrationNetworkInfo(
+                            network=net_info["network"],
+                            chain_id=net_info["chain_id"],
+                            contract_address=net_info["contract_address"],
+                        )
 
                 if deck_composition:
                     if include_deck:
@@ -564,6 +585,7 @@ async def get_tournament_details(
             my_deck=my_deck,
             created_at=tournament.created_at,
             updated_at=tournament.updated_at,
+            my_registration_network=my_registration_network,
         )
 
     except HTTPException:

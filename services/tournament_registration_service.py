@@ -254,6 +254,30 @@ class TournamentRegistrationService:
         return result
 
     @staticmethod
+    def get_network_info_for_chain_id(chain_id: int | None) -> dict[str, Any] | None:
+        """
+        По chain_id (из tournament_decks.registration_chain_id) возвращает данные сети
+        для unregister: network, chain_id, contract_address.
+        Нужно фронту, чтобы вызвать unregister в той же сети, в которой была регистрация.
+        """
+        if chain_id is None:
+            return None
+        if chain_id == Config.ABSTRACT_CHAIN_ID:
+            return {
+                "network": "abstract",
+                "chain_id": Config.ABSTRACT_CHAIN_ID,
+                "contract_address": Config.TOURNAMENT_CONTRACT_ADDRESS,
+            }
+        if chain_id == Config.AVALANCHE_CHAIN_ID and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE:
+            return {
+                "network": "avalanche",
+                "chain_id": Config.AVALANCHE_CHAIN_ID,
+                "contract_address": Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE,
+            }
+        logger.warning("Unknown registration_chain_id=%s, cannot map to network", chain_id)
+        return None
+
+    @staticmethod
     def _web3_config_for_network(network: str) -> tuple[str, str, int]:
         """Return (provider_url, contract_address, chain_id) for the given network."""
         if network == "avalanche":
@@ -439,7 +463,7 @@ class TournamentRegistrationService:
         if not deck:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not registered in this tournament")
 
-        # 3. ПРОВЕРЯЕМ ТРАНЗАКЦИЮ UNREGISTER в выбранной сети
+        # 3. ПРОВЕРЯЕМ ТРАНЗАКЦИЮ UNREGISTER в выбранной сети (с fallback на другую сеть при "Transaction not found")
         provider_url, contract_address, _ = TournamentRegistrationService._web3_config_for_network(network)
         web3_service = Web3VerificationService(
             web3_provider_url=provider_url,
@@ -450,6 +474,40 @@ class TournamentRegistrationService:
         verification = await web3_service.verify_unregister_transaction(
             tx_hash=tx_hash, tournament_id=tournament_id, user_wallet=user_wallet
         )
+
+        if not verification["valid"] and "Transaction not found" in verification.get("error", ""):
+            fallback_network = "avalanche" if network == "abstract" else "abstract"
+            if (
+                fallback_network == "avalanche"
+                and Config.WEB3_PROVIDER_URL_AVALANCHE
+                and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE
+            ):
+                logger.warning(
+                    "⚠️ Unregister tx %s not found in %s, trying fallback network: %s",
+                    tx_hash,
+                    network,
+                    fallback_network,
+                )
+                try:
+                    fallback_provider_url, fallback_contract_address, _ = (
+                        TournamentRegistrationService._web3_config_for_network(fallback_network)
+                    )
+                    fallback_web3_service = Web3VerificationService(
+                        web3_provider_url=fallback_provider_url,
+                        contract_address=fallback_contract_address,
+                        contract_abi=Config.TOURNAMENT_CONTRACT_ABI,
+                    )
+                    verification = await fallback_web3_service.verify_unregister_transaction(
+                        tx_hash=tx_hash, tournament_id=tournament_id, user_wallet=user_wallet
+                    )
+                    if verification["valid"]:
+                        logger.info(
+                            "✅ Unregister tx %s found in fallback network %s",
+                            tx_hash,
+                            fallback_network,
+                        )
+                except Exception as e:
+                    logger.error("❌ Fallback unregister verification failed: %s", e)
 
         if not verification["valid"]:
             raise HTTPException(

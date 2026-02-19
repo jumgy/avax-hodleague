@@ -106,6 +106,40 @@ class TestGetRegistrationNetworkRecommendation:
         assert result["switch_network_required"] is False
 
 
+class TestGetNetworkInfoForChainId:
+    """get_network_info_for_chain_id(chain_id) - для unregister: сеть по registration_chain_id."""
+
+    def test_returns_abstract_for_abstract_chain_id(self):
+        with patch.object(Config, "ABSTRACT_CHAIN_ID", 2741):
+            with patch.object(Config, "TOURNAMENT_CONTRACT_ADDRESS", "0xAbstract"):
+                info = TournamentRegistrationService.get_network_info_for_chain_id(2741)
+        assert info is not None
+        assert info["network"] == "abstract"
+        assert info["chain_id"] == 2741
+        assert info["contract_address"] == "0xAbstract"
+
+    def test_returns_avalanche_for_avalanche_chain_id_when_configured(self):
+        with patch.object(Config, "AVALANCHE_CHAIN_ID", 43114):
+            with patch.object(Config, "TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE", "0xAvax"):
+                info = TournamentRegistrationService.get_network_info_for_chain_id(43114)
+        assert info is not None
+        assert info["network"] == "avalanche"
+        assert info["chain_id"] == 43114
+        assert info["contract_address"] == "0xAvax"
+
+    def test_returns_none_for_none_chain_id(self):
+        assert TournamentRegistrationService.get_network_info_for_chain_id(None) is None
+
+    def test_returns_none_for_unknown_chain_id(self):
+        assert TournamentRegistrationService.get_network_info_for_chain_id(99999) is None
+
+    def test_returns_none_for_avalanche_chain_id_when_avalanche_not_configured(self):
+        with patch.object(Config, "AVALANCHE_CHAIN_ID", 43114):
+            with patch.object(Config, "TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE", ""):
+                info = TournamentRegistrationService.get_network_info_for_chain_id(43114)
+        assert info is None
+
+
 class TestWeb3ConfigForNetwork:
     """_web3_config_for_network(network) - provider, contract, chain_id per network."""
 
