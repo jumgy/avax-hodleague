@@ -178,12 +178,28 @@ app.include_router(admin_router)
 @app.get("/openapi.json", include_in_schema=False)
 async def get_open_api_endpoint(authorized: bool = get_swagger_dependency()):
     """Protected OpenAPI schema"""
-    return get_openapi(
+    from fastapi.openapi.utils import get_openapi
+    
+    schema = get_openapi(
         title=app.title,
         version=app.version,
         description=app.description,
         routes=app.routes,
     )
+    
+    # Убираем default из схемы параметров, чтобы Swagger UI не показывал "Default value"
+    # Значения по умолчанию все равно будут работать в FastAPI
+    if "paths" in schema:
+        for path, methods in schema["paths"].items():
+            for method, operation in methods.items():
+                if isinstance(operation, dict) and "parameters" in operation:
+                    for param in operation["parameters"]:
+                        if isinstance(param, dict) and "schema" in param:
+                            # Убираем default из схемы параметра
+                            if "default" in param["schema"]:
+                                del param["schema"]["default"]
+    
+    return schema
 @app.get("/swagger", include_in_schema=False)
 async def get_swagger_documentation(authorized: bool = get_swagger_dependency()):
     """Protected Swagger UI"""

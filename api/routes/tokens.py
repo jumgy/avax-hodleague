@@ -29,7 +29,17 @@ class TokenCurrentPrice(BaseModel):
     change_24h: Optional[float] = None
     price_timestamp: Optional[datetime] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "price": 45230.50,
+                "market_cap": 890000000000,
+                "change_24h": 2.5,
+                "price_timestamp": "2026-02-20T10:30:00Z"
+            }
+        }
+    )
 
 
 class TokenScoreFromView(BaseModel):
@@ -38,7 +48,15 @@ class TokenScoreFromView(BaseModel):
     calculated_score: float
     tournament_change: Optional[float] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "calculated_score": 1250.75,
+                "tournament_change": 5.2
+            }
+        }
+    )
 
 
 class TokenWithPriceResponse(BaseModel):
@@ -55,7 +73,92 @@ class TokenWithPriceResponse(BaseModel):
     current_price: Optional[TokenCurrentPrice] = None
     score: Optional[TokenScoreFromView] = None
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "name": "Bitcoin",
+                "symbol": "BTC",
+                "weight": 10,
+                "image_url": "https://example.com/btc.png",
+                "is_active": True,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-02-20T10:00:00Z",
+                "current_price": {
+                    "price": 45230.50,
+                    "market_cap": 890000000000,
+                    "change_24h": 2.5,
+                    "price_timestamp": "2026-02-20T10:30:00Z"
+                },
+                "score": {
+                    "calculated_score": 1250.75,
+                    "tournament_change": 5.2
+                }
+            }
+        }
+    )
+
+
+class PaginationInfo(BaseModel):
+    """Pagination metadata."""
+
+    limit: int
+    offset: int
+    total: int
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "limit": 50,
+                "offset": 0,
+                "total": 30
+            }
+        }
+    )
+
+
+class TokensListResponse(BaseModel):
+    """Response for list tokens endpoint."""
+
+    success: bool
+    data: list[TokenWithPriceResponse]
+    pagination: PaginationInfo
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "success": True,
+                "data": [
+                    {
+                        "id": 1,
+                        "name": "Bitcoin",
+                        "symbol": "BTC",
+                        "weight": 10,
+                        "image_url": "https://example.com/btc.png",
+                        "is_active": True,
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "updated_at": "2026-02-20T10:00:00Z",
+                        "current_price": {
+                            "price": 45230.50,
+                            "market_cap": 890000000000,
+                            "change_24h": 2.5,
+                            "price_timestamp": "2026-02-20T10:30:00Z"
+                        },
+                        "score": {
+                            "calculated_score": 1250.75,
+                            "tournament_change": 5.2
+                        }
+                    }
+                ],
+                "pagination": {
+                    "limit": 50,
+                    "offset": 0,
+                    "total": 30
+                }
+            }
+        }
+    )
 
 
 # ==================== Routes ====================
@@ -73,8 +176,62 @@ class TokenSortOrder(str, Enum):
 
 @router.get(
     "/",
+    response_model=TokensListResponse,
     summary="List tokens with current rate (leaderboard by score)",
     description="Returns all tokens with full info, latest price, and score. Default sort: by calculated_score desc (token leaderboard). Supports sort_by=symbol, pagination.",
+    responses={
+        200: {
+            "description": "Successfully retrieved tokens",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "data": [
+                            {
+                                "id": 1,
+                                "name": "Bitcoin",
+                                "symbol": "BTC",
+                                "weight": 10,
+                                "image_url": "https://example.com/btc.png",
+                                "is_active": True,
+                                "created_at": "2026-01-01T00:00:00Z",
+                                "updated_at": "2026-02-20T10:00:00Z",
+                                "current_price": {
+                                    "price": 45230.50,
+                                    "market_cap": 890000000000,
+                                    "change_24h": 2.5,
+                                    "price_timestamp": "2026-02-20T10:30:00Z"
+                                },
+                                "score": {
+                                    "calculated_score": 1250.75,
+                                    "tournament_change": 5.2
+                                }
+                            }
+                        ],
+                        "pagination": {"limit": 50, "offset": 0, "total": 30}
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "type": "greater_than_equal",
+                                "loc": ["query", "limit"],
+                                "msg": "Input should be greater than or equal to 1",
+                                "input": 0,
+                                "ctx": {"ge": 1}
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
 )
 async def list_tokens_with_prices(
     limit: int = Query(default=50, ge=1, le=100, description="Page size"),
@@ -127,11 +284,11 @@ async def list_tokens_with_prices(
         ids_result = await db.execute(ids_query, params)
         token_ids = [row.id for row in ids_result.fetchall()]
         if not token_ids:
-            return {
-                "success": True,
-                "data": [],
-                "pagination": {"limit": limit, "offset": offset, "total": total},
-            }
+            return TokensListResponse(
+                success=True,
+                data=[],
+                pagination=PaginationInfo(limit=limit, offset=offset, total=total),
+            )
         tokens_stmt = select(Token).where(Token.id.in_(token_ids))
         tokens_result = await db.execute(tokens_stmt)
         tokens_by_id = {t.id: t for t in tokens_result.scalars().all()}
@@ -143,11 +300,11 @@ async def list_tokens_with_prices(
         tokens = list(tokens_result.scalars().all())
 
     if not tokens:
-        return {
-            "success": True,
-            "data": [],
-            "pagination": {"limit": limit, "offset": offset, "total": total},
-        }
+        return TokensListResponse(
+            success=True,
+            data=[],
+            pagination=PaginationInfo(limit=limit, offset=offset, total=total),
+        )
 
     token_ids = [t.id for t in tokens]
     latest_price_subq_filtered = (
@@ -216,22 +373,22 @@ async def list_tokens_with_prices(
             )
 
         data.append(
-            {
-                "id": t.id,
-                "name": t.name,
-                "symbol": t.symbol,
-                "weight": t.weight,
-                "image_url": t.image_url,
-                "is_active": t.is_active,
-                "created_at": t.created_at,
-                "updated_at": t.updated_at,
-                "current_price": current,
-                "score": score,
-            }
+            TokenWithPriceResponse(
+                id=t.id,
+                name=t.name,
+                symbol=t.symbol,
+                weight=t.weight,
+                image_url=t.image_url,
+                is_active=t.is_active,
+                created_at=t.created_at,
+                updated_at=t.updated_at,
+                current_price=current,
+                score=score,
+            )
         )
 
-    return {
-        "success": True,
-        "data": data,
-        "pagination": {"limit": limit, "offset": offset, "total": total},
-    }
+    return TokensListResponse(
+        success=True,
+        data=data,
+        pagination=PaginationInfo(limit=limit, offset=offset, total=total),
+    )
