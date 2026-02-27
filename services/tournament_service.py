@@ -1,6 +1,6 @@
 # services/tournament_service.py
 
-from sqlalchemy import select, and_, text
+from sqlalchemy import select, and_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -847,6 +847,59 @@ class TournamentService:
         except Exception as e:
             await db.rollback()
             logger.error(f"❌ Error distributing rewards for tournament {tournament_id}: {e}", exc_info=True)
+            raise
+
+    async def claim_tournament_rewards(
+        self, user_id: int, tournament_id: int, db: AsyncSession
+    ) -> dict:
+        """
+        Claim all pending user rewards for a given tournament.
+        Finds all UserReward with claim_status=pending linked to this user and tournament,
+        sets them to claimed and returns count + ids.
+
+        Returns:
+            {"claimed_count": int, "reward_ids": list[int]}
+        """
+        try:
+            # Находим все pending награды пользователя по этому турниру (через tournament_result)
+            subq = (
+                select(UserReward.id)
+                .join(
+                    TournamentResult,
+                    UserReward.tournament_result_id == TournamentResult.id,
+                )
+                .where(
+                    UserReward.user_id == user_id,
+                    TournamentResult.tournament_id == tournament_id,
+                    UserReward.claim_status == ClaimStatus.PENDING,
+                )
+            )
+            result = await db.execute(subq)
+            reward_ids = [row[0] for row in result.fetchall()]
+
+            if not reward_ids:
+                return {"claimed_count": 0, "reward_ids": []}
+
+            now = datetime.now(timezone.utc)
+            await db.execute(
+                update(UserReward)
+                .where(UserReward.id.in_(reward_ids))
+                .values(
+                    claim_status=ClaimStatus.CLAIMED,
+                    claimed_at=now,
+                )
+            )
+            await db.commit()
+            logger.info(
+                f"✅ User {user_id} claimed {len(reward_ids)} rewards for tournament {tournament_id}"
+            )
+            return {"claimed_count": len(reward_ids), "reward_ids": reward_ids}
+        except Exception as e:
+            await db.rollback()
+            logger.error(
+                f"❌ Error claiming rewards for user {user_id} tournament {tournament_id}: {e}",
+                exc_info=True,
+            )
             raise
 
 

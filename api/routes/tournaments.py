@@ -23,6 +23,7 @@ from models.user_card_models import UserCard
 from models.user_models import User
 from services.prize_config_service import PrizeConfigService
 from services.tournament_registration_service import TournamentRegistrationService
+from services.tournament_service import tournament_service
 from services.web3_auth_service import web3_auth_service
 
 logger = logging.getLogger(__name__)
@@ -253,6 +254,15 @@ class DeckUnregisterResponse(BaseModel):
     success: bool
     cards_unlocked: int
     tx_hash: str
+    message: str
+
+
+class ClaimTournamentRewardsResponse(BaseModel):
+    """Ответ клейма наград турнира"""
+
+    success: bool
+    claimed_count: int
+    reward_ids: list[int]
     message: str
 
 
@@ -1401,4 +1411,57 @@ async def unregister_from_tournament(
         logger.error(f"Error unregistering from tournament {tournament_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to unregister from tournament"
+        )
+
+
+@router.post(
+    "/{tournament_id}/claim-rewards",
+    response_model=ClaimTournamentRewardsResponse,
+    summary="Claim tournament rewards",
+    description="Claim all pending rewards for the authenticated user for the given tournament. Sets status to claimed.",
+)
+@limiter.limit("30/minute")
+async def claim_tournament_rewards(
+    request: Request,
+    tournament_id: int,
+    current_user: dict = Depends(get_current_user_required),
+    db: AsyncSession = Depends(get_async_db),
+):
+    """
+    Клейм наград турнира (Claymonograd).
+
+    По JWT определяется пользователь. Находятся все UserReward в статусе pending
+    для этого пользователя и турнира, переводит их в claimed.
+    """
+    try:
+        user_id = current_user.get("user_id")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid user data in token",
+            )
+
+        result = await tournament_service.claim_tournament_rewards(
+            user_id=user_id,
+            tournament_id=tournament_id,
+            db=db,
+        )
+
+        count = result["claimed_count"]
+        message = (
+            f"Claimed {count} reward(s)" if count > 0 else "No pending rewards to claim"
+        )
+        return ClaimTournamentRewardsResponse(
+            success=True,
+            claimed_count=count,
+            reward_ids=result["reward_ids"],
+            message=message,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error claiming rewards for tournament {tournament_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to claim tournament rewards",
         )
