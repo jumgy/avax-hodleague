@@ -1,19 +1,18 @@
+import logging
+import secrets
 from datetime import datetime, timedelta
+
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel
-import logging
 
 from config import Config
-
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from utils.rate_limit import limiter
 
 # Setup
 logger = logging.getLogger(__name__)
 security = HTTPBearer()
-limiter = Limiter(key_func=get_remote_address)
 
 # ===== ФУНКЦИИ =====
 
@@ -48,7 +47,9 @@ def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             )
         
         username: str = payload.get("sub")
-        if username is None or username != Config.ADMIN_USERNAME:
+        if username is None or not secrets.compare_digest(
+            username.encode("utf-8"), Config.ADMIN_USERNAME.encode("utf-8")
+        ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Access denied",
@@ -66,10 +67,12 @@ def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(secur
 
 
 def authenticate_admin(username: str, password: str) -> bool:
-    """Authenticate admin credentials"""
+    """Authenticate admin credentials. Uses constant-time comparison to prevent timing attacks."""
+    expected_user = Config.ADMIN_USERNAME.encode("utf-8")
+    expected_pass = Config.ADMIN_PASSWORD.encode("utf-8")
     return (
-        username == Config.ADMIN_USERNAME and
-        password == Config.ADMIN_PASSWORD 
+        secrets.compare_digest(username.encode("utf-8"), expected_user)
+        and secrets.compare_digest(password.encode("utf-8"), expected_pass)
     )
 
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Literal, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from utils.rate_limit import limiter
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select, text
@@ -153,6 +154,8 @@ class TournamentDetail(BaseModel):
     is_active: bool
     duration_days: int
     is_registered: bool = False
+    # Флаг рассинхрона: пользователь зарегистрирован в контракте, но в БД активной деки нет
+    is_onchain_only_registration: bool = False
     my_deck: Optional[Union[list[int], list[CardInDeckInfo]]] = None
     created_at: datetime
     updated_at: datetime
@@ -430,7 +433,7 @@ async def get_tournaments_list(
     except Exception as e:
         logger.error(f"Error getting tournaments list: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve tournaments: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve tournaments"
         )
 
 
@@ -516,6 +519,7 @@ async def get_tournament_details(
         is_registered = False
         my_deck = None
         my_registration_network = None
+        is_onchain_only_registration = False
 
         if user_id:
             deck_query = select(TournamentDeck).where(
@@ -567,6 +571,27 @@ async def get_tournament_details(
                             my_deck = await get_full_cards_info(deck_composition, db)
                     else:
                         my_deck = deck_composition
+            else:
+                # В БД регистрации нет, но могла остаться запись в контракте (например, ошибка после on-chain шага).
+                # Делаем быструю on-chain проверку с таймаутом, чтобы не блокировать ответ надолго.
+                wallet = (current_user.get("wallet_address") or "").strip()
+                if not wallet:
+                    wallet = (
+                        await db.execute(select(User.wallet_address).where(User.id == user_id))
+                    ).scalar_one_or_none() or ""
+
+                if wallet:
+                    onchain_status = await TournamentRegistrationService.detect_onchain_registration(
+                        tournament_id=tournament.id,
+                        wallet_address=wallet,
+                    )
+                    if onchain_status.get("is_registered"):
+                        is_onchain_only_registration = True
+                        my_registration_network = MyRegistrationNetworkInfo(
+                            network=onchain_status["network"],
+                            chain_id=onchain_status["chain_id"],
+                            contract_address=onchain_status["contract_address"],
+                        )
 
         return TournamentDetail(
             id=tournament.id,
@@ -582,6 +607,7 @@ async def get_tournament_details(
             is_active=tournament.is_active,
             duration_days=tournament.duration_days,
             is_registered=is_registered,
+            is_onchain_only_registration=is_onchain_only_registration,
             my_deck=my_deck,
             created_at=tournament.created_at,
             updated_at=tournament.updated_at,
@@ -593,7 +619,7 @@ async def get_tournament_details(
     except Exception as e:
         logger.error(f"Error getting tournament {tournament_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve tournament details: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve tournament details"
         )
 
 
@@ -965,7 +991,7 @@ async def get_deck_details(
     except Exception as e:
         logger.error(f"Error getting deck {deck_id} details: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve deck details: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve deck details"
         )
 
 
@@ -1158,7 +1184,7 @@ async def get_tournament_leaderboard(
     except Exception as e:
         logger.error(f"Error getting leaderboard for tournament {tournament_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to retrieve leaderboard: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve leaderboard"
         )
 
 
@@ -1171,9 +1197,11 @@ async def get_tournament_leaderboard(
     summary="Validate deck before registration (Pre-validation)",
     description="Validates deck composition and returns deck_hash for smart contract call",
 )
+@limiter.limit("30/minute")
 async def validate_deck_for_registration(
+    request: Request,
     tournament_id: int,
-    request: DeckValidateRequest,
+    body: DeckValidateRequest,
     current_user: dict = Depends(get_current_user_required),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -1193,7 +1221,7 @@ async def validate_deck_for_registration(
 
         # Пре-валидация без записи в БД
         validation_result = await TournamentRegistrationService.validate_deck_preview(
-            db=db, tournament_id=tournament_id, user_id=user_id, deck_composition=request.deck_composition
+            db=db, tournament_id=tournament_id, user_id=user_id, deck_composition=body.deck_composition
         )
 
         # Рекомендация сети по балансу газа (Abstract vs Avalanche)
@@ -1236,7 +1264,7 @@ async def validate_deck_for_registration(
     except Exception as e:
         logger.error(f"Error validating deck for tournament {tournament_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to validate deck: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to validate deck"
         )
 
 
@@ -1246,9 +1274,11 @@ async def validate_deck_for_registration(
     summary="Register for tournament with blockchain verification",
     description="Finalizes registration after smart contract transaction is confirmed",
 )
+@limiter.limit("20/minute")
 async def register_for_tournament(
+    request: Request,
     tournament_id: int,
-    request: DeckRegisterRequest,
+    body: DeckRegisterRequest,
     current_user: dict = Depends(get_current_user_required),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -1269,7 +1299,7 @@ async def register_for_tournament(
             )
 
         # Логируем сеть для отладки
-        logger.info(f"Registering for tournament {tournament_id}: tx_hash={request.tx_hash}, network={request.network}")
+        logger.info(f"Registering for tournament {tournament_id}: tx_hash={body.tx_hash}, network={body.network}")
 
         # Финальная регистрация с проверкой транзакции (сеть: abstract или avalanche)
         tournament_deck = await TournamentRegistrationService.register_deck_with_verification(
@@ -1277,9 +1307,9 @@ async def register_for_tournament(
             tournament_id=tournament_id,
             user_id=user_id,
             user_wallet=user_wallet,
-            deck_composition=request.deck_composition,
-            tx_hash=request.tx_hash,
-            network=request.network,
+            deck_composition=body.deck_composition,
+            tx_hash=body.tx_hash,
+            network=body.network,
         )
 
         # Получаем информацию о картах для ответа
@@ -1288,7 +1318,7 @@ async def register_for_tournament(
             .join(Card, UserCard.card_id == Card.id)
             .join(Token, Card.token_id == Token.id)
             .join(Rarity, Card.rarity_id == Rarity.id)
-            .where(UserCard.id.in_(request.deck_composition))
+            .where(UserCard.id.in_(body.deck_composition))
         )
 
         cards_result = (await db.execute(cards_query)).all()
@@ -1315,7 +1345,7 @@ async def register_for_tournament(
     except Exception as e:
         logger.error(f"Error registering for tournament {tournament_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to register for tournament: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to register for tournament"
         )
 
 
@@ -1325,9 +1355,11 @@ async def register_for_tournament(
     summary="Unregister from tournament with blockchain verification",
     description="Cancels registration after smart contract unregister transaction",
 )
+@limiter.limit("20/minute")
 async def unregister_from_tournament(
+    request: Request,
     tournament_id: int,
-    request: DeckUnregisterRequest,
+    body: DeckUnregisterRequest,
     current_user: dict = Depends(get_current_user_required),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -1352,8 +1384,8 @@ async def unregister_from_tournament(
             tournament_id=tournament_id,
             user_id=user_id,
             user_wallet=user_wallet,
-            tx_hash=request.tx_hash,
-            network=request.network,
+            tx_hash=body.tx_hash,
+            network=body.network,
         )
 
         return DeckUnregisterResponse(
@@ -1368,5 +1400,5 @@ async def unregister_from_tournament(
     except Exception as e:
         logger.error(f"Error unregistering from tournament {tournament_id}: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to unregister from tournament: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to unregister from tournament"
         )

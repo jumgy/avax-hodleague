@@ -1,6 +1,6 @@
 # api/routes/packs.py
 
-from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi import APIRouter, HTTPException, Request, status, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ from models.database import get_async_db
 from models.pack_models import PackType
 from services.pack_opening_service import pack_opening_service
 from api.routes.auth import verify_jwt_dependency
+from utils.rate_limit import limiter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -152,12 +153,14 @@ async def get_available_packs(
     "/packs/open",
     response_model=OpenPackResponse,
     summary="Open a pack",
-    description="Open an unopened pack and receive cards"
+    description="Open an unopened pack and receive cards",
 )
+@limiter.limit("30/minute")
 async def open_pack(
-    request: OpenPackRequest,
+    request: Request,
+    body: OpenPackRequest,
     current_user: dict = Depends(verify_jwt_dependency),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     Open a pack and receive cards
@@ -170,7 +173,7 @@ async def open_pack(
         
         result = await pack_opening_service.open_pack(
             user_id=user_id,
-            pack_type_id=request.pack_type_id,
+            pack_type_id=body.pack_type_id,
             db=db
         )
         

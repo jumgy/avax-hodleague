@@ -5,20 +5,16 @@ from pydantic import BaseModel, validator
 from typing import Optional
 import logging
 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-from models.database import get_async_db 
+from models.database import get_async_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from services.web3_auth_service import web3_auth_service
 from services.user_card_grant_service import user_card_grant_service
 from services.user_pack_grant_service import user_pack_grant_service
+from utils.rate_limit import limiter
 
 from config import Config
 
 logger = logging.getLogger(__name__)
-
-limiter = Limiter(key_func=get_remote_address)
 
 security_optional = HTTPBearer(auto_error=False)
 
@@ -407,8 +403,8 @@ if Config.ENVIRONMENT != "production":
                 "cards_granted": len(granted_cards),
                 "message": f"Successfully granted {len(granted_cards)} cards to user {target_user_id}"
             }
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Not found")
         except Exception as e:
             logger.error(f"Error granting cards to user {target_user_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to grant cards")
@@ -430,8 +426,8 @@ if Config.ENVIRONMENT != "production":
                 "packs_granted": len(granted_packs),
                 "message": f"Successfully granted {len(granted_packs)} packs to user {target_user_id}"
             }
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Not found")
         except Exception as e:
             logger.error(f"Error granting packs to user {target_user_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to grant packs")

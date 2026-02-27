@@ -10,18 +10,18 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from api.routes import router as api_router
+from utils.rate_limit import limiter
 from api.routes.admin import admin_router
 
 from services.scheduler_service import scheduler_service
 
 from config import Config
 from models.database import init_database, close_database
-
 
 _logging_configured = False
 def setup_logging():
@@ -73,8 +73,6 @@ def setup_logging():
 # Вызываем настройку
 setup_logging()
 logger = logging.getLogger(__name__)
-
-limiter = Limiter(key_func=get_remote_address)
 
 # Startup/shutdown events
 @asynccontextmanager
@@ -159,8 +157,9 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
-# Setup CORS 
+# Setup CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=Config.get_cors_origins(),
@@ -175,6 +174,7 @@ app.include_router(admin_router)
 
 # ============ ЗАЩИЩЕННЫЕ DOCS ENDPOINTS ============
 
+@limiter.exempt
 @app.get("/openapi.json", include_in_schema=False)
 async def get_open_api_endpoint(authorized: bool = get_swagger_dependency()):
     """Protected OpenAPI schema"""
@@ -184,6 +184,7 @@ async def get_open_api_endpoint(authorized: bool = get_swagger_dependency()):
         description=app.description,
         routes=app.routes,
     )
+@limiter.exempt
 @app.get("/swagger", include_in_schema=False)
 async def get_swagger_documentation(authorized: bool = get_swagger_dependency()):
     """Protected Swagger UI"""
@@ -191,6 +192,7 @@ async def get_swagger_documentation(authorized: bool = get_swagger_dependency())
         openapi_url="/openapi.json",
         title=f"{app.title} - Swagger UI"
     )
+@limiter.exempt
 @app.get("/redoc", include_in_schema=False)
 async def get_redoc_documentation(authorized: bool = get_swagger_dependency()):
     """Protected ReDoc UI"""
@@ -202,6 +204,8 @@ async def get_redoc_documentation(authorized: bool = get_swagger_dependency()):
 
 from fastapi.responses import HTMLResponse
 from pathlib import Path
+
+@limiter.exempt
 @app.get("/panel/bulk-upload", response_class=HTMLResponse)
 async def bulk_upload_page(authorized: bool = get_swagger_dependency()):
     """Страница для bulk загрузки темплейтов"""
@@ -211,7 +215,8 @@ async def bulk_upload_page(authorized: bool = get_swagger_dependency()):
     raise HTTPException(404, "Page not found")
 # ============ MAIN ENDPOINTS ============
 
-# Health check endpoint
+# Health check endpoint (exempt: load balancers / k8s probe)
+@limiter.exempt
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Health check endpoint"""

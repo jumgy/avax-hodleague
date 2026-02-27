@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 from datetime import UTC, datetime
@@ -276,6 +277,100 @@ class TournamentRegistrationService:
             }
         logger.warning("Unknown registration_chain_id=%s, cannot map to network", chain_id)
         return None
+
+    @staticmethod
+    async def detect_onchain_registration(
+        tournament_id: int,
+        wallet_address: str,
+        timeout_seconds: float = 1.0,
+    ) -> dict[str, Any]:
+        """
+        Быстрая проверка регистрации напрямую в смарт-контракте.
+
+        Проверяем все доступные сети (Abstract + Avalanche) параллельно.
+        Каждая RPC‑операция ограничена по времени через asyncio.wait_for,
+        чтобы не блокировать обработку запроса слишком долго.
+
+        :return: {
+            "is_registered": bool,
+            "network": Optional["abstract" | "avalanche"],
+            "chain_id": Optional[int],
+            "contract_address": Optional[str],
+            "deck_hash": Optional[str],
+        }
+        """
+
+        wallet = (wallet_address or "").strip()
+        if not wallet:
+            logger.warning("detect_onchain_registration: empty wallet_address, skipping on-chain check")
+            return {"is_registered": False}
+
+        networks: list[str] = ["abstract"]
+        if Config.WEB3_PROVIDER_URL_AVALANCHE and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE:
+            networks.append("avalanche")
+
+        async def _check_network(network: str) -> tuple[str, dict[str, Any]]:
+            try:
+                provider_url, contract_address, chain_id = TournamentRegistrationService._web3_config_for_network(
+                    network
+                )
+                web3_service = Web3VerificationService(
+                    web3_provider_url=provider_url,
+                    contract_address=contract_address,
+                    contract_abi=Config.TOURNAMENT_CONTRACT_ABI,
+                )
+
+                def _call() -> dict[str, Any]:
+                    return web3_service.check_registration_onchain(
+                        tournament_id=tournament_id,
+                        user_wallet=wallet,
+                    )
+
+                result: dict[str, Any] = await asyncio.wait_for(
+                    asyncio.to_thread(_call),
+                    timeout=timeout_seconds,
+                )
+
+                if result.get("is_registered"):
+                    return network, {
+                        "is_registered": True,
+                        "network": network,
+                        "chain_id": chain_id,
+                        "contract_address": contract_address,
+                        "deck_hash": result.get("deck_hash"),
+                    }
+
+                return network, {"is_registered": False}
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "detect_onchain_registration: timeout while checking network=%s for tournament_id=%s",
+                    network,
+                    tournament_id,
+                )
+                return network, {"is_registered": False}
+            except Exception as e:
+                logger.error(
+                    "detect_onchain_registration: error while checking network=%s for tournament_id=%s: %s",
+                    network,
+                    tournament_id,
+                    e,
+                )
+                return network, {"is_registered": False}
+
+        # Параллельно проверяем все доступные сети
+        check_results = await asyncio.gather(*[_check_network(net) for net in networks])
+
+        for network, data in check_results:
+            if data.get("is_registered"):
+                logger.info(
+                    "✅ On-chain registration detected for tournament_id=%s, wallet=%s, network=%s",
+                    tournament_id,
+                    wallet,
+                    network,
+                )
+                return data
+
+        return {"is_registered": False}
 
     @staticmethod
     def _web3_config_for_network(network: str) -> tuple[str, str, int]:

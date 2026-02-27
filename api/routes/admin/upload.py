@@ -136,7 +136,7 @@ async def upload_card_template(
         raise
     except Exception as e:
         logger.error(f"❌ Upload failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Upload failed")
     
 from typing import List
 
@@ -311,7 +311,7 @@ async def list_templates(
     
     except Exception as e:
         logger.error(f"❌ Failed to list templates: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to list templates")
 
 
 @router.delete("/template/{filename}")
@@ -354,7 +354,7 @@ async def delete_template(
         raise
     except Exception as e:
         logger.error(f"❌ Failed to delete template: {e}")
-        raise HTTPException(500, f"Failed to delete: {str(e)}")
+        raise HTTPException(500, "Failed to delete template")
 
 
 @router.post("/render-card/{card_id}")
@@ -382,7 +382,7 @@ async def render_card_manually(
     
     except Exception as e:
         logger.error(f"❌ Manual render failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Rendering failed")
 
 
 @router.post("/render-all-cards")
@@ -407,4 +407,4 @@ async def render_all_cards_manually(
     
     except Exception as e:
         logger.error(f"❌ Batch render failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Batch render failed")
