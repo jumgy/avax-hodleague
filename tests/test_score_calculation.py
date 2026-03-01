@@ -18,7 +18,7 @@ from models.tournament_models import Tournament, TournamentTokenSnapshot, Tourna
 from models.token_score_models import TokenScore
 
 
-# SAFE TOKENS - не были затронуты предыдущим тестом
+# Safe tokens: not affected by previous test.
 SAFE_TOKEN_SYMBOLS = ['ENA', 'LDO', 'ZEC', 'FET', 'APT', 'KCS', 'IOTA', 'SPX', 'KAS', 'FLOKI']
 
 
@@ -33,10 +33,10 @@ async def create_test_tournament(db, start_index: int = 0, period_hours: int = 7
         period_hours: How many records to use as "hours" (72 = 3 days)
     """
     print(f"\n{'='*80}")
-    print(f"🧪 ТЕСТ РАСЧЕТА СКОРОВ: {period_hours} часов (записей)")
+    print(f"Score calculation test: {period_hours} hours (records)")
     print(f"{'='*80}\n")
     
-    # Get SAFE tokens (not affected by previous test)
+    # Get safe tokens (not affected by previous test).
     result = await db.execute(
         select(Token)
         .where(
@@ -49,7 +49,7 @@ async def create_test_tournament(db, start_index: int = 0, period_hours: int = 7
     )
     test_tokens = result.scalars().all()
     
-    print(f"📊 Выбрано БЕЗОПАСНЫХ токенов для теста: {len(test_tokens)}")
+    print(f"[OK] Selected {len(test_tokens)} safe tokens for test")
     for token in test_tokens:
         print(f"   • {token.symbol:6} - {token.name}")
     
@@ -82,24 +82,24 @@ async def create_test_tournament(db, start_index: int = 0, period_hours: int = 7
             prices_by_token[price.token_id] = []
         prices_by_token[price.token_id].append(price)
     
-    # Check data availability
-    print(f"\n📈 Данные по ценам:")
+    # Check data availability.
+    print(f"\nPrice data:")
     for token in test_tokens:
         count = len(prices_by_token.get(token.id, []))
-        print(f"   • {token.symbol:6}: {count} записей")
+        print(f"   {token.symbol:6}: {count} records")
     
     # Select test period
     min_records = min(len(prices_by_token[tid]) for tid in token_ids)
     
     if min_records < start_index + period_hours:
-        print(f"\n⚠️  Недостаточно данных! Доступно: {min_records}, нужно: {start_index + period_hours}")
+        print(f"\n[WARNING] Not enough data. Available: {min_records}, needed: {start_index + period_hours}")
         period_hours = min_records - start_index - 1
-        print(f"   Уменьшаю период до {period_hours} часов")
+        print(f"   Reducing period to {period_hours} hours")
     
-    print(f"\n🎯 Период теста:")
-    print(f"   • Начало: запись #{start_index}")
-    print(f"   • Конец: запись #{start_index + period_hours - 1}")
-    print(f"   • Всего 'часов': {period_hours}")
+    print(f"\nTest period:")
+    print(f"   Start: record #{start_index}")
+    print(f"   End: record #{start_index + period_hours - 1}")
+    print(f"   Total 'hours': {period_hours}")
     
     # Get snapshot prices (at start_index)
     snapshots = {}
@@ -111,8 +111,8 @@ async def create_test_tournament(db, start_index: int = 0, period_hours: int = 7
         if snapshot_time is None:
             snapshot_time = snapshot_price.timestamp
     
-    print(f"\n📸 Snapshot время: {snapshot_time}")
-    print(f"   Snapshot цены:")
+    print(f"\nSnapshot time: {snapshot_time}")
+    print(f"   Snapshot prices:")
     for token in test_tokens:
         snap = snapshots[token.id]
         print(f"   • {token.symbol:6}: ${snap.price:,.4f}")
@@ -166,7 +166,7 @@ async def simulate_and_calculate_scores(
     results = []
     token_ids = [t.id for t in test_tokens]
     
-    # ⭐ NEW: Extract ALL data from objects BEFORE any DB operations
+    # Extract all data from objects before any DB operations.
     tournament_id = tournament.id
     
     # Create complete lookup with all token data
@@ -178,7 +178,7 @@ async def simulate_and_calculate_scores(
             'name': t.name
         }
     
-    print(f"\n⏳ Симуляция {period_hours} часов...\n")
+    print(f"\nSimulating {period_hours} hours...\n")
 
     try:
         for hour in range(period_hours):
@@ -239,7 +239,7 @@ async def simulate_and_calculate_scores(
                     
                     results.append({
                         'hour': hour,
-                        'symbol': token_data['symbol'],  # ⭐ Use pre-loaded data
+                        'symbol': token_data['symbol'],
                         'price': current_price,
                         'snapshot_price': snapshot_price,
                         'hour_change_pct': float(hour_change),
@@ -247,21 +247,21 @@ async def simulate_and_calculate_scores(
                         'score': calculated_score,
                     })
                 
-                # Progress indicator
+                # Progress indicator.
                 if (hour + 1) % 10 == 0:
-                    print(f"   ✓ Обработано {hour + 1}/{period_hours} часов")
+                    print(f"   Processed {hour + 1}/{period_hours} hours")
             
             except Exception as e:
-                print(f"❌ Ошибка на часе {hour}: {e}")
+                print(f"[ERROR] Error at hour {hour}: {e}")
                 import traceback
                 traceback.print_exc()
                 break
     
     finally:
-        # CRITICAL: Restore original prices after test
-        print(f"\n🔄 Восстановление оригинальных цен...")
+        # Restore original prices after test.
+        print(f"\nRestoring original prices...")
         
-        # Clear test prices
+        # Clear test prices.
         await db.execute(
             delete(TokenPrice).where(TokenPrice.token_id.in_(token_ids))
         )
@@ -275,7 +275,7 @@ async def simulate_and_calculate_scores(
         if restored_prices:
             db.add_all(restored_prices)
             await db.commit()
-            print(f"   ✓ Восстановлено {len(restored_prices)} записей цен")
+            print(f"   Restored {len(restored_prices)} price records")
     
     return results
 
@@ -285,11 +285,11 @@ def print_results(results, test_tokens):
     Print results in a nice table format.
     """
     if not results:
-        print("\n⚠️  Нет результатов для отображения")
+        print("\n[WARNING] No results to display")
         return
     
     print(f"\n{'='*120}")
-    print(f"📊 РЕЗУЛЬТАТЫ РАСЧЕТА СКОРОВ")
+    print(f"Score calculation results")
     print(f"{'='*120}\n")
     
     # Group by token
@@ -304,7 +304,7 @@ def print_results(results, test_tokens):
     for token_symbol in sorted(by_token.keys()):
         token_results = by_token[token_symbol]
         
-        print(f"\n🪙 {token_symbol}")
+        print(f"\n{token_symbol}")
         print(f"{'─'*120}")
         
         # Sample: every 6th hour (to fit in terminal)
@@ -324,9 +324,9 @@ def print_results(results, test_tokens):
         headers = ["Time", "Price", "Δ Hour", "Δ Period", "Score"]
         print(tabulate(table_data, headers=headers, tablefmt="simple"))
     
-    # Summary statistics
+    # Summary statistics.
     print(f"\n{'='*120}")
-    print(f"📈 ИТОГОВАЯ СТАТИСТИКА")
+    print(f"Summary statistics")
     print(f"{'='*120}\n")
     
     summary_data = []
@@ -378,8 +378,8 @@ async def main():
         # Print results
         print_results(results, test_tokens)
         
-        # Cleanup
-        print(f"\n🧹 Очистка тестовых данных...")
+        # Cleanup.
+        print(f"\nCleaning up test data...")
         
 
         await db.execute(
@@ -398,7 +398,7 @@ async def main():
         
         await db.commit()
         
-        print(f"✅ Тест завершен! Оригинальные данные восстановлены.\n")
+        print(f"[OK] Test complete. Original data restored.\n")
 
 
 if __name__ == "__main__":

@@ -485,7 +485,7 @@ def simulate_session():
         logger.info(f"=== SIMULATE SESSION START ===")
         logger.info(f"Raw request data: {data}")
 
-        # Основные проверки
+        # Basic validation
         if not data:
             return jsonify({
                 "success": False,

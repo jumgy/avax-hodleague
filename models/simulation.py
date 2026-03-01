@@ -4,34 +4,34 @@ import random
 import math
 
 TOKEN_WEIGHTS = {
-    # Вес 10
+    # Weight 10
     'BTC': 10, 'ETH': 10, 'XRP': 10,
 
-    # Вес 9
+    # Weight 9
     'BNB': 9, 'SOL': 9, 'TRX': 9,
 
-    # Вес 8
+    # Weight 8
     'DOGE': 8, 'ADA': 8, 'AVAX': 8,
 
-    # Вес 7
+    # Weight 7
     'HYPE': 7, 'WLFI': 7, 'ZEC': 7,
 
-    # Вес 6
+    # Weight 6
     'ENA': 6, 'APT': 6, 'M': 6,
 
-    # Вес 5
+    # Weight 5
     'PUMP': 5, 'KCS': 5, 'POL': 5,
 
-    # Вес 4
+    # Weight 4
     'KAS': 4, 'FLR': 4, 'DASH': 4,
 
-    # Вес 3
+    # Weight 3
     'FET': 3, 'LDO': 3, 'XTZ': 3,
 
-    # Вес 2
+    # Weight 2
     'DCR': 2, 'IOTA': 2, 'AB': 2,
 
-    # Вес 1
+    # Weight 1
     'KAIA': 1, 'FLOKI': 1, 'SPX': 1,
 }
 
@@ -51,7 +51,7 @@ class DailyScore:
     score: int
     tokens_performance: List[Dict]
     market_position: int
-    market_sentiment: Dict  # NEW: добавили настроение рынка
+    market_sentiment: Dict
 
 class CryptoSimulator:
     """Simulates realistic crypto price movements"""
@@ -65,8 +65,7 @@ class CryptoSimulator:
             token['initial_market_cap'] = token['market_cap']
 
     def get_market_sentiment_description(self, sentiment_value: float) -> Dict:
-        """Переводит числовое значение sentiment в понятное описание"""
-        # Переводим в проценты для удобности
+        """Convert numeric sentiment value to human-readable description."""
         sentiment_pct = sentiment_value * 100
         
         if sentiment_value > 0.15:
@@ -106,7 +105,7 @@ class CryptoSimulator:
             }
 
     def calculate_actual_market_performance(self, daily_data: Dict[str, DailyTokenData]) -> float:
-        """Вычисляет реальное среднее изменение рынка за день"""
+        """Compute actual average market change for the day."""
         if not daily_data:
             return 0.0
         
@@ -123,13 +122,13 @@ class CryptoSimulator:
         daily_data = {}
         daily_sentiments = {}
         
-        weekly_sentiment = random.uniform(-0.12, 0.12)  # Задать тренд на неделю
+        weekly_sentiment = random.uniform(-0.12, 0.12)  # Set weekly trend
 
         for day in self.days:
             daily_data[day] = {}
 
             # Market sentiment for the day
-            if random.random() < 0.2:  # 20% шанс на микро-отскок
+            if random.random() < 0.2:  # 20% chance of micro-reversal
                 daily_sentiment = -weekly_sentiment * random.uniform(0.3, 0.7)
             else:
                 daily_sentiment = weekly_sentiment + random.uniform(-0.005, 0.005)
@@ -152,11 +151,11 @@ class CryptoSimulator:
                 individual_change = random.uniform(-volatility, volatility)
                 
                 if base_market_cap > 100e9:
-                    sentiment_multiplier = 0.2  # Для BTC, ETH, BNB
+                    sentiment_multiplier = 0.2  # BTC, ETH, BNB
                 elif base_market_cap > 10e9:
-                    sentiment_multiplier = 0.35  # Для средних
+                    sentiment_multiplier = 0.35  # Mid-cap
                 else:
-                    sentiment_multiplier = 0.5   # Для остальных
+                    sentiment_multiplier = 0.5  # Others
                     
                 total_change = individual_change + (market_sentiment * sentiment_multiplier)
 
@@ -186,11 +185,11 @@ class CryptoSimulator:
                 token['current_price'] = new_price
                 token['market_cap'] = new_market_cap
 
-            # Вычисляем реальное изменение рынка и создаем sentiment
+            # Compute actual market change and build sentiment
             actual_market_change = self.calculate_actual_market_performance(daily_data[day])
             daily_sentiments[day] = self.get_market_sentiment_description(actual_market_change / 100)
             
-            # Обновляем market_change_pct с реальными данными
+            # Set market_change_pct from actual data
             daily_sentiments[day]['actual_market_change_pct'] = round(actual_market_change, 1)
 
         return {
@@ -208,15 +207,15 @@ class FantasyCryptoRankSystem:
         self.deck_size = 5
 
     def calculate_mc_factor(self, market_cap_billions, all_market_caps):
-        # Вычисляем среднее значение market cap из списка
+        # Average market cap from list
         avg_market_cap_billions = sum(all_market_caps) / len(all_market_caps)
         
         rel = market_cap_billions / avg_market_cap_billions
         
         mc_factor = (
-            math.log(1 + rel * 2.5) * 12 +  # логарифмическое сглаживание отношения к средней капе
-            math.sqrt(math.log10(market_cap_billions + 1)) * 15 +  # корень из логарифма абсолютной капы
-            (rel / (1 + rel * 0.1)) * 8  # гиперболическое сглаживание для очень больших rel
+            math.log(1 + rel * 2.5) * 12 +  # Log smoothing of ratio to average cap
+            math.sqrt(math.log10(market_cap_billions + 1)) * 15 +  # Sqrt of log of absolute cap
+            (rel / (1 + rel * 0.1)) * 8  # Hyperbolic smoothing for large rel
         )
         
         return mc_factor
@@ -346,7 +345,7 @@ class FantasyCryptoRankSystem:
                     algorithm_score = 500
                     
                 
-                # ВАЖНО: Ограничиваем итоговый результат до 1000
+                # Cap final score at 1000
                 final_score = min(algorithm_score, 1000)
                 
                 scores[symbol]['final_score'] = final_score
@@ -390,15 +389,14 @@ class FantasyCryptoRankSystem:
                         'name': selected_token.get('name', symbol),
                         'daily_change_pct': round(daily_change, 2),
                         'period_change_pct': round(token_data['period_change'], 2),
-                        # Подробная разбивка скоринга
                         'change_rank': token_data['change_rank'],
                         'activity_rank': token_data['activity_rank'],
                         'weekly_points': weekly_points,
                         'activity_points': activity_points,
-                        'activity_score': round(token_data['activity_score'], 2),  # сырой activity
+                        'activity_score': round(token_data['activity_score'], 2),
                         'mc_factor': round(token_data['mc_factor'], 4),
-                        'weekly_contribution': round(weekly_contribution, 2),      # NEW!
-                        'activity_contribution': round(activity_contribution, 2), # NEW!
+                        'weekly_contribution': round(weekly_contribution, 2),
+                        'activity_contribution': round(activity_contribution, 2),
                         'raw_score': round(token_data['raw_score'], 2),
                         'final_score': round(token_score, 2)
                     })
@@ -416,7 +414,7 @@ class FantasyCryptoRankSystem:
             # Get market sentiment for this day
             sentiment_info = daily_sentiments.get(day, {
                 "status": "Neutral",
-                "description": "Боковое движение рынка", 
+                "description": "Sideways market movement", 
                 "market_change_pct": 0.0,
                 "trend": "neutral",
                 "actual_market_change_pct": 0.0
@@ -427,7 +425,7 @@ class FantasyCryptoRankSystem:
                 score=int(player_score),
                 tokens_performance=tokens_performance,
                 market_position=market_position,
-                market_sentiment=sentiment_info  # NEW: передаем весь словарь
+                market_sentiment=sentiment_info
             ))
 
         return daily_scores
@@ -450,7 +448,7 @@ class FantasyCryptoRankSystem:
                 'total_tokens': len(self.all_tokens),
                 'selected_tokens': len(selected_tokens),
                 'avg_market_cap': sum(token['initial_market_cap'] for token in self.all_tokens) / len(self.all_tokens) if self.all_tokens else 0,
-                'daily_sentiments': daily_sentiments  # NEW: добавляем sentiment info
+                'daily_sentiments': daily_sentiments
             }
         }
 

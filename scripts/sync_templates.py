@@ -1,17 +1,15 @@
 # scripts/sync_templates.py
 """
-Скрипт синхронизации темплейтов карт.
-Находит файлы в R2 и обновляет template_image_url в БД.
+Sync card templates from R2 to database.
 
-Логика:
-1. Получает список файлов из R2 (card_templates/)
-2. Извлекает тикер из имени файла
-3. Находит токен в БД по символу
-4. Обновляет template_image_url для всех карт этого токена
+1. List files in R2 (card_templates/)
+2. Extract ticker from filename
+3. Find token in DB by symbol
+4. Update template_image_url for all cards of that token
 
-Использование:
+Usage:
     python scripts/sync_templates.py
-    python scripts/sync_templates.py --dry-run  # без изменений БД
+    python scripts/sync_templates.py --dry-run  # no DB changes
 """
 
 import asyncio
@@ -20,7 +18,6 @@ import os
 import logging
 from pathlib import Path
 
-# Добавляем корневую директорию в path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from models.database import DatabaseSession
@@ -38,36 +35,33 @@ logger = logging.getLogger(__name__)
 
 
 async def sync_templates(dry_run: bool = False):
-    """
-    Синхронизация темплейтов из R2 с БД.
-    
+    """Sync templates from R2 to database.
+
     Args:
-        dry_run: Если True - только показать что будет сделано, не изменяя БД
+        dry_run: If True, show planned changes without modifying DB.
     """
     try:
-        logger.info("🔍 Fetching templates from R2...")
-        
-        # Получаем список файлов из R2
+        logger.info("Fetching templates from R2...")
+
+        # List files in R2
         response = r2_storage.client.list_objects_v2(
             Bucket=r2_storage.bucket_name,
             Prefix="card_templates/"
         )
         
         if 'Contents' not in response:
-            logger.warning("⚠️ No templates found in R2")
+            logger.warning("No templates found in R2")
             return
         
-        # Группируем файлы по токену
-        # { 'BTC': ['btc_classic_rare_123.png', 'btc_classic_common_456.png'], ... }
+        # Group files by token: { 'BTC': ['btc_classic_rare_123.png', ...], ... }
         templates_by_token = {}
         
         for obj in response['Contents']:
             filename = obj['Key'].replace('card_templates/', '')
-            if not filename:  # пропускаем пустые (папку)
+            if not filename:  # Skip folder entry
                 continue
             
-            # Извлекаем тикер из имени файла
-            # btc_classic_rare_20240203.png → BTC
+            # Extract ticker from filename: btc_classic_rare_20240203.png -> BTC
             token_symbol = filename.split('_')[0].upper()
             
             file_url = f"{r2_storage.public_url}/{obj['Key']}"
@@ -82,57 +76,57 @@ async def sync_templates(dry_run: bool = False):
                 'size_kb': round(file_size / 1024, 2)
             })
         
-        logger.info(f"📦 Found templates for {len(templates_by_token)} tokens")
-        
-        # Работа с БД
+        logger.info(f"Found templates for {len(templates_by_token)} tokens")
+
+        # Database update
         async with DatabaseSession() as db:
             updated_count = 0
             skipped_count = 0
             not_found_tokens = []
             
             for token_symbol, files in templates_by_token.items():
-                # Сортируем файлы по имени (последний = самый свежий по timestamp)
+                # Sort by filename (last = latest by timestamp)
                 files.sort(key=lambda x: x['filename'], reverse=True)
                 latest_file = files[0]
                 
-                logger.info(f"\n🔸 Token: {token_symbol}")
+                logger.info(f"\nToken: {token_symbol}")
                 logger.info(f"   Latest template: {latest_file['filename']} ({latest_file['size_kb']}KB)")
-                
+
                 if len(files) > 1:
-                    logger.info(f"   ℹ️ Found {len(files)} templates, using latest")
-                
-                # Ищем токен в БД
+                    logger.info(f"   Found {len(files)} templates, using latest")
+
+                # Find token in DB
                 result = await db.execute(
                     select(Token).where(Token.symbol == token_symbol)
                 )
                 token = result.scalar_one_or_none()
                 
                 if not token:
-                    logger.warning(f"   ⚠️ Token {token_symbol} not found in DB")
+                    logger.warning(f"   Token {token_symbol} not found in DB")
                     not_found_tokens.append(token_symbol)
                     skipped_count += 1
                     continue
                 
-                # Находим все карты этого токена
+                # Find all cards for this token
                 result = await db.execute(
                     select(Card).where(Card.token_id == token.id)
                 )
                 cards = result.scalars().all()
                 
                 if not cards:
-                    logger.warning(f"   ⚠️ No cards found for token {token_symbol}")
+                    logger.warning(f"   No cards found for token {token_symbol}")
                     skipped_count += 1
                     continue
                 
                 logger.info(f"   Found {len(cards)} card(s)")
                 
-                # Обновляем template_image_url
+                # Update template_image_url
                 for card in cards:
                     old_url = card.template_image_url
                     new_url = latest_file['url']
                     
                     if old_url == new_url:
-                        logger.info(f"   ✓ Card {card.id} already has correct URL")
+                        logger.info(f"   Card {card.id} already has correct URL")
                         continue
                     
                     if dry_run:
@@ -141,38 +135,38 @@ async def sync_templates(dry_run: bool = False):
                         logger.info(f"      NEW: {new_url}")
                     else:
                         card.template_image_url = new_url
-                        logger.info(f"   ✅ Updated card {card.id}")
+                        logger.info(f"   Updated card {card.id}")
                         logger.info(f"      OLD: {old_url}")
                         logger.info(f"      NEW: {new_url}")
                     
                     updated_count += 1
             
-            # Коммитим изменения
+            # Commit changes
             if not dry_run and updated_count > 0:
                 await db.commit()
-                logger.info(f"\n💾 Changes committed to database")
+                logger.info("\nChanges committed to database")
             elif dry_run:
                 logger.info(f"\n[DRY RUN] No changes made to database")
             
-            # Итоги
+            # Summary
             logger.info(f"\n{'='*60}")
-            logger.info(f"📊 Summary:")
+            logger.info("Summary:")
             logger.info(f"   Tokens processed: {len(templates_by_token)}")
             logger.info(f"   Cards updated: {updated_count}")
             logger.info(f"   Skipped: {skipped_count}")
             
             if not_found_tokens:
-                logger.info(f"\n⚠️ Tokens not found in DB:")
+                logger.info("\nTokens not found in DB:")
                 for sym in not_found_tokens:
                     logger.info(f"   - {sym}")
             
             logger.info(f"{'='*60}")
             
             if dry_run:
-                logger.info("\n💡 Run without --dry-run to apply changes")
-    
+                logger.info("\nRun without --dry-run to apply changes")
+
     except Exception as e:
-        logger.error(f"❌ Sync failed: {e}", exc_info=True)
+        logger.error(f"Sync failed: {e}", exc_info=True)
         raise
 
 
@@ -187,10 +181,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     
-    logger.info("🚀 Starting template synchronization...")
+    logger.info("Starting template synchronization...")
     if args.dry_run:
-        logger.info("🔍 DRY RUN MODE - no changes will be made")
-    
+        logger.info("DRY RUN MODE - no changes will be made")
+
     asyncio.run(sync_templates(dry_run=args.dry_run))
-    
-    logger.info("✨ Done!")
+
+    logger.info("Done.")

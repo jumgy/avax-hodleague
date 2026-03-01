@@ -31,7 +31,7 @@ class PackTypeDetail(BaseModel):
     available_from: Optional[str]
     available_until: Optional[str]
     is_active: bool
-    count: int  # Количество у пользователя
+    count: int  # Count owned by user
 
 class AvailablePacksResponse(BaseModel):
     available_packs: int

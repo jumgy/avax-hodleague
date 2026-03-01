@@ -45,8 +45,8 @@ class TokenPrice(Base):
     market_cap = Column(BigInteger, nullable=True)
     change_24h = Column(Numeric(10, 4), nullable=True)
     
-    # Metadata о источниках
-    sources_count = Column(Integer, nullable=False, default=1)  # Количество источников
+    # Source metadata
+    sources_count = Column(Integer, nullable=False, default=1)  # Number of price sources
     timestamp = Column(DateTime(timezone=True), nullable=False, 
                   default=lambda: datetime.now(timezone.utc))
     

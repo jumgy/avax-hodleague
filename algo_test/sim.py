@@ -7,7 +7,7 @@ class FantasyCryptoBalanced:
         if seed is None:
             seed = int(time.time()) % 1000
         random.seed(seed)
-        print(f"🎲 Random seed: {seed}")
+        print(f"Random seed: {seed}")
         
         self.tokens = {
             'BTC': {'market_cap': 1800000, 'start_price': 95000, 'category': 'bluechip'},
@@ -47,16 +47,16 @@ class FantasyCryptoBalanced:
     def _generate_realistic_weekly_data(self):
         data = {}
         
-        # BTC задает тон рынку
+        # BTC sets market tone.
         btc_weekly_change = random.uniform(-0.15, 0.25)
         market_sentiment = "bullish" if btc_weekly_change > 0.05 else "bearish" if btc_weekly_change < -0.05 else "neutral"
         
-        # 2-4 outlier токена
+        # 2-4 outlier tokens.
         all_alts = [t for t in self.tokens.keys() if t not in ['BTC', 'ETH']]
         outlier_tokens = random.sample(all_alts, random.randint(2, 4))
         
-        print(f"📊 BTC: {btc_weekly_change:+.1%}, рынок: {market_sentiment}")
-        print(f"🎯 Индивидуальные движения: {', '.join(outlier_tokens)}")
+        print(f"BTC: {btc_weekly_change:+.1%}, market: {market_sentiment}")
+        print(f"Outlier moves: {', '.join(outlier_tokens)}")
         
         for token, info in self.tokens.items():
             start_price = info['start_price']
@@ -73,15 +73,15 @@ class FantasyCryptoBalanced:
                 daily_vol = random.uniform(0.025, 0.05)
                 
             elif token in outlier_tokens:
-                if random.random() < 0.65:  # Памп
+                if random.random() < 0.65:  # Pump
                     weekly_change = random.uniform(0.18, 0.65)
-                else:  # Дамп
+                else:  # Dump
                     weekly_change = random.uniform(-0.5, -0.18)
                 
                 daily_vol = random.uniform(0.06, 0.14) if category == 'small_alt' else random.uniform(0.04, 0.10)
                 
             else:
-                # Корреляция с BTC по категориям
+                # Correlation with BTC by category.
                 if category == 'large_alt':
                     correlation = random.uniform(0.55, 0.75)
                     multiplier = random.uniform(0.9, 1.4)
@@ -98,9 +98,9 @@ class FantasyCryptoBalanced:
                 btc_influence = btc_weekly_change * correlation * multiplier
                 independent_move = random.uniform(-0.12, 0.18) * (1 - correlation)
                 weekly_change = btc_influence + independent_move
-                weekly_change = max(-0.6, min(0.5, weekly_change))  # Лимиты
+                weekly_change = max(-0.6, min(0.5, weekly_change))  # Clamp
             
-            # Генерация дневных цен
+            # Generate daily prices.
             daily_trend = weekly_change / 7
             prices = [start_price]
             current_price = start_price
@@ -122,12 +122,12 @@ class FantasyCryptoBalanced:
         return data
     
     def calculate_price_per_percent(self, market_cap):
-        """MC фактор с более сбалансированной кривой"""
+        """MC factor with more balanced curve."""
         market_cap_billions = market_cap / 1000
         return (market_cap_billions ** 0.65) * 10
     
     def calculate_total_movement(self, prices):
-        """Сумма всех внутридневных движений"""
+        """Sum of all intraday movements."""
         total_movement = 0
         for i in range(1, len(prices)):
             daily_change_pct = abs((prices[i] - prices[i-1]) / prices[i-1]) * 100
@@ -135,7 +135,7 @@ class FantasyCryptoBalanced:
         return total_movement
     
     def calculate_balanced_scores(self):
-        """Расчет с раздельными компонентами"""
+        """Score calculation with separate components."""
         scores = {}
         
         for token in self.tokens.keys():
@@ -150,14 +150,14 @@ class FantasyCryptoBalanced:
             price_per_percent = self.calculate_price_per_percent(market_cap)
             direction_multiplier = 4 if weekly_change_pct > 0 else 1
             
-            # КОМПОНЕНТ 1: Скор от недельного результата
+            # Component 1: score from weekly result.
             weekly_score = abs(weekly_change_pct) * price_per_percent * direction_multiplier
             
-            # КОМПОНЕНТ 2: Скор от внутридневных качелей
+            # Component 2: score from intraday swings.
             total_movement = self.calculate_total_movement(prices)
             daily_score = total_movement * price_per_percent * 0.15
             
-            # Суммарный сырой скор
+            # Total raw score.
             raw_total = weekly_score + daily_score
             
             scores[token] = {
@@ -175,36 +175,36 @@ class FantasyCryptoBalanced:
         return scores
     
     def balanced_normalize(self, scores):
-        """НОВАЯ нормализация с лучшим распределением"""
+        """Normalization with improved score distribution."""
         raw_values = [s['raw_total'] for s in scores.values()]
         raw_values.sort(reverse=True)
         
-        # Создаем более плавное распределение очков
+        # Smoother score distribution.
         target_distribution = []
         n = len(raw_values)
         
         for i in range(n):
-            if i < 3:  # Топ-3: 850-1000
+            if i < 3:  # Top 3: 850-1000
                 score = 1000 - (i * 50)
-            elif i < 8:  # 4-8 место: 650-800
+            elif i < 8:  # Places 4-8: 650-800
                 score = 800 - ((i-3) * 30)
-            elif i < 15:  # 9-15 место: 400-620
+            elif i < 15:  # Places 9-15: 400-620
                 score = 620 - ((i-8) * 30)
-            elif i < 22:  # 16-22 место: 200-370
+            elif i < 22:  # Places 16-22: 200-370
                 score = 370 - ((i-15) * 25)
-            else:  # Остальные: 0-175
+            else:  # Rest: 0-175
                 score = 175 - ((i-22) * 25)
                 score = max(0, score)
             
             target_distribution.append(score)
         
-        # Привязываем сырые скоры к целевому распределению
+        # Map raw scores to target distribution.
         sorted_tokens = sorted(scores.items(), key=lambda x: x[1]['raw_total'], reverse=True)
         
         for i, (token, data) in enumerate(sorted_tokens):
             final_score = target_distribution[i]
             
-            # Распределяем финальный скор на компоненты пропорционально сырым скорам
+            # Split final score into components by raw score ratio.
             if data['raw_total'] > 0:
                 weekly_ratio = data['weekly_score'] / data['raw_total']
                 daily_ratio = data['daily_score'] / data['raw_total']
@@ -223,7 +223,7 @@ class FantasyCryptoBalanced:
     
     def print_analysis(self):
         print("=" * 160)
-        print("🎮 FANTASY CRYPTO - СБАЛАНСИРОВАННОЕ РАСПРЕДЕЛЕНИЕ ОЧКОВ")
+        print("FANTASY CRYPTO - BALANCED SCORE DISTRIBUTION")
         print("=" * 160)
         
         scores = self.calculate_balanced_scores()
@@ -231,27 +231,27 @@ class FantasyCryptoBalanced:
         
         sorted_tokens = sorted(final_scores.items(), key=lambda x: x[1]['final_score'], reverse=True)
         
-        print(f"\n🏆 ИТОГОВЫЙ РЕЙТИНГ:")
+        print("\nFINAL RANKING:")
         print("-" * 160)
-        print(f"{'#':<3} {'Токен':<8} {'Финал':<7} {'Вес':<4} {'MC(млрд)':<10} {'Недел.%':<10} "
-              f"{'За_неделю':<10} {'За_качели':<10} {'Волат.%':<8} {'Статус':<7}")
+        print(f"{'#':<3} {'Token':<8} {'Final':<7} {'Wgt':<4} {'MC(B)':<10} {'Week%':<10} "
+              f"{'By_week':<10} {'By_swing':<10} {'Vol%':<8} {'Status':<7}")
         print("-" * 160)
         
         for i, (token, data) in enumerate(sorted_tokens, 1):
             mc_billions = data['market_cap'] / 1000
-            trend_emoji = "📈" if data['weekly_change_pct'] > 0 else "📉"
+            trend_emoji = "+" if data['weekly_change_pct'] > 0 else "-"
             
             status = ""
             if data['is_outlier']:
-                status = "🎯ПАМП" if data['weekly_change_pct'] > 0 else "💥ДАМП"
+                status = "PUMP" if data['weekly_change_pct'] > 0 else "DUMP"
             elif data['category'] == 'bluechip':
-                status = "💎БЛЮЧИП"
+                status = "BLUECHIP"
             elif data['category'] == 'large_alt':
-                status = "🟢КРУПН"
+                status = "LARGE"
             elif data['category'] == 'mid_alt':
-                status = "🟡СРЕДН"
+                status = "MID"
             else:
-                status = "🔴МЕЛК"
+                status = "SMALL"
             
             print(f"{i:<3} {token:<8} {data['final_score']:<7} "
                   f"{data['card_weight']:<4} ${mc_billions:<9.1f} "
@@ -259,7 +259,7 @@ class FantasyCryptoBalanced:
                   f"{data['weekly_final']:<10} {data['daily_final']:<10} "
                   f"{data['total_movement']:<8.1f} {status:<7}")
         
-        # Проверка распределения
+        # Distribution check.
         score_ranges = {
             "800-1000": len([s for s in final_scores.values() if s['final_score'] >= 800]),
             "600-799": len([s for s in final_scores.values() if 600 <= s['final_score'] < 800]),
@@ -268,19 +268,19 @@ class FantasyCryptoBalanced:
             "0-199": len([s for s in final_scores.values() if s['final_score'] < 200])
         }
         
-        print(f"\n📊 РАСПРЕДЕЛЕНИЕ ОЧКОВ:")
+        print("\nSCORE DISTRIBUTION:")
         print("-" * 60)
         for range_name, count in score_ranges.items():
-            print(f"{range_name}: {count} токенов")
+            print(f"{range_name}: {count} tokens")
         
         btc_pos = next(i for i, (t, _) in enumerate(sorted_tokens, 1) if t == 'BTC')
         eth_pos = next(i for i, (t, _) in enumerate(sorted_tokens, 1) if t == 'ETH')
-        print(f"\n💎 BTC позиция: #{btc_pos} | ETH позиция: #{eth_pos}")
+        print(f"\nBTC position: #{btc_pos} | ETH position: #{eth_pos}")
         
-        print(f"\n💡 ОБЪЯСНЕНИЕ СТОЛБЦОВ:")
-        print("За_неделю: очки за итоговое недельное изменение цены")
-        print("За_качели: очки за внутринедельные движения (волатильность)")
-        print("Финал = За_неделю + За_качели")
+        print("\nCOLUMN EXPLANATION:")
+        print("By_week: points for weekly price change")
+        print("By_swing: points for intraweek moves (volatility)")
+        print("Final = By_week + By_swing")
 
 if __name__ == "__main__":
     calculator = FantasyCryptoBalanced()

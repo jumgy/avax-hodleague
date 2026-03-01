@@ -84,11 +84,10 @@ async def get_all_users(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить всех пользователей с фильтрацией, сортировкой и пагинацией"""
-    # Базовый запрос
+    """Get all users with filtering, sorting and pagination."""
     query = select(User)
 
-    # Применяем фильтры
+    # Apply filters
     if id is not None:
         query = query.where(User.id == id)
     if is_active is not None:
@@ -123,24 +122,24 @@ async def get_all_users(
         cutoff_date = datetime.utcnow() - timedelta(days=days_registered_to)
         query = query.where(User.created_at >= cutoff_date)
 
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(User, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
 
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     users = result.scalars().all()
 
-    # Формируем результат
+    # Build response
     items = []
     for user in users:
         days_since_registration = (datetime.utcnow() - user.created_at).days
@@ -173,7 +172,7 @@ async def get_user(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретного пользователя по ID"""
+    """Get user by ID."""
     query = select(User).where(User.id == user_id)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
@@ -204,8 +203,7 @@ async def update_user(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Обновить пользователя"""
-    # Получаем пользователя
+    """Update user."""
     query = select(User).where(User.id == user_id)
     result = await db.execute(query)
     user = result.scalar_one_or_none()
@@ -213,7 +211,7 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Проверяем уникальность nickname
+    # Check nickname uniqueness
     if user_data.nickname and user_data.nickname != user.nickname:
         existing_query = select(User).where(User.nickname == user_data.nickname)
         existing_result = await db.execute(existing_query)
@@ -225,7 +223,7 @@ async def update_user(
                 detail=f"User with nickname '{user_data.nickname}' already exists"
             )
 
-    # Проверяем уникальность referral_route
+    # Check referral_route uniqueness
     if user_data.referral_route and user_data.referral_route != user.referral_route:
         existing_query = select(User).where(User.referral_route == user_data.referral_route)
         existing_result = await db.execute(existing_query)
@@ -237,7 +235,7 @@ async def update_user(
                 detail=f"Referral route '{user_data.referral_route}' already exists"
             )
 
-    # Применяем обновления
+    # Apply updates
     update_data = user_data.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(user, field, value)
@@ -268,32 +266,31 @@ async def get_users_summary(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить статистику по пользователям"""
-    # Общее количество пользователей
+    """Get user statistics."""
     total_query = select(func.count()).select_from(User)
     total_result = await db.execute(total_query)
     total_users = total_result.scalar()
 
-    # Активные пользователи
+    # Active users
     active_query = select(func.count()).select_from(User).where(User.is_active == True)
     active_result = await db.execute(active_query)
     active_users = active_result.scalar()
 
     inactive_users = total_users - active_users
 
-    # Регистрации за последнюю неделю
+    # Registrations in last 7 days
     week_ago = datetime.utcnow() - timedelta(days=7)
     week_query = select(func.count()).select_from(User).where(User.created_at >= week_ago)
     week_result = await db.execute(week_query)
     recent_registrations = week_result.scalar()
 
-    # Регистрации за последние 24 часа
+    # Registrations in last 24 hours
     day_ago = datetime.utcnow() - timedelta(days=1)
     day_query = select(func.count()).select_from(User).where(User.created_at >= day_ago)
     day_result = await db.execute(day_query)
     daily_registrations = day_result.scalar()
 
-    # Популярные префиксы никнеймов (сырой SQL запрос)
+    # Popular nickname prefixes (raw SQL)
     popular_prefixes_result = await db.execute(text("""
         SELECT LEFT(nickname, 3) as prefix, COUNT(*) as count 
         FROM users 
@@ -321,8 +318,8 @@ async def find_duplicate_patterns(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Найти паттерны дублирующихся пользователей"""
-    # Похожие никнеймы
+    """Find duplicate user patterns."""
+    # Similar nicknames
     similar_nicknames_result = await db.execute(text("""
         SELECT nickname, COUNT(*) as count
         FROM users 
@@ -334,7 +331,7 @@ async def find_duplicate_patterns(
     """))
     similar_nicknames = similar_nicknames_result.fetchall()
 
-    # Подозрительные массовые регистрации
+    # Suspicious mass registrations
     suspicious_registrations_result = await db.execute(text("""
         SELECT DATE_TRUNC('minute', created_at) as minute_created, 
                COUNT(*) as count,

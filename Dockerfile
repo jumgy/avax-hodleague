@@ -1,22 +1,21 @@
 FROM python:3.11-slim
 
-# Создаём непривилегированного пользователя
+# Create non-root user.
 RUN groupadd -r appuser && useradd -r -g appuser -m appuser
 
 WORKDIR /app
 
-# Копируем и устанавливаем зависимости
+# Copy and install dependencies.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем проект
+# Copy project.
 COPY . .
 
-
-# Меняем владельца (важно для non-root)
+# Set ownership for non-root run.
 RUN chown -R appuser:appuser /app
 
-# Переключаемся на непривилегированного пользователя
+# Switch to non-root user.
 USER appuser
 
 ARG PORT=8000

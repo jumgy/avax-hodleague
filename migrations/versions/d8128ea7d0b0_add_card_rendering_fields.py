@@ -15,17 +15,17 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade():
-    # Добавляем новые колонки
+    # Add new columns
     op.add_column('cards', sa.Column('template_image_url', sa.String(length=500), nullable=True))
     op.add_column('cards', sa.Column('last_rendered_at', sa.DateTime(), nullable=True))
     
-    # Копируем данные из background_image_url в template_image_url
+    # Copy data from background_image_url to template_image_url
     op.execute("UPDATE cards SET template_image_url = background_image_url WHERE template_image_url IS NULL")
     
-    # Делаем template_image_url NOT NULL после заполнения
+    # Make template_image_url NOT NULL after backfill
     op.alter_column('cards', 'template_image_url', nullable=False)
 
 def downgrade():
-    # Откат миграции
+    # Downgrade migration
     op.drop_column('cards', 'last_rendered_at')
     op.drop_column('cards', 'template_image_url')

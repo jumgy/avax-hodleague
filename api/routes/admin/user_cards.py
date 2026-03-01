@@ -54,11 +54,10 @@ async def get_user_cards(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    """Получить карточки пользователей с фильтрацией, сортировкой и пагинацией"""
-    # Базовый запрос
+    """Get user cards with filtering, sorting and pagination."""
     query = select(UserCard)
 
-    # Применяем фильтры
+    # Apply filters
     if user_id:
         query = query.where(UserCard.user_id == user_id)
     if card_id:
@@ -84,19 +83,19 @@ async def get_user_cards(
     elif has_transaction is False:
         query = query.where(UserCard.transaction_hash.is_(None))
 
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(UserCard, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
 
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     items = result.scalars().all()
@@ -116,7 +115,7 @@ async def get_user_card(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    """Получить конкретную карточку пользователя по ID"""
+    """Get user card by ID."""
     query = select(UserCard).where(UserCard.id == user_card_id)
     result = await db.execute(query)
     obj = result.scalar_one_or_none()

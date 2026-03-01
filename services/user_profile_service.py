@@ -23,7 +23,7 @@ class UserProfileService:
 
             if not re.match(r'^0x[a-f0-9]{40}$', wallet_address):
                 logger.warning(f"Invalid wallet address format: {wallet_address}")
-                return None  # Или raise ValueError("Invalid wallet address format")
+                return None
             
             result = await db.execute(
                 select(User).where(User.wallet_address == wallet_address)
@@ -69,7 +69,7 @@ class UserProfileService:
             stats['best_position'] = result_data.best_position if result_data else None
             stats['best_score'] = float(result_data.best_score) if result_data and result_data.best_score else None
             
-            # Balances (плоский список)
+            # Balances (flat list from view)
             try:
                 balances_query = await db.execute(
                     text("""

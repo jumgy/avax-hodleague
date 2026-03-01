@@ -36,7 +36,7 @@ services:
       - app_network
     restart: unless-stopped
 
-  # Мониторинг хоста (CPU, RAM, диск, сеть). Монтируем /proc и /sys хоста — метрики реальной машины.
+  # Host monitoring (CPU, RAM, disk, network). Mount host /proc and /sys for real metrics.
   node_exporter:
     image: prom/node-exporter:v1.7.0
     restart: unless-stopped
@@ -53,7 +53,7 @@ services:
     networks:
       - app_network
 
-  # Мониторинг БД: метрики Postgres → Prometheus → Grafana (только внутри сети, снаружи только UI)
+  # DB monitoring: Postgres metrics to Prometheus/Grafana (internal network only).
   postgres_exporter:
     image: prometheuscommunity/postgres-exporter:latest
     restart: unless-stopped

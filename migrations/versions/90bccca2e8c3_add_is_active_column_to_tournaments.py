@@ -19,12 +19,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade():
-    # Добавляем колонку is_active со значением по умолчанию True
+    # Add is_active column with default True
     op.add_column('tournaments', 
         sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true')
     )
     
-    # Устанавливаем всем существующим турнирам is_active = True
+    # Set is_active = True for all existing tournaments
     op.execute('UPDATE tournaments SET is_active = true WHERE is_active IS NULL')
 
 def downgrade():

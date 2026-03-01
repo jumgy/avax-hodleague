@@ -123,7 +123,7 @@ async def list_tokens_with_prices(
     total = total_result.scalar_one() or 0
 
     if sort_by == TokenSortBy.calculated_score:
-        # Лидерборд: сортировка по MAX(calculated_score) из active_cards_with_score
+        # Leaderboard: sort by MAX(calculated_score) from active_cards_with_score
         order_dir = "DESC" if sort_order == TokenSortOrder.desc else "ASC"
         where_clause = ""
         if is_active is not None:

@@ -7,7 +7,7 @@ class FantasyCryptoRankSystem:
         if seed is None:
             seed = int(time.time()) % 1000
         random.seed(seed)
-        print(f"🎲 Random seed: {seed}")
+        print(f"Random seed: {seed}")
         
         self.tokens = {
             'BTC': {'market_cap': 1800000, 'start_price': 95000, 'category': 'bluechip'},
@@ -45,52 +45,52 @@ class FantasyCryptoRankSystem:
         self.weekly_data = self._generate_realistic_weekly_data()
     
     def _generate_realistic_weekly_data(self):
-        """Генерация реалистичных недельных данных с корреляцией к BTC"""
+        """Generate realistic weekly data with BTC correlation."""
         data = {}
-        
-        # BTC задает общий тон рынку
+
+        # BTC sets overall market tone.
         btc_weekly_change = random.uniform(-0.15, 0.25)
         market_sentiment = "bullish" if btc_weekly_change > 0.05 else "bearish" if btc_weekly_change < -0.05 else "neutral"
         
-        # Выбираем 2-4 outlier токена для индивидуальных движений
+        # Pick 2-4 outlier tokens for individual moves.
         all_alts = [t for t in self.tokens.keys() if t not in ['BTC', 'ETH']]
         outlier_tokens = random.sample(all_alts, random.randint(2, 4))
         
-        print(f"📊 BTC недельное изменение: {btc_weekly_change:+.1%}")
-        print(f"📈 Настроение рынка: {market_sentiment}")
-        print(f"🎯 Индивидуальные движения: {', '.join(outlier_tokens)}")
+        print(f"BTC weekly change: {btc_weekly_change:+.1%}")
+        print(f"Market sentiment: {market_sentiment}")
+        print(f"Outlier moves: {', '.join(outlier_tokens)}")
         
         for token, info in self.tokens.items():
             start_price = info['start_price']
             category = info['category']
             
             if token == 'BTC':
-                # BTC - основа рынка
+                # BTC is market base.
                 weekly_change = btc_weekly_change
                 daily_vol = random.uniform(0.02, 0.04)
                 
             elif token == 'ETH':
-                # ETH коррелирует с BTC на 75%
+                # ETH correlates with BTC at 75%.
                 correlation = 0.75
                 eth_independent = random.uniform(-0.06, 0.10)
                 weekly_change = btc_weekly_change * correlation + eth_independent * (1 - correlation)
                 daily_vol = random.uniform(0.025, 0.05)
                 
             elif token in outlier_tokens:
-                # Outlier токены - индивидуальные памп/дамп
-                if random.random() < 0.65:  # 65% шанс на памп
+                # Outlier tokens: individual pump/dump.
+                if random.random() < 0.65:  # 65% pump
                     weekly_change = random.uniform(0.18, 0.65)
-                else:  # 35% шанс на дамп
+                else:  # 35% dump
                     weekly_change = random.uniform(-0.5, -0.18)
                 
-                # Высокая волатильность для outlier'ов
+                # High volatility for outliers.
                 if category == 'small_alt':
                     daily_vol = random.uniform(0.06, 0.14)
                 else:
                     daily_vol = random.uniform(0.04, 0.10)
                     
             else:
-                # Обычные токены следуют за BTC с различной корреляцией
+                # Regular tokens follow BTC with varying correlation.
                 if category == 'large_alt':
                     correlation = random.uniform(0.55, 0.75)
                     multiplier = random.uniform(0.9, 1.4)
@@ -104,15 +104,15 @@ class FantasyCryptoRankSystem:
                     multiplier = random.uniform(1.3, 2.2)
                     daily_vol = random.uniform(0.06, 0.12)
                 
-                # Базовое влияние BTC + независимое движение
+                # BTC influence + independent move.
                 btc_influence = btc_weekly_change * correlation * multiplier
                 independent_move = random.uniform(-0.12, 0.18) * (1 - correlation)
                 weekly_change = btc_influence + independent_move
                 
-                # Ограничиваем экстремальные значения
+                # Clamp extremes.
                 weekly_change = max(-0.6, min(0.5, weekly_change))
             
-            # Генерация дневных цен с трендом и волатильностью
+            # Generate daily prices with trend and volatility.
             daily_trend = weekly_change / 7
             prices = [start_price]
             current_price = start_price
@@ -134,7 +134,7 @@ class FantasyCryptoRankSystem:
         return data
     
     def calculate_mc_factor(self, market_cap, weekly_change):
-        """MC фактор: асимметрично для роста и падения"""
+        """MC factor: asymmetric for growth vs decline."""
         market_cap_billions = market_cap / 1000
         if weekly_change >= 0:
             return (market_cap_billions ** 0.15) * 12
@@ -142,7 +142,7 @@ class FantasyCryptoRankSystem:
             return (market_cap_billions ** -0.15) * 12
     
     def calculate_daily_growth_bias(self, prices):
-        """Анализ внутридневных движений с поощрением роста"""
+        """Analyze intraday moves with growth bias."""
         up_days_activity = 0
         down_days_activity = 0
         total_activity = 0
@@ -153,10 +153,10 @@ class FantasyCryptoRankSystem:
             total_activity += activity_magnitude
             
             if daily_change_pct > 0:
-                # Растущие дни получают больший вес
+                # Up days get higher weight.
                 up_days_activity += activity_magnitude * 1.4
             else:
-                # Падающие дни получают меньший вес
+                # Down days get lower weight.
                 down_days_activity += activity_magnitude * 1.0
         
         weighted_activity = up_days_activity + down_days_activity
@@ -171,12 +171,11 @@ class FantasyCryptoRankSystem:
         }
     
     def calculate_rank_based_scores(self):
-        """РАНГОВАЯ СИСТЕМА: MC фактор применяется к рангу, а не к процентам"""
+        """Rank system: MC factor applied to rank, not to percent."""
         scores = {}
-        
-        # === ЭТАП 1: НЕДЕЛЬНЫЕ РАНГИ ===
-        
-        # Собираем недельные результаты всех токенов
+
+        # Stage 1: weekly ranks.
+        # Gather weekly results for all tokens.
         weekly_results = []
         for token in self.tokens.keys():
             data = self.weekly_data[token]
@@ -191,25 +190,24 @@ class FantasyCryptoRankSystem:
                 'market_cap': data['market_cap']
             })
         
-        # Сортируем по недельному результату (лучший = ранг 1)
+        # Sort by weekly result (best = rank 1).
         weekly_results.sort(key=lambda x: x['weekly_change_pct'], reverse=True)
-        
-        # Создаем словарь рангов
+
+        # Build rank dict.
         weekly_ranks = {}
         total_tokens = len(weekly_results)
         
-        print(f"\n📊 НЕДЕЛЬНЫЕ РАНГИ ПО РЕЗУЛЬТАТАМ:")
+        print("\nWEEKLY RANKS BY RESULT:")
         print("-" * 80)
         for rank, result in enumerate(weekly_results, 1):
             token = result['token']
             change = result['weekly_change_pct']
             weekly_ranks[token] = rank
-            trend_emoji = "📈" if change > 0 else "📉"
-            print(f"   #{rank:2d} {token:<8} {change:+7.2f}%{trend_emoji}")
-        
-        # === ЭТАП 2: ВНУТРИДНЕВНЫЕ РАНГИ ===
-        
-        # Собираем данные по внутридневной активности
+            trend = "+" if change > 0 else "-"
+            print(f"   #{rank:2d} {token:<8} {change:+7.2f}%{trend}")
+
+        # Stage 2: intraday ranks.
+        # Gather intraday activity data.
         activity_results = []
         for token in self.tokens.keys():
             data = self.weekly_data[token]
@@ -222,22 +220,21 @@ class FantasyCryptoRankSystem:
                 'growth_bias_ratio': daily_data['growth_bias_ratio']
             })
         
-        # Сортируем по взвешенной активности (больше активности = лучший ранг)
+        # Sort by weighted activity (more activity = better rank).
         activity_results.sort(key=lambda x: x['weighted_activity'], reverse=True)
         
-        # Создаем словарь рангов активности
         activity_ranks = {}
-        
-        print(f"\n🎯 РАНГИ ПО ВНУТРИДНЕВНОЙ АКТИВНОСТИ:")
+
+        print("\nRANKS BY INTRADAY ACTIVITY:")
         print("-" * 80)
         for rank, result in enumerate(activity_results, 1):
             token = result['token']
             activity = result['weighted_activity']
             bias_ratio = result['growth_bias_ratio']
             activity_ranks[token] = rank
-            print(f"   #{rank:2d} {token:<8} {activity:6.2f}% активность (рост-смещение: {bias_ratio:.1%})")
-        
-        # === ЭТАП 3: РАСЧЕТ ФИНАЛЬНЫХ СКОРОВ ===
+            print(f"   #{rank:2d} {token:<8} {activity:6.2f}% activity (growth bias: {bias_ratio:.1%})")
+
+        # Stage 3: final score calculation.
         
         for token in self.tokens.keys():
             data = self.weekly_data[token]
@@ -246,24 +243,23 @@ class FantasyCryptoRankSystem:
             start_price = prices[0]
             end_price = prices[-1]
             weekly_change_pct = ((end_price - start_price) / start_price) * 100
-            # Новый асимметричный MC фактор:
+            # Asymmetric MC factor.
             mc_factor = self.calculate_mc_factor(market_cap, weekly_change_pct)
             
-            # Получаем ранги
+            # Get ranks.
             weekly_rank = weekly_ranks[token]
             activity_rank = activity_ranks[token]
             
-            # Преобразуем ранги в очки (лучший ранг = больше очков)
-            weekly_rank_points = total_tokens - weekly_rank + 1  # 30, 29, 28... 1
+            # Convert ranks to points (better rank = more points).
+            weekly_rank_points = total_tokens - weekly_rank + 1
             activity_rank_points = total_tokens - activity_rank + 1
-            
-            # Применяем MC фактор к ранговым очкам
+
             weekly_score = weekly_rank_points * mc_factor
-            daily_score = activity_rank_points * mc_factor * 0.3  # Меньший вес для активности
+            daily_score = activity_rank_points * mc_factor * 0.3  # Lower weight for activity.
             
             raw_total = weekly_score + daily_score
             
-            # Сохраняем детали для анализа
+            # Store details for analysis.
             prices = data['prices']
             start_price = prices[0]
             end_price = prices[-1]
@@ -291,36 +287,36 @@ class FantasyCryptoRankSystem:
         return scores
     
     def balanced_normalize(self, scores):
-        """Нормализация скоров в диапазон 0-1000 с плавным распределением"""
+        """Normalize scores to 0-1000 with smooth distribution."""
         raw_values = [s['raw_total'] for s in scores.values()]
         raw_values.sort(reverse=True)
-        
-        # Создаем целевое распределение очков
+
+        # Target score distribution.
         target_distribution = []
         n = len(raw_values)
         
         for i in range(n):
-            if i < 3:  # Топ-3: 850-1000
+            if i < 3:  # Top 3: 850-1000
                 score = 1000 - (i * 50)
-            elif i < 8:  # 4-8 место: 650-800
+            elif i < 8:  # Places 4-8: 650-800
                 score = 800 - ((i-3) * 30)
-            elif i < 15:  # 9-15 место: 400-620
+            elif i < 15:  # Places 9-15: 400-620
                 score = 620 - ((i-8) * 30)
-            elif i < 22:  # 16-22 место: 200-370
+            elif i < 22:  # Places 16-22: 200-370
                 score = 370 - ((i-15) * 25)
-            else:  # Остальные: 0-175
+            else:  # Rest: 0-175
                 score = 175 - ((i-22) * 25)
                 score = max(0, score)
             
             target_distribution.append(score)
         
-        # Привязываем сырые скоры к целевому распределению
+        # Map raw scores to target distribution.
         sorted_tokens = sorted(scores.items(), key=lambda x: x[1]['raw_total'], reverse=True)
         
         for i, (token, data) in enumerate(sorted_tokens):
             final_score = target_distribution[i]
             
-            # Распределяем финальный скор на компоненты пропорционально
+            # Split final score into components proportionally.
             if data['raw_total'] > 0:
                 weekly_ratio = data['weekly_score'] / data['raw_total']
                 daily_ratio = data['daily_score'] / data['raw_total']
@@ -339,8 +335,8 @@ class FantasyCryptoRankSystem:
     
     def print_detailed_analysis(self):
         print("=" * 200)
-        print("🎮 FANTASY CRYPTO - РАНГОВАЯ СИСТЕМА СКОРИНГА")
-        print("   MC ФАКТОР ПРИМЕНЯЕТСЯ К РАНГУ, А НЕ К ПРОЦЕНТАМ")
+        print("FANTASY CRYPTO - RANK-BASED SCORING")
+        print("   MC FACTOR APPLIED TO RANK, NOT TO PERCENT")
         print("=" * 200)
         
         scores = self.calculate_rank_based_scores()
@@ -348,28 +344,27 @@ class FantasyCryptoRankSystem:
         
         sorted_tokens = sorted(final_scores.items(), key=lambda x: x[1]['final_score'], reverse=True)
         
-        print(f"\n🏆 ИТОГОВЫЙ РЕЙТИНГ ФЭНТЕЗИ ОЧКОВ:")
+        print("\nFINAL FANTASY RANKING:")
         print("-" * 200)
-        print(f"{'#':<3} {'Токен':<8} {'Финал':<7} {'Вес':<4} {'MC(млрд)':<10} {'Недел.%':<10} "
-              f"{'НедР':<5} {'АктР':<5} {'За_неделю':<10} {'За_качели':<10} {'MC_фактор':<10} {'Статус':<10}")
+        print(f"{'#':<3} {'Token':<8} {'Final':<7} {'Wgt':<4} {'MC(B)':<10} {'Week%':<10} "
+              f"{'WkR':<5} {'ActR':<5} {'By_week':<10} {'By_swing':<10} {'MC_fact':<10} {'Status':<10}")
         print("-" * 200)
         
         for i, (token, data) in enumerate(sorted_tokens, 1):
             mc_billions = data['market_cap'] / 1000
-            trend_emoji = "📈" if data['weekly_change_pct'] > 0 else "📉"
-            
-            # Определяем статус токена
+            trend_emoji = "+" if data['weekly_change_pct'] > 0 else "-"
+
             status = ""
             if data['is_outlier']:
-                status = "🎯ПАМП" if data['weekly_change_pct'] > 0 else "💥ДАМП"
+                status = "PUMP" if data['weekly_change_pct'] > 0 else "DUMP"
             elif data['category'] == 'bluechip':
-                status = "💎БЛЮЧИП"
+                status = "BLUECHIP"
             elif data['category'] == 'large_alt':
-                status = "🟢КРУПН"
+                status = "LARGE"
             elif data['category'] == 'mid_alt':
-                status = "🟡СРЕДН"
+                status = "MID"
             else:
-                status = "🔴МЕЛК"
+                status = "SMALL"
             
             print(f"{i:<3} {token:<8} {data['final_score']:<7} "
                   f"{data['card_weight']:<4} ${mc_billions:<9.1f} "
@@ -378,65 +373,63 @@ class FantasyCryptoRankSystem:
                   f"{data['weekly_final']:<10} {data['daily_final']:<10} "
                   f"{data['mc_factor']:<10.0f} {status:<10}")
         
-        # Анализ справедливости системы
-        print(f"\n⚖️ АНАЛИЗ СПРАВЕДЛИВОСТИ РАНГОВОЙ СИСТЕМЫ:")
+        # Fairness analysis.
+        print("\nRANK SYSTEM FAIRNESS ANALYSIS:")
         print("-" * 100)
-        
-        # Найдем BTC и лучший мелкий альт
+
+        # Find BTC and best small alt.
         btc_data = final_scores['BTC']
         small_alts = [(t, d) for t, d in final_scores.items() if d['category'] == 'small_alt']
         best_small_alt = max(small_alts, key=lambda x: x[1]['final_score']) if small_alts else None
         
-        print(f"BTC результат: {btc_data['weekly_change_pct']:+.2f}% (недельный ранг #{btc_data['weekly_rank']})")
-        print(f"BTC финальный скор: {btc_data['final_score']} очков")
-        print(f"BTC MC фактор: {btc_data['mc_factor']:.0f}x")
-        
+        print(f"BTC result: {btc_data['weekly_change_pct']:+.2f}% (weekly rank #{btc_data['weekly_rank']})")
+        print(f"BTC final score: {btc_data['final_score']} pts")
+        print(f"BTC MC factor: {btc_data['mc_factor']:.0f}x")
+
         if best_small_alt:
             token, data = best_small_alt
-            print(f"\nЛучший мелкий альт: {token}")
-            print(f"{token} результат: {data['weekly_change_pct']:+.2f}% (недельный ранг #{data['weekly_rank']})")
-            print(f"{token} финальный скор: {data['final_score']} очков") 
-            print(f"{token} MC фактор: {data['mc_factor']:.0f}x")
-            
-            # Проверка справедливости
+            print(f"\nBest small alt: {token}")
+            print(f"{token} result: {data['weekly_change_pct']:+.2f}% (weekly rank #{data['weekly_rank']})")
+            print(f"{token} final score: {data['final_score']} pts")
+            print(f"{token} MC factor: {data['mc_factor']:.0f}x")
+
             if data['weekly_change_pct'] > btc_data['weekly_change_pct'] and data['final_score'] < btc_data['final_score']:
                 advantage_ratio = btc_data['mc_factor'] / data['mc_factor']
-                print(f"\n✅ СИСТЕМА СПРАВЕДЛИВА!")
-                print(f"   {token} показал лучший результат, но BTC получил больше очков")
-                print(f"   Преимущество BTC по MC фактору: {advantage_ratio:.0f}x")
+                print("\nSYSTEM IS FAIR.")
+                print(f"   {token} had better result but BTC got more points")
+                print(f"   BTC advantage by MC factor: {advantage_ratio:.0f}x")
             elif data['final_score'] > btc_data['final_score']:
-                print(f"\n⚠️ Возможная несправедливость: мелкий альт опережает BTC в финальном счете")
-        
-        # Примеры работы ранговой системы
-        print(f"\n📊 ПРИМЕРЫ РАБОТЫ РАНГОВОЙ СИСТЕМЫ:")
+                print("\n[WARNING] Possible unfairness: small alt ahead of BTC in final score")
+
+        # Rank system examples.
+        print("\nRANK SYSTEM EXAMPLES:")
         print("-" * 100)
-        
-        # Топ-3 по результату vs топ-3 по очкам
+
+        # Top 3 by result vs top 3 by score.
         top_3_performance = sorted(final_scores.items(), key=lambda x: x[1]['weekly_change_pct'], reverse=True)[:3]
         top_3_scores = sorted_tokens[:3]
         
-        print("Топ-3 по недельным результатам:")
+        print("Top 3 by weekly result:")
         for i, (token, data) in enumerate(top_3_performance, 1):
             print(f"   #{i} {token}: {data['weekly_change_pct']:+.2f}%")
-        
-        print("\nТоп-3 по финальным очкам:")
+
+        print("\nTop 3 by final score:")
         for i, (token, data) in enumerate(top_3_scores, 1):
-            print(f"   #{i} {token}: {data['final_score']} очков (результат: {data['weekly_change_pct']:+.2f}%)")
-        
-        # Объяснение системы
-        print(f"\n💡 ОБЪЯСНЕНИЕ РАНГОВОЙ СИСТЕМЫ:")
+            print(f"   #{i} {token}: {data['final_score']} pts (result: {data['weekly_change_pct']:+.2f}%)")
+
+        print("\nRANK SYSTEM EXPLANATION:")
         print("-" * 100)
-        print("НедР: ранг по недельному результату (1 = лучший, 30 = худший)")
-        print("АктР: ранг по внутридневной активности (1 = самый активный)")
-        print("За_неделю: (31 - НедР) × MC_фактор")
-        print("За_качели: (31 - АктР) × MC_фактор × 0.3")
-        print("MC_фактор: множитель на основе рыночной капитализации")
-        print("\n🎯 ПОЧЕМУ ЭТО СПРАВЕДЛИВО:")
-        print("• BTC с небольшим падением может обойти много сильно падающих токенов")
-        print("• Высокий MC фактор BTC компенсирует средний ранг")
-        print("• Мелкие токены должны показать исключительный результат для победы")
+        print("WkR: rank by weekly result (1 = best, 30 = worst)")
+        print("ActR: rank by intraday activity (1 = most active)")
+        print("By_week: (31 - WkR) x MC_factor")
+        print("By_swing: (31 - ActR) x MC_factor x 0.3")
+        print("MC_factor: multiplier from market cap")
+        print("\nWHY IT'S FAIR:")
+        print("- BTC with small decline can beat many strongly declining tokens")
+        print("- BTC high MC factor compensates for average rank")
+        print("- Small tokens must show exceptional result to win")
 
 if __name__ == "__main__":
-    # Запуск с разными seed для тестирования
+    # Run with different seeds for testing.
     calculator = FantasyCryptoRankSystem()
     calculator.print_detailed_analysis()

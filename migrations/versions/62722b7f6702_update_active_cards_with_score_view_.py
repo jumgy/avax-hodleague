@@ -2,7 +2,7 @@
 
 Revision ID: 62722b7f6702
 Revises: 2101ac1c4cc9
-Create Date: [твоя дата]
+Create Date: (set when generating)
 
 """
 from typing import Sequence, Union
@@ -27,7 +27,7 @@ def upgrade() -> None:
             c.token_id,
             c.rarity_id,
             c.design_type,
-            c.rendered_image_url,  -- ИЗМЕНЕНО С background_image_url
+            c.rendered_image_url,  -- CHANGED FROM background_image_url
             c.is_active,
             -- Token info
             t.symbol as token_symbol,
@@ -89,7 +89,7 @@ def downgrade() -> None:
             c.token_id,
             c.rarity_id,
             c.design_type,
-            c.background_image_url,  -- СТАРОЕ ИМЯ
+            c.background_image_url,  -- OLD NAME
             c.is_active,
             -- Token info
             t.symbol as token_symbol,

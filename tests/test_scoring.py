@@ -5,17 +5,16 @@ from typing import List, Dict
 
 def calculate_mc_factor(market_cap: float, all_market_caps: List[float]) -> float:
     """
-    Старая формула: степенная функция от капы
-    Крупные токены получают больше, но не так драматично как с логарифмом
+    Legacy formula: power function of market cap.
+    Larger tokens get more, but less dramatically than with log.
     """
     if not all_market_caps or market_cap <= 0:
         return 1.0
     
-    # Переводим в миллиарды
+    # Convert to billions.
     market_cap_billions = market_cap / 1_000_000_000
     
-    # 🆕 СТАРАЯ ФОРМУЛА (без асимметрии)
-    # Степень 0.15 дает плавный рост
+    # Legacy formula (no asymmetry). Exponent 0.12 gives smooth growth.
     mc_factor = (market_cap_billions ** 0.12) * 12
     
     return mc_factor
@@ -39,34 +38,34 @@ def calculate_scores(tokens: List[Dict]) -> List[Dict]:
     for token in tokens:
         token['activity_rank'] = total_tokens // 2
     
-    # Рассчитываем raw scores
+    # Calculate raw scores.
     for token in tokens:
         mc_factor = calculate_mc_factor(token['market_cap'], all_market_caps)
         token['mc_factor'] = round(mc_factor, 2)
         
-        # Базовые очки от ранга
+        # Base points from rank.
         rank_points = total_tokens - token['change_rank_calc'] + 1
         weekly_points = rank_points
         activity_points = total_tokens - token['activity_rank'] + 1
         
-        # Базовая часть raw_score
+        # Base part of raw_score.
         base_raw_score = weekly_points * mc_factor * 4
         
-        # ПРЯМОЙ БОНУС ОТ ПРОЦЕНТА РОСТА
+        # Direct bonus/penalty from growth percent.
         change = token['tournament_change']
         if change > 0:
-            # Рост дает бонус
+            # Growth gives bonus.
             growth_raw_bonus = (change ** 1.3) * mc_factor * 1.5
         elif change < 0:
-            # 🆕 ПАДЕНИЕ ДАЕТ ШТРАФ (симметрично!)
-            growth_raw_bonus = (abs(change) ** 1.3) * mc_factor * (-1.5)  # Тот же множитель!
+            # Decline gives penalty (symmetric, same multiplier).
+            growth_raw_bonus = (abs(change) ** 1.3) * mc_factor * (-1.5)
         else:
             growth_raw_bonus = 0
         
-        # Activity часть
+        # Activity part.
         activity_raw_score = activity_points * mc_factor * 1
         
-        # ИТОГО
+        # Total.
         raw_score = base_raw_score + growth_raw_bonus + activity_raw_score
         
         token['raw_score'] = raw_score
@@ -74,17 +73,17 @@ def calculate_scores(tokens: List[Dict]) -> List[Dict]:
         token['activity_points'] = activity_points
         token['growth_raw_bonus'] = round(growth_raw_bonus, 1)
     
-    # После расчета всех raw_scores
+    # After computing all raw_scores.
     raw_scores = [t['raw_score'] for t in tokens]
 
-    # Считаем среднее и стандартное отклонение
+    # Mean and standard deviation.
     mean_raw = sum(raw_scores) / len(raw_scores)
     variance = sum((x - mean_raw) ** 2 for x in raw_scores) / len(raw_scores)
     std_raw = variance ** 0.5
 
     print(f"Mean: {mean_raw:.1f}, Std: {std_raw:.1f}")
 
-    # Находим максимальные z-scores отдельно для положительных и отрицательных
+    # Max z-scores for positive and negative separately.
     if std_raw > 0:
         z_scores = [(r - mean_raw) / std_raw for r in raw_scores]
         max_positive_z = max(z for z in z_scores if z > 0) if any(z > 0 for z in z_scores) else 1
@@ -94,7 +93,7 @@ def calculate_scores(tokens: List[Dict]) -> List[Dict]:
     
     print(f"Max positive z: {max_positive_z:.2f}, Max negative z: {max_negative_z:.2f}")
     
-    # Z-score нормализация с раздельным масштабом
+    # Z-score normalization with separate scale.
     for token in tokens:
         raw_score = token['raw_score']
         
@@ -114,9 +113,7 @@ def calculate_scores(tokens: List[Dict]) -> List[Dict]:
     return tokens
 
 def load_data_from_csv(filename: str) -> List[Dict]:
-    """
-    Читаем CSV файл
-    """
+    """Load data from CSV file."""
     tokens = []
     with open(filename, 'r') as f:
         reader = csv.DictReader(f)
@@ -132,10 +129,8 @@ def load_data_from_csv(filename: str) -> List[Dict]:
     return tokens
 
 def print_results(tokens: List[Dict]):
-    """
-    Выводим красивую таблицу
-    """
-    # Сортируем по новому скору
+    """Print results as a table."""
+    # Sort by new score.
     sorted_tokens = sorted(tokens, key=lambda x: x['new_score'], reverse=True)
     
     print("\n" + "="*140)
@@ -161,20 +156,20 @@ def print_results(tokens: List[Dict]):
     print(f"Max raw score: {max(t['raw_score'] for t in tokens):.1f}")
 
 if __name__ == '__main__':
-    # Читаем данные
+    # Load data.
     print("Loading data from scores.csv...")
     tokens = load_data_from_csv('./tests/scores.csv')
     
     print(f"Loaded {len(tokens)} tokens")
     
-    # Рассчитываем скоры
+    # Calculate scores.
     print("Calculating scores...")
     tokens_with_scores = calculate_scores(tokens)
     
-    # Выводим результаты
+    # Print results.
     print_results(tokens_with_scores)
     
-    # Дополнительная статистика
+    # Extra stats.
     print("\n" + "="*60)
     print("TOP 5 BIGGEST DIFFERENCES:")
     print("="*60)

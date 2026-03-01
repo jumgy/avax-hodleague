@@ -3,9 +3,7 @@ from datetime import datetime, timezone
 from .database import Base
 
 class JobLock(Base):
-    """
-    Distributed locks для фоновых задач
-    """
+    """Distributed locks for background jobs."""
     __tablename__ = 'job_locks'
     
     job_name = Column(String(100), primary_key=True, nullable=False)

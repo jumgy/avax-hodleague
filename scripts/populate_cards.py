@@ -137,10 +137,10 @@ def populate_cards(session):
                 
                 if success:
                     successful_cards.append(token_symbol)
-                    logger.info(f"✅ Successfully created card for {token_symbol}")
+                    logger.info(f"Successfully created card for {token_symbol}")
                 else:
                     failed_cards.append(token_symbol)
-                    logger.error(f"❌ Failed to create card for {token_symbol}")
+                    logger.error(f"Failed to create card for {token_symbol}")
                     
             except Exception as e:
                 logger.error(f"Failed to create card for {token_symbol}: {e}")

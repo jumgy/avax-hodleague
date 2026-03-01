@@ -123,19 +123,19 @@
 </head>
 <body>
     <div class="container">
-        <h1>📦 Bulk Card Template Upload</h1>
+        <h1>Bulk Card Template Upload</h1>
         
         <div class="info">
-            <strong>ℹ️ Инструкция:</strong><br>
-            1. Переименуйте файлы по тикеру: <code>btc.png</code>, <code>eth.png</code>, <code>sol.png</code><br>
-            2. Выберите все файлы (Ctrl+A или Cmd+A)<br>
-            3. Выберите дизайн и редкость<br>
-            4. Нажмите "Upload"
+            <strong>Instructions:</strong><br>
+            1. Rename files by ticker: <code>btc.png</code>, <code>eth.png</code>, <code>sol.png</code><br>
+            2. Select all files (Ctrl+A or Cmd+A)<br>
+            3. Choose design and rarity<br>
+            4. Click "Upload"
         </div>
 
         <form id="uploadForm">
             <div class="form-group">
-                <label for="files">Выберите файлы (PNG, JPG):</label>
+                <label for="files">Select files (PNG, JPG):</label>
                 <input type="file" id="files" name="files" multiple accept=".png,.jpg,.jpeg" required>
                 <div id="fileList" class="file-list" style="display:none;"></div>
             </div>
@@ -161,10 +161,10 @@
 
             <div class="form-group">
                 <label for="admin_token">Admin Token:</label>
-                <input type="password" id="admin_token" name="admin_token" placeholder="Введите admin token" required>
+                <input type="password" id="admin_token" name="admin_token" placeholder="Enter admin token" required>
             </div>
 
-            <button type="submit" id="submitBtn">🚀 Upload</button>
+            <button type="submit" id="submitBtn">Upload</button>
         </form>
 
         <div class="progress" id="progress">
@@ -179,14 +179,14 @@
     <script>
         const API_URL = window.location.origin;
         
-        // Показываем список выбранных файлов
+        // Show list of selected files.
         document.getElementById('files').addEventListener('change', function(e) {
             const fileList = document.getElementById('fileList');
             const files = e.target.files;
             
             if (files.length > 0) {
                 fileList.style.display = 'block';
-                fileList.innerHTML = `<strong>Выбрано файлов: ${files.length}</strong><br>`;
+                fileList.innerHTML = `<strong>Files selected: ${files.length}</strong><br>`;
                 for (let i = 0; i < files.length; i++) {
                     const size = (files[i].size / 1024).toFixed(1);
                     fileList.innerHTML += `<div class="file-item">${files[i].name} (${size}KB)</div>`;
@@ -205,16 +205,16 @@
             const admin_token = document.getElementById('admin_token').value;
             
             if (files.length === 0) {
-                alert('Выберите хотя бы один файл');
+                alert('Select at least one file');
                 return;
             }
             
-            // Показываем прогресс
+            // Show progress.
             document.getElementById('progress').style.display = 'block';
             document.getElementById('results').style.display = 'none';
             document.getElementById('submitBtn').disabled = true;
             
-            // Формируем FormData
+            // Build FormData.
             const formData = new FormData();
             for (let i = 0; i < files.length; i++) {
                 formData.append('files', files[i]);
@@ -233,12 +233,12 @@
                 
                 const data = await response.json();
                 
-                // Обновляем прогресс
+                // Update progress.
                 const progress = (data.uploaded / files.length) * 100;
                 document.getElementById('progressFill').style.width = progress + '%';
                 document.getElementById('progressFill').textContent = Math.round(progress) + '%';
                 
-                // Показываем результаты
+                // Show results.
                 const resultsDiv = document.getElementById('results');
                 resultsDiv.style.display = 'block';
                 resultsDiv.innerHTML = '';
@@ -246,32 +246,32 @@
                 if (data.success) {
                     resultsDiv.innerHTML += `
                         <div class="success">
-                            ✅ <strong>Успешно загружено: ${data.uploaded} файлов</strong><br>
+                            <strong>Uploaded successfully: ${data.uploaded} files</strong><br>
                             Design: ${data.design_type} | Rarity: ${data.rarity}
                         </div>
                     `;
                 } else {
                     resultsDiv.innerHTML += `
                         <div class="error">
-                            ⚠️ <strong>Загружено: ${data.uploaded} | Ошибок: ${data.failed}</strong>
+                            <strong>Uploaded: ${data.uploaded} | Failed: ${data.failed}</strong>
                         </div>
                     `;
                 }
                 
-                // Показываем детали
+                // Show details.
                 if (data.results && data.results.length > 0) {
-                    let details = '<div class="file-list"><strong>Загруженные файлы:</strong><br>';
+                    let details = '<div class="file-list"><strong>Uploaded files:</strong><br>';
                     data.results.forEach(r => {
-                        details += `<div class="file-item">✅ ${r.original_filename} → ${r.token_symbol} (${r.size_kb}KB)</div>`;
+                        details += `<div class="file-item">${r.original_filename} -> ${r.token_symbol} (${r.size_kb}KB)</div>`;
                     });
                     details += '</div>';
                     resultsDiv.innerHTML += details;
                 }
                 
                 if (data.errors && data.errors.length > 0) {
-                    let errors = '<div class="file-list"><strong>Ошибки:</strong><br>';
+                    let errors = '<div class="file-list"><strong>Errors:</strong><br>';
                     data.errors.forEach(e => {
-                        errors += `<div class="file-item">❌ ${e.filename}: ${e.error}</div>`;
+                        errors += `<div class="file-item">${e.filename}: ${e.error}</div>`;
                     });
                     errors += '</div>';
                     resultsDiv.innerHTML += errors;
@@ -281,7 +281,7 @@
                 document.getElementById('results').style.display = 'block';
                 document.getElementById('results').innerHTML = `
                     <div class="error">
-                        ❌ <strong>Ошибка загрузки:</strong><br>
+                        <strong>Upload error:</strong><br>
                         ${error.message}
                     </div>
                 `;

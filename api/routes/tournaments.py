@@ -40,15 +40,15 @@ def get_current_user_optional(
     """Optional auth: cookie OR Bearer header"""
     token = None
 
-    # 1. Пробуем Bearer header (Swagger)
+    # 1. Try Bearer header (Swagger)
     if credentials:
         token = credentials.credentials
 
-    # 2. Если нет, пробуем cookie (фронт)
+    # 2. Else try cookie (frontend)
     if not token:
         token = request.cookies.get("access_token")
 
-    # 3. Если токена нет - это optional, возвращаем None
+    # 3. No token means optional auth; return None
     if not token:
         return None
 
@@ -66,15 +66,15 @@ def get_current_user_required(
     """Required auth: cookie OR Bearer header"""
     token = None
 
-    # 1. Пробуем Bearer header (Swagger)
+    # 1. Try Bearer header (Swagger)
     if credentials:
         token = credentials.credentials
 
-    # 2. Если нет, пробуем cookie (фронт)
+    # 2. Else try cookie (frontend)
     if not token:
         token = request.cookies.get("access_token")
 
-    # 3. Если токена нет - ошибка
+    # 3. No token means auth required; raise
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -98,7 +98,7 @@ def get_current_user_required(
 
 
 class CardInDeckInfo(BaseModel):
-    """Полная информация о карте в деке"""
+    """Full card info in a deck."""
 
     user_card_id: int
     card_id: int
@@ -134,7 +134,7 @@ class PrizePoolInfo(BaseModel):
 
 
 class MyRegistrationNetworkInfo(BaseModel):
-    """Сеть, в которой пользователь зарегистрирован в турнире. Для unregister фронт вызывает контракт в этой сети."""
+    """Network where the user is registered for the tournament. Frontend must call the contract in this network for unregister."""
 
     network: Literal["abstract", "avalanche"]
     chain_id: int
@@ -149,13 +149,13 @@ class TournamentDetail(BaseModel):
     end_date: datetime
     gameplay_start_date: Optional[datetime]
     weight_limit: int
-    prize_pools: Optional[dict[str, PrizePoolInfo]] = None  # Базовые prize pools
-    estimated_final_prize_pools: Optional[dict[str, PrizePoolInfo]] = None  # Расчётные с учётом участников
+    prize_pools: Optional[dict[str, PrizePoolInfo]] = None  # Base prize pools
+    estimated_final_prize_pools: Optional[dict[str, PrizePoolInfo]] = None  # Estimated with participant count
     participants_count: int
     is_active: bool
     duration_days: int
     is_registered: bool = False
-    # Флаг рассинхрона: пользователь зарегистрирован в контракте, но в БД активной деки нет
+    # User is registered on-chain but no active deck in DB (out of sync)
     is_onchain_only_registration: bool = False
     my_deck: Optional[Union[list[int], list[CardInDeckInfo]]] = None
     created_at: datetime
@@ -185,7 +185,7 @@ class CardInDeckResponse(BaseModel):
 
 
 class DeckValidateRequest(BaseModel):
-    """Запрос на пре-валидацию деки"""
+    """Request for deck pre-validation."""
 
     deck_composition: list[int]
 
@@ -193,7 +193,7 @@ class DeckValidateRequest(BaseModel):
 
 
 class DeckValidateResponse(BaseModel):
-    """Ответ пре-валидации с deck_hash для контракта и рекомендацией сети"""
+    """Pre-validation response with deck_hash for contract and recommended network."""
 
     valid: bool
     deck_hash: str
@@ -208,7 +208,7 @@ class DeckValidateResponse(BaseModel):
 
 
 class DeckRegisterRequest(BaseModel):
-    """Запрос на финальную регистрацию с tx_hash"""
+    """Request for final registration with tx_hash."""
 
     deck_composition: list[int]
     tx_hash: str
@@ -226,7 +226,7 @@ class DeckRegisterRequest(BaseModel):
 
 
 class DeckRegisterResponse(BaseModel):
-    """Ответ успешной регистрации"""
+    """Response after successful registration."""
 
     success: bool
     deck_id: int
@@ -238,7 +238,7 @@ class DeckRegisterResponse(BaseModel):
 
 
 class DeckUnregisterRequest(BaseModel):
-    """Запрос на отмену регистрации"""
+    """Request to cancel registration."""
 
     tx_hash: str
     network: Literal["abstract", "avalanche"] = "abstract"
@@ -249,7 +249,7 @@ class DeckUnregisterRequest(BaseModel):
 
 
 class DeckUnregisterResponse(BaseModel):
-    """Ответ отмены регистрации"""
+    """Response after unregistration."""
 
     success: bool
     cards_unlocked: int
@@ -258,7 +258,7 @@ class DeckUnregisterResponse(BaseModel):
 
 
 class ClaimTournamentRewardsResponse(BaseModel):
-    """Ответ клейма наград турнира"""
+    """Response for claiming tournament rewards."""
 
     success: bool
     claimed_count: int
@@ -270,7 +270,7 @@ class ClaimTournamentRewardsResponse(BaseModel):
 
 
 class CardInDeck(BaseModel):
-    """Информация о карте в деке"""
+    """Card info in a deck."""
 
     card_id: int
     token_id: int
@@ -285,7 +285,7 @@ class CardInDeck(BaseModel):
 
 
 class PrizeInfo(BaseModel):
-    """Информация о призе"""
+    """Prize information."""
 
     reward_type_id: int
     reward_name: str
@@ -298,7 +298,7 @@ class PrizeInfo(BaseModel):
 
 
 class LeaderboardEntry(BaseModel):
-    """Запись в лидерборде"""
+    """Leaderboard entry."""
 
     position: int
     deck_id: int
@@ -316,7 +316,7 @@ class LeaderboardEntry(BaseModel):
 
 
 class LeaderboardResponse(BaseModel):
-    """Ответ с лидербордом турнира"""
+    """Tournament leaderboard response."""
 
     tournament_id: int
     tournament_number: int
@@ -379,11 +379,11 @@ async def get_tournaments_list(
 
         query = select(Tournament).where(Tournament.is_active == True)
 
-        # Фильтр по статусу
+        # Filter by status
         if status_filter:
             query = query.where(Tournament.status == status_filter)
         else:
-            # По умолчанию НЕ показываем featured турниры
+            # By default do not show featured tournaments
             if not include_featured:
                 query = query.where(Tournament.status != TournamentStatus.FEATURED)
 
@@ -487,7 +487,7 @@ async def get_tournament_details(
         # Initialize prize config service
         prize_service = PrizeConfigService(db)
 
-        # Get prize pools information (базовые + расчётные)
+        # Get prize pools (base and estimated)
         prize_pools_info = None
         estimated_final_prize_pools_info = None
 
@@ -495,27 +495,27 @@ async def get_tournament_details(
             prize_pools_info = {}
             estimated_final_prize_pools_info = {}
 
-            # Получаем все reward types за один запрос
+            # Fetch all reward types in one query
             reward_type_ids = [int(rid) for rid in tournament.prize_pools.keys()]
             reward_types_query = select(RewardType).where(RewardType.id.in_(reward_type_ids))
             reward_types_result = await db.execute(reward_types_query)
             reward_types = reward_types_result.scalars().all()
 
-            # Создаем словарь для быстрого доступа
+            # Build dict for quick lookup
             reward_types_dict = {str(rt.id): rt for rt in reward_types}
 
-            # Формируем prize_pools_info (базовые) и estimated_final_prize_pools (расчётные)
+            # Build base prize_pools_info and estimated_final_prize_pools
             for reward_type_id, base_amount in tournament.prize_pools.items():
                 reward_type = reward_types_dict.get(reward_type_id)
                 if reward_type:
-                    # Базовый prize pool
+                    # Base prize pool
                     base_amount_float = float(base_amount)
                     prize_pools_info[reward_type_id] = {
                         "amount": str(base_amount_float),
                         "currency_name": reward_type.name,
                     }
 
-                    # Расчётный финальный prize pool с учётом участников
+                    # Estimated final prize pool with participant count
                     final_amount = prize_service.calculate_dynamic_prize_pool(
                         base_prize_pool=float(base_amount), total_participants=participants_count
                     )
@@ -544,7 +544,7 @@ async def get_tournament_details(
                 is_registered = True
                 deck_composition = deck.deck_composition if isinstance(deck.deck_composition, list) else None
 
-                # Сеть регистрации — для unregister фронт должен вызвать контракт в этой же сети
+                # Registration network; frontend must call contract in same network for unregister
                 my_registration_network = None
                 if deck.registration_chain_id is not None:
                     net_info = TournamentRegistrationService.get_network_info_for_chain_id(deck.registration_chain_id)
@@ -557,16 +557,16 @@ async def get_tournament_details(
 
                 if deck_composition:
                     if include_deck:
-                        # Для FINISHED турниров используем исторические scores из TournamentResult
+                        # For FINISHED use historical scores from TournamentResult
                         if tournament.status == TournamentStatus.FINISHED:
-                            # Получаем result для этой деки (deck уже найден выше)
+                            # Get result for this deck (deck already loaded above)
                             result_query = select(TournamentResult).where(
-                                TournamentResult.tournament_deck_id == deck.id  # ✅ Проще!
+                                TournamentResult.tournament_deck_id == deck.id
                             )
                             result = (await db.execute(result_query)).scalar_one_or_none()
 
                             if result:
-                                # Используем исторические scores
+                                # Use historical scores
                                 my_deck = await get_historical_cards_info(
                                     user_card_ids=deck_composition,
                                     card_scores=result.card_scores,
@@ -574,16 +574,16 @@ async def get_tournament_details(
                                     db=db,
                                 )
                             else:
-                                # Если результата нет - показываем просто состав
+                                # No result; return deck composition only
                                 my_deck = deck_composition
                         else:
-                            # Для REGISTRATION/ONGOING используем live данные из view
+                            # For REGISTRATION/ONGOING use live data from view
                             my_deck = await get_full_cards_info(deck_composition, db)
                     else:
                         my_deck = deck_composition
             else:
-                # В БД регистрации нет, но могла остаться запись в контракте (например, ошибка после on-chain шага).
-                # Делаем быструю on-chain проверку с таймаутом, чтобы не блокировать ответ надолго.
+                # No registration in DB but may exist on-chain (e.g. error after on-chain step).
+                # Quick on-chain check with timeout to avoid blocking the response.
                 wallet = (current_user.get("wallet_address") or "").strip()
                 if not wallet:
                     wallet = (
@@ -611,8 +611,8 @@ async def get_tournament_details(
             end_date=tournament.end_date,
             gameplay_start_date=tournament.gameplay_start_date,
             weight_limit=tournament.weight_limit,
-            prize_pools=prize_pools_info,  # Базовые prize pools
-            estimated_final_prize_pools=estimated_final_prize_pools_info,  # Расчётные prize pools
+            prize_pools=prize_pools_info,
+            estimated_final_prize_pools=estimated_final_prize_pools_info,
             participants_count=participants_count,
             is_active=tournament.is_active,
             duration_days=tournament.duration_days,
@@ -635,14 +635,14 @@ async def get_tournament_details(
 
 async def get_cards_info(user_card_ids: list[int], db: AsyncSession) -> list[CardInDeck]:
     """
-    Получить детальную информацию о картах по их user_card_id
+    Get card details by user_card_id list.
 
     Args:
-        user_card_ids: Список user_cards.id из deck_composition
-        db: Database session
+        user_card_ids: List of user_cards.id from deck_composition.
+        db: Database session.
 
     Returns:
-        Список CardInDeck с полной информацией (включая изображения из cards)
+        List of CardInDeck with full info (including images from cards).
     """
     if not user_card_ids:
         return []
@@ -652,7 +652,7 @@ async def get_cards_info(user_card_ids: list[int], db: AsyncSession) -> list[Car
     from models.token_models import Token
     from models.user_card_models import UserCard
 
-    # ⭐ Получаем cards через user_cards
+    # Load cards via user_cards
     cards_query = (
         select(
             UserCard.id.label("user_card_id"),
@@ -674,7 +674,7 @@ async def get_cards_info(user_card_ids: list[int], db: AsyncSession) -> list[Car
     cards_result = await db.execute(cards_query)
     cards_rows = cards_result.all()
 
-    # Создаем словарь для быстрого доступа по user_card_id
+    # Build dict by user_card_id for order preservation
     cards_dict = {}
     for row in cards_rows:
         cards_dict[row.user_card_id] = CardInDeck(
@@ -688,23 +688,21 @@ async def get_cards_info(user_card_ids: list[int], db: AsyncSession) -> list[Car
             template_image_url=row.template_image_url,
         )
 
-    # Возвращаем в том же порядке что и user_card_ids
+    # Return in same order as user_card_ids
     return [cards_dict[user_card_id] for user_card_id in user_card_ids if user_card_id in cards_dict]
 
 
 async def get_full_cards_info(user_card_ids: list[int], db: AsyncSession) -> list[CardInDeckInfo]:
     """
-    Получить ПОЛНУЮ детальную информацию о картах из деки
-    Используется:
-    - В GET /tournaments/{id}?include_deck=true (для своей деки)
-    - В GET /tournaments/{id}/decks/{deck_id} (для любой деки с проверкой доступа)
+    Get full card details for deck (score, tournament_change, market_cap, images).
+    Used in GET /tournaments/{id}?include_deck=true and GET /tournaments/{id}/decks/{deck_id}.
 
     Args:
-        user_card_ids: Список user_cards.id из deck_composition
-        db: Database session
+        user_card_ids: List of user_cards.id from deck_composition.
+        db: Database session.
 
     Returns:
-        Список CardInDeckInfo с полной информацией (score, tournament_change, market_cap, images)
+        List of CardInDeckInfo with full info.
     """
     if not user_card_ids:
         return []
@@ -734,7 +732,7 @@ async def get_full_cards_info(user_card_ids: list[int], db: AsyncSession) -> lis
     cards_result = await db.execute(cards_query, {"user_card_ids": user_card_ids})
     cards_rows = cards_result.fetchall()
 
-    # Сохраняем порядок карт из deck_composition
+    # Preserve order from deck_composition
     cards_dict = {}
     for row in cards_rows:
         cards_dict[row.user_card_id] = CardInDeckInfo(
@@ -754,20 +752,20 @@ async def get_full_cards_info(user_card_ids: list[int], db: AsyncSession) -> lis
             calculated_score=float(row.calculated_score) if row.calculated_score else 0.0,
         )
 
-    # Возвращаем в том же порядке что в deck_composition
+    # Return in same order as deck_composition
     return [cards_dict[card_id] for card_id in user_card_ids if card_id in cards_dict]
 
 
 async def get_prizes_info(prizes_json: dict, db: AsyncSession) -> list[PrizeInfo]:
     """
-    Преобразует prizes JSON в список PrizeInfo с названиями наград.
+    Convert prizes JSON to list of PrizeInfo with reward names.
 
     Args:
-        prizes_json: {"1": "12250.50", "2": "45000.00"}
-        db: Database session
+        prizes_json: e.g. {"1": "12250.50", "2": "45000.00"}.
+        db: Database session.
 
     Returns:
-        List[PrizeInfo]
+        List of PrizeInfo.
     """
     if not prizes_json:
         return []
@@ -802,22 +800,21 @@ async def get_historical_cards_info(
     user_card_ids: list[int], card_scores: Optional[Union[dict, list]], tournament_id: int, db: AsyncSession
 ) -> list[CardInDeckInfo]:
     """
-    Получить информацию о картах с историческими скорами из TournamentResult.
+    Get card info with historical scores from TournamentResult.
 
     Args:
-        user_card_ids: Список user_cards.id из deck_composition
-        card_scores: JSON из TournamentResult.card_scores
-                    Может быть dict {"card_id": score} или list [score1, score2, score3]
-        tournament_id: ID турнира для получения price_change из token_scores
-        db: Database session
+        user_card_ids: List of user_cards.id from deck_composition.
+        card_scores: JSON from TournamentResult.card_scores; dict {"card_id": score} or list [score1, score2, ...].
+        tournament_id: Tournament ID for price_change from token_scores.
+        db: Database session.
 
     Returns:
-        Список CardInDeckInfo с историческими скорами
+        List of CardInDeckInfo with historical scores.
     """
     if not user_card_ids:
         return []
 
-    # Карты + price_change одним запросом (LATERAL join)
+    # Cards and price_change in one query (LATERAL join)
     cards_query = text("""
         SELECT 
             uc.id as user_card_id,
@@ -856,21 +853,20 @@ async def get_historical_cards_info(
 
     if card_scores:
         if isinstance(card_scores, dict):
-            # Формат: {"card_id": score}
+            # Format: {"card_id": score}
             for card_id_str, score_value in card_scores.items():
                 scores_dict[int(card_id_str)] = float(score_value)
         elif isinstance(card_scores, list):
-            # Формат: [score1, score2, score3]
-            # Сопоставляем индексы с user_card_ids (порядок важен!)
+            # Format: [score1, score2, ...]; index matches user_card_ids order
             for idx, user_card_id in enumerate(user_card_ids):
                 if idx < len(card_scores):
-                    # Находим card_id по user_card_id
+                    # Resolve card_id from user_card_id
                     for row in cards_rows:
                         if row.user_card_id == user_card_id:
                             scores_dict[row.card_id] = float(card_scores[idx])
                             break
 
-    # Формируем результат
+    # Build result list
     cards_dict = {}
     for row in cards_rows:
         card_id = row.card_id
@@ -889,7 +885,7 @@ async def get_historical_cards_info(
             calculated_score=scores_dict.get(card_id, 0.0),
         )
 
-    # Возвращаем в том же порядке
+    # Return in same order as user_card_ids
     return [cards_dict[card_id] for card_id in user_card_ids if card_id in cards_dict]
 
 
@@ -906,7 +902,7 @@ async def get_deck_details(
     db: AsyncSession = Depends(get_async_db),
 ):
     try:
-        # 1. Получаем турнир + деку + пользователя + результат одним запросом
+        # 1. Load tournament, deck, user, result in one query
         combined_query = (
             select(
                 Tournament,
@@ -933,7 +929,7 @@ async def get_deck_details(
         combined_row = combined_result.first()
 
         if not combined_row:
-            # Различаем "турнир не найден" и "дека не найдена"
+            # Distinguish "tournament not found" vs "deck not found"
             tournament_check = await db.execute(select(Tournament).where(Tournament.id == tournament_id))
             if not tournament_check.scalar_one_or_none():
                 raise HTTPException(status_code=404, detail=f"Tournament {tournament_id} not found")
@@ -941,7 +937,7 @@ async def get_deck_details(
 
         tournament, deck, wallet_address, nickname, avatar_url, position, score, card_scores, prizes_json = combined_row
 
-        # 3. Проверка доступа
+        # 3. Access check
         user_id = current_user.get("user_id") if current_user else None
         is_own_deck = user_id == deck.user_id
 
@@ -951,7 +947,7 @@ async def get_deck_details(
                     status_code=403, detail=f"Cannot view other players' decks during '{tournament.status}' phase"
                 )
 
-        # 4. Парсим deck_composition
+        # 4. Parse deck_composition
         card_ids = []
         if deck.deck_composition:
             for card_entry in deck.deck_composition:
@@ -963,7 +959,7 @@ async def get_deck_details(
         if not card_ids:
             raise HTTPException(status_code=404, detail="Deck composition is empty")
 
-        # 5–6. Параллельно: карты и призы (не зависят друг от друга)
+        # 5–6. Load cards and prizes in parallel (independent)
         if prizes_json:
             cards_info, prizes_info = await asyncio.gather(
                 get_historical_cards_info(
@@ -977,7 +973,7 @@ async def get_deck_details(
             )
             prizes_info = None
 
-        # 7. Формируем ответ
+        # 7. Build response
         return DeckDetailResponse(
             deck_id=deck.id,
             tournament_id=tournament.id,
@@ -1033,7 +1029,7 @@ async def get_tournament_leaderboard(
     - Last calculation timestamp
     """
     try:
-        # Проверяем что турнир существует
+        # Ensure tournament exists
         tournament_query = select(Tournament).where(Tournament.id == tournament_id)
         tournament_result = await db.execute(tournament_query)
         tournament = tournament_result.scalar_one_or_none()
@@ -1041,7 +1037,7 @@ async def get_tournament_leaderboard(
         if not tournament:
             raise HTTPException(status_code=404, detail=f"Tournament {tournament_id} not found")
 
-        # Получаем общее количество участников с результатами
+        # Total participants with results
         total_query = (
             select(func.count()).select_from(TournamentResult).where(TournamentResult.tournament_id == tournament_id)
         )
@@ -1063,14 +1059,14 @@ async def get_tournament_leaderboard(
                 last_updated=None,
             )
 
-        # Получаем время последнего обновления
+        # Last update time
         last_updated_query = select(func.max(TournamentResult.calculated_at)).where(
             TournamentResult.tournament_id == tournament_id
         )
         last_updated_result = await db.execute(last_updated_query)
         last_updated = last_updated_result.scalar()
 
-        # Получаем лидерборд с пагинацией
+        # Paginated leaderboard
         offset = (page - 1) * limit
 
         leaderboard_query = (
@@ -1086,10 +1082,10 @@ async def get_tournament_leaderboard(
         leaderboard_result = await db.execute(leaderboard_query)
         leaderboard_rows = leaderboard_result.all()
 
-        # Формируем список лидеров
+        # Build leaderboard entries
         leaderboard = []
         for result, deck, wallet_address, nickname, avatar_url in leaderboard_rows:
-            # Поддержка двух форматов deck_composition
+            # Support both deck_composition formats (dict or int)
             card_ids = []
             if deck.deck_composition:
                 for card_entry in deck.deck_composition:
@@ -1098,10 +1094,10 @@ async def get_tournament_leaderboard(
                     elif isinstance(card_entry, int):
                         card_ids.append(card_entry)
 
-            # Получаем детальную информацию о картах
+            # Card details
             cards_info = await get_cards_info(card_ids, db)
 
-            # Получаем информацию о призах
+            # Prize details
             prizes_info = await get_prizes_info(result.prizes, db)
 
             leaderboard.append(
@@ -1120,7 +1116,7 @@ async def get_tournament_leaderboard(
                 )
             )
 
-        # Получаем позицию текущего пользователя (если authenticated)
+        # Current user position (if authenticated)
         my_position = None
         user_id = current_user.get("user_id") if current_user else None
 
@@ -1140,13 +1136,13 @@ async def get_tournament_leaderboard(
             if user_deck_row:
                 user_deck, user_wallet, user_nickname, user_avatar = user_deck_row
 
-                # Получаем результат пользователя
+                # User result
                 user_result_query = select(TournamentResult).where(TournamentResult.tournament_deck_id == user_deck.id)
                 user_result_result = await db.execute(user_result_query)
                 user_result = user_result_result.scalar_one_or_none()
 
                 if user_result:
-                    # Парсим card_ids из дека пользователя
+                    # Parse card_ids from user deck
                     user_card_ids = []
                     if user_deck.deck_composition:
                         for card_entry in user_deck.deck_composition:
@@ -1155,10 +1151,10 @@ async def get_tournament_leaderboard(
                             elif isinstance(card_entry, int):
                                 user_card_ids.append(card_entry)
 
-                    # Получаем детальную информацию о картах пользователя
+                    # User card details
                     user_cards_info = await get_cards_info(user_card_ids, db)
 
-                    # Получаем призы пользователя
+                    # User prizes
                     user_prizes_info = await get_prizes_info(user_result.prizes, db)
 
                     my_position = LeaderboardEntry(
@@ -1216,25 +1212,21 @@ async def validate_deck_for_registration(
     db: AsyncSession = Depends(get_async_db),
 ):
     """
-    ШАГ 1: Пре-валидация деки БЕЗ записи в БД
-
-    Фронтенд должен:
-    1. Вызвать этот эндпоинт
-    2. Получить deck_hash
-    3. Вызвать контракт: registerDeck(tournamentId, deck_hash)
-    4. После успеха контракта вызвать POST /register с tx_hash
+    Step 1: Pre-validate deck without writing to DB.
+    Frontend must: (1) call this endpoint, (2) get deck_hash, (3) call contract registerDeck(tournamentId, deck_hash),
+    (4) after contract success call POST /register with tx_hash.
     """
     try:
         user_id = current_user.get("user_id")
         if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user data in token")
 
-        # Пре-валидация без записи в БД
+        # Pre-validate without DB write
         validation_result = await TournamentRegistrationService.validate_deck_preview(
             db=db, tournament_id=tournament_id, user_id=user_id, deck_composition=body.deck_composition
         )
 
-        # Рекомендация сети по балансу газа (Abstract vs Avalanche)
+        # Recommend network by gas balance (Abstract vs Avalanche)
         wallet = (current_user.get("wallet_address") or "").strip()
         if not wallet:
             user_wallet = (await db.execute(select(User.wallet_address).where(User.id == user_id))).scalar_one_or_none()
@@ -1245,7 +1237,7 @@ async def validate_deck_for_registration(
         network_rec = await TournamentRegistrationService.get_registration_network_recommendation(wallet)
         message = network_rec.get("message") or validation_result["message"]
 
-        # Форматируем ответ
+        # Build response
         cards_info = [
             CardInDeckResponse(
                 user_card_id=card["user_card_id"],
@@ -1293,10 +1285,8 @@ async def register_for_tournament(
     db: AsyncSession = Depends(get_async_db),
 ):
     """
-    ШАГ 2: Финальная регистрация с проверкой блокчейн-транзакции
-
-    Вызывается ПОСЛЕ того как юзер успешно вызвал registerDeck в контракте.
-    Проверяет транзакцию, блокирует карты, сохраняет в БД.
+    Step 2: Final registration with blockchain tx verification.
+    Called after user successfully called registerDeck on contract. Verifies tx, locks cards, saves to DB.
     """
     try:
         user_id = current_user.get("user_id")
@@ -1308,10 +1298,9 @@ async def register_for_tournament(
                 detail="Invalid user data in token. Missing user_id or wallet_address",
             )
 
-        # Логируем сеть для отладки
         logger.info(f"Registering for tournament {tournament_id}: tx_hash={body.tx_hash}, network={body.network}")
 
-        # Финальная регистрация с проверкой транзакции (сеть: abstract или avalanche)
+        # Final registration with tx verification (network: abstract or avalanche)
         tournament_deck = await TournamentRegistrationService.register_deck_with_verification(
             db=db,
             tournament_id=tournament_id,
@@ -1322,7 +1311,7 @@ async def register_for_tournament(
             network=body.network,
         )
 
-        # Получаем информацию о картах для ответа
+        # Load card info for response
         cards_query = (
             select(UserCard, Card, Token, Rarity)
             .join(Card, UserCard.card_id == Card.id)
@@ -1374,12 +1363,9 @@ async def unregister_from_tournament(
     db: AsyncSession = Depends(get_async_db),
 ):
     """
-    Отмена регистрации с проверкой блокчейн-транзакции
-
-    Юзер должен:
-    1. Вызвать контракт: unregisterDeck(tournamentId)
-    2. Вызвать этот эндпоинт с tx_hash
-    3. Карты разблокируются после проверки транзакции
+    Unregister with blockchain tx verification.
+    User must: (1) call contract unregisterDeck(tournamentId), (2) call this endpoint with tx_hash.
+    Cards are unlocked after tx verification.
     """
     try:
         user_id = current_user.get("user_id")
@@ -1388,7 +1374,7 @@ async def unregister_from_tournament(
         if not user_id or not user_wallet:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user data in token")
 
-        # Отмена регистрации с проверкой транзакции (сеть: abstract или avalanche)
+        # Unregister with tx verification (network: abstract or avalanche)
         result = await TournamentRegistrationService.unregister_deck_with_verification(
             db=db,
             tournament_id=tournament_id,
@@ -1428,10 +1414,8 @@ async def claim_tournament_rewards(
     db: AsyncSession = Depends(get_async_db),
 ):
     """
-    Клейм наград турнира (Claymonograd).
-
-    По JWT определяется пользователь. Находятся все UserReward в статусе pending
-    для этого пользователя и турнира, переводит их в claimed.
+    Claim tournament rewards for the authenticated user.
+    Finds all UserReward in pending status for this user and tournament, marks them as claimed.
     """
     try:
         user_id = current_user.get("user_id")

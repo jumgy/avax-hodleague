@@ -77,7 +77,7 @@ class VerifyRequest(BaseModel):
 
 class AuthResponse(BaseModel):
     token_type: str = "bearer"
-    expires_in: int = 604800  # 7 дней в секундах
+    expires_in: int = 604800  # 7 days in seconds
     user: dict
     cards_granted: Optional[int] = None
     packs_granted: Optional[int] = None
@@ -100,8 +100,8 @@ class AuthResponse(BaseModel):
         }
 
 class TestAuthResponse(BaseModel):
-    """Response model for test authentication (includes token in body)"""
-    access_token: str  # ← Добавляем токен
+    """Response model for test authentication (includes token in body)."""
+    access_token: str
     token_type: str = "bearer"
     expires_in: int = 604800
     user: dict
@@ -136,15 +136,15 @@ def verify_jwt_dependency(
     """Verify JWT token from cookie OR Bearer header"""
     token = None
     
-    # 1. Пробуем Bearer header (Swagger)
+    # 1. Try Bearer header (Swagger)
     if credentials:
         token = credentials.credentials
     
-    # 2. Если нет, пробуем cookie (фронт)
+    # 2. Else try cookie (frontend)
     if not token:
         token = access_token
     
-    # 3. Если токена нет вообще - ошибка
+    # 3. No token means auth required
     if not token:
         raise HTTPException(
             status_code=401, 
@@ -209,7 +209,7 @@ async def verify_signature(
         if not is_valid:
             raise HTTPException(status_code=401, detail="Invalid signature")
         
-        # Проверяем, существует ли уже пользователь
+        # Check if user already exists
         existing_user = await web3_auth_service.get_user_by_wallet(
             body.wallet_address,
             db
@@ -227,7 +227,7 @@ async def verify_signature(
         cards_granted_count = 0
         packs_granted_count = 0
         
-        # Выдаем паки новым пользователям
+        # Grant starter packs to new users
         if is_new_user:
             try:
                 granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
@@ -240,30 +240,29 @@ async def verify_signature(
                 logger.error(f"Error granting starter packs to user {user.id}: {pack_error}")
                 packs_granted_count = 0
         
-        # Создаем JWT токен
+        # Create JWT
         access_token = web3_auth_service.create_jwt_token(user)
         
-        # Для UAT нужен SameSite=None (cross-origin с localhost)
-        # Для production нужен SameSite=lax (same-site)
+        # UAT: SameSite=None for cross-origin; production: SameSite=lax for same-site
         if Config.ENVIRONMENT == "production":
             cookie_secure = True
             cookie_samesite = "lax"
         else:
-            cookie_secure = True  # На UAT есть HTTPS
-            cookie_samesite = "none"  # Разрешаем cross-origin
+            cookie_secure = True  # UAT uses HTTPS
+            cookie_samesite = "none"  # Allow cross-origin
         
         response.set_cookie(
             key="access_token",
             value=access_token,
-            httponly=True,  # Защита от XSS
-            secure=cookie_secure,  # True в production (требует HTTPS)
-            samesite=cookie_samesite,  # "lax" защищает от CSRF для same-site
-            max_age=604800,  # 7 дней
+            httponly=True,  # XSS protection
+            secure=cookie_secure,
+            samesite=cookie_samesite,
+            max_age=604800,  # 7 days
             path="/",
-            domain=None  # Автоматически текущий домен
+            domain=None
         )
         
-        # Формируем ответ БЕЗ токена в body
+        # Response without token in body (token in cookie only)
         response_data = {
             "user": {
                 "id": user.id,
@@ -275,7 +274,7 @@ async def verify_signature(
             }
         }
         
-        # Добавляем информацию о выданных паках для новых пользователей
+        # Include granted packs info for new users
         if is_new_user:
             response_data["cards_granted"] = cards_granted_count
             response_data["packs_granted"] = packs_granted_count
@@ -295,7 +294,7 @@ async def logout(response: Response):
         cookie_secure = True
         cookie_samesite = "lax"
     else:
-        cookie_secure = True    # На всех стендах, если https
+        cookie_secure = True  # When HTTPS is used
         cookie_samesite = "none"
     response.delete_cookie(
         key="access_token",
@@ -316,7 +315,7 @@ async def get_current_user(current_user: dict = Depends(verify_jwt_dependency)):
     }
 
 # ============================================
-# DEV/UAT ONLY ROUTES - Условная регистрация
+# DEV/UAT ONLY ROUTES - Conditional registration
 # ============================================
 
 if Config.ENVIRONMENT != "production":
@@ -328,7 +327,7 @@ if Config.ENVIRONMENT != "production":
     ):
         """TEST ONLY: Create user and JWT without signature verification"""
         try:
-            # Проверяем, существует ли уже пользователь
+            # Check if user already exists
             existing_user = await web3_auth_service.get_user_by_wallet(
                 request.wallet_address,
                 db
@@ -345,7 +344,7 @@ if Config.ENVIRONMENT != "production":
             cards_granted_count = 0
             packs_granted_count = 0
             
-            # Выдаем паки новым пользователям
+            # Grant starter packs to new users
             if is_new_user:
                 try:
                     granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
@@ -358,10 +357,10 @@ if Config.ENVIRONMENT != "production":
                     logger.error(f"Error granting test packs to user {user.id}: {pack_error}")
                     packs_granted_count = 0
             
-            # Создаем JWT токен
+            # Create JWT
             access_token = web3_auth_service.create_jwt_token(user)
             
-            # Формируем ответ с токеном в body (для тестов)
+            # Return token in body (for tests)
             response_data = {
                 "access_token": access_token,
                 "token_type": "bearer",
@@ -376,7 +375,7 @@ if Config.ENVIRONMENT != "production":
                 }
             }
             
-            # Добавляем информацию о выданных паках для новых пользователей
+            # Include granted packs for new users
             if is_new_user:
                 response_data["cards_granted"] = cards_granted_count
                 response_data["packs_granted"] = packs_granted_count

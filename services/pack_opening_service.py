@@ -99,7 +99,7 @@ class PackOpeningService:
         try:
             guaranteed_slots = pack_type.guaranteed_slots
             
-            # Детальная валидация конфигурации
+            # Validate configuration
             if not guaranteed_slots:
                 logger.error(f"Pack type {pack_type.id} ({pack_type.name}) has NULL guaranteed_slots")
                 raise ValueError(f"Pack type '{pack_type.name}' has no configuration (guaranteed_slots is NULL)")
@@ -204,34 +204,30 @@ class PackOpeningService:
             return None
         
     async def _calculate_expires_at(self, db: AsyncSession) -> datetime:
-        """
-        Рассчитывает expires_at для карт.
-        Всегда возвращает ближайшую пятницу 17:00 UTC.
-        """
+        """Calculate expires_at for cards. Always returns next Friday 17:00 UTC."""
         nearest_friday = self._get_next_friday_17utc()
-        logger.info(f"📅 Cards expire at: {nearest_friday}")
+        logger.info(f"Cards expire at: {nearest_friday}")
         return nearest_friday
 
 
     def _get_next_friday_17utc(self) -> datetime:
-        """Возвращает ближайшую пятницу 17:00 UTC"""
+        """Return next Friday 17:00 UTC."""
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
         current_weekday = now.weekday()  # 0 = Monday, 4 = Friday
-        
-        # Если сегодня пятница
+
+        # If today is Friday
         if current_weekday == 4:
             friday_17 = now.replace(hour=17, minute=0, second=0, microsecond=0)
             if now < friday_17:
-                # Ещё не 17:00 → возвращаем сегодня
                 return friday_17
             else:
-                # Уже после 17:00 → следующая пятница
+                # After 17:00, next Friday
                 return friday_17 + timedelta(days=7)
         
-        # Если понедельник-четверг → ближайшая пятница
+        # Monday-Thursday: next Friday
         if current_weekday < 4:
             days_until_friday = 4 - current_weekday
-        # Если суббота-воскресенье → следующая пятница
+        # Saturday-Sunday: next Friday
         else:
             days_until_friday = 7 - current_weekday + 4
         
@@ -459,7 +455,7 @@ class PackOpeningService:
         Get specific pack opening by ID
         Returns None if not found or user doesn't have access
         """
-        from models.user_pack_models import PackOpening, UserPack  # Исправленный импорт
+        from models.user_pack_models import PackOpening, UserPack
         from models.user_card_models import UserCard
         from models.card_models import Card
         from models.token_models import Token

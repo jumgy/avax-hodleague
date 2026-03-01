@@ -96,10 +96,10 @@ def populate_rarities(session):
                 
                 if success:
                     successful_rarities.append(name)
-                    logger.info(f"✅ Successfully created rarity {name}")
+                    logger.info(f"Successfully created rarity {name}")
                 else:
                     failed_rarities.append(name)
-                    logger.error(f"❌ Failed to create rarity {name}")
+                    logger.error(f"Failed to create rarity {name}")
                     
             except Exception as e:
                 logger.error(f"Failed to create rarity {name}: {e}")

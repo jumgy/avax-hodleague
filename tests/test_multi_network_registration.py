@@ -107,7 +107,7 @@ class TestGetRegistrationNetworkRecommendation:
 
 
 class TestGetNetworkInfoForChainId:
-    """get_network_info_for_chain_id(chain_id) - для unregister: сеть по registration_chain_id."""
+    """get_network_info_for_chain_id(chain_id) - for unregister: network by registration_chain_id."""
 
     def test_returns_abstract_for_abstract_chain_id(self):
         with patch.object(Config, "ABSTRACT_CHAIN_ID", 2741):

@@ -26,7 +26,7 @@ class UserRewardResponse(BaseModel):
     expires_at: Optional[datetime]
     extra_data: Optional[dict]
     
-    # Дополнительная информация из связанных таблиц
+    # Extra data from related tables
     user_nickname: Optional[str] = None 
     reward_type_name: Optional[str] = None
     reward_category: Optional[str] = None
@@ -71,16 +71,13 @@ async def get_user_rewards(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """
-    Получить все награды пользователей с фильтрацией, сортировкой и пагинацией
-    """
-    # Базовый запрос с загрузкой связанных данных
+    """Get all user rewards with filtering, sorting and pagination."""
     query = select(UserReward).options(
         joinedload(UserReward.user),
         joinedload(UserReward.reward_type)
     )
     
-    # Применяем фильтры
+    # Apply filters
     if id is not None:
         query = query.where(UserReward.id == id)
     
@@ -139,31 +136,31 @@ async def get_user_rewards(
         else:
             query = query.where(UserReward.claim_status != ClaimStatus.CLAIMED)
     
-    # Фильтры по связанным таблицам
+    # Filters on related tables
     if nickname:
         query = query.join(User).where(User.nickname.ilike(f"%{nickname}%"))
     
     if reward_type_name:
         query = query.join(RewardType).where(RewardType.name.ilike(f"%{reward_type_name}%"))
     
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(UserReward, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
     
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     items_raw = result.unique().scalars().all()
     
-    # Форматируем ответ с дополнительными данными
+    # Build response with related data
     items = []
     for reward in items_raw:
         item_dict = {
@@ -198,7 +195,7 @@ async def get_user_reward(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретную награду пользователя по ID"""
+    """Get user reward by ID."""
     query = select(UserReward).options(
         joinedload(UserReward.user),
         joinedload(UserReward.reward_type)

@@ -11,7 +11,7 @@ from .alpha_test import router as alpha_test_router
 # Create main router that combines all route modules
 router = APIRouter()
 
-# PUBLIC API - для игроков
+# Public API for players
 router.include_router(auth_router, tags=["Game - Auth"])
 router.include_router(alpha_test_router, tags=["Game - Alpha Test"])
 router.include_router(tournaments_router, tags=["Game - Tournaments"])

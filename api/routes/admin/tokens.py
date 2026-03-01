@@ -158,13 +158,12 @@ async def get_all_tokens(
     admin: dict = Depends(verify_admin_token)
 ):
     """
-    Получить все токены с фильтрацией, сортировкой и пагинацией
+    Get all tokens with filtering, sorting and pagination.
     """
     
-    # Базовый запрос
     query = select(Token)
-    
-    # Применяем фильтры
+
+    # Apply filters
     if id is not None:
         query = query.where(Token.id == id)
     
@@ -195,19 +194,19 @@ async def get_all_tokens(
     if updated_to:
         query = query.where(Token.updated_at <= updated_to)
     
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(Token, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
     
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     tokens = result.scalars().all()
@@ -227,7 +226,7 @@ async def get_token(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретный токен по ID"""
+    """Get token by ID."""
     
     query = select(Token).where(Token.id == token_id)
     result = await db.execute(query)
@@ -252,9 +251,9 @@ async def get_token_prices(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить историю цен токена"""
+    """Get token price history."""
     
-    # Проверяем существование токена
+    # Ensure token exists
     token_query = select(Token).where(Token.id == token_id)
     token_result = await db.execute(token_query)
     token = token_result.scalar_one_or_none()
@@ -262,10 +261,10 @@ async def get_token_prices(
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
     
-    # Базовый запрос цен
+    # Base price query
     query = select(TokenPrice).where(TokenPrice.token_id == token_id)
     
-    # Применяем фильтры
+    # Apply filters
     if price_from is not None:
         query = query.where(TokenPrice.price >= price_from)
     
@@ -278,19 +277,19 @@ async def get_token_prices(
     if timestamp_to:
         query = query.where(TokenPrice.timestamp <= timestamp_to)
     
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(TokenPrice, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
     
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     prices = result.scalars().all()
@@ -310,9 +309,9 @@ async def create_token(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Создать новый токен с проверкой уникальности символа"""
+    """Create new token with symbol uniqueness check."""
     
-    # Проверяем уникальность символа
+    # Check symbol uniqueness
     existing_query = select(Token).where(Token.symbol == token_data.symbol)
     existing_result = await db.execute(existing_query)
     existing = existing_result.scalar_one_or_none()
@@ -324,7 +323,7 @@ async def create_token(
         )
     
     try:
-        # Создаем новый токен
+        # Create token
         new_token = Token(**token_data.dict())
         
         db.add(new_token)
@@ -347,9 +346,9 @@ async def update_token(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Обновить существующий токен с проверкой ограничений"""
+    """Update existing token with constraint checks."""
     
-    # Получаем существующий токен
+    # Load existing token
     query = select(Token).where(Token.id == token_id)
     result = await db.execute(query)
     token = result.scalar_one_or_none()
@@ -357,7 +356,7 @@ async def update_token(
     if not token:
         raise HTTPException(status_code=404, detail="Token not found")
     
-    # Проверка уникальности символа если он меняется
+    # Check symbol uniqueness if changed
     if token_data.symbol and token_data.symbol != token.symbol:
         existing_query = select(Token).where(Token.symbol == token_data.symbol)
         existing_result = await db.execute(existing_query)
@@ -370,7 +369,7 @@ async def update_token(
             )
     
     try:
-        # Обновляем поля
+        # Apply updates
         update_data = token_data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(token, field, value)
@@ -395,9 +394,9 @@ async def delete_token(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Деактивировать токен и связанные карты"""
+    """Deactivate token and related cards."""
     
-    # Получаем токен
+    # Load token
     token_query = select(Token).where(Token.id == token_id)
     token_result = await db.execute(token_query)
     token = token_result.scalar_one_or_none()
@@ -406,11 +405,11 @@ async def delete_token(
         raise HTTPException(status_code=404, detail="Token not found")
     
     try:
-        # Деактивируем токен
+        # Deactivate token
         token.is_active = False
         token.updated_at = datetime.utcnow()
         
-        # Деактивируем все связанные активные карты
+        # Deactivate all related active cards
         from models.card_models import Card
         
         affected_cards_query = select(Card).where(
@@ -443,14 +442,14 @@ async def delete_token(
 async def get_scheduler_status(
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить статус планировщика мониторинга цен"""
+    """Get price monitoring scheduler status."""
     return scheduler_service.get_status()
 
 @router.post("/scheduler/trigger", tags=["Scheduler Management"])
 async def trigger_price_monitoring(
     admin: dict = Depends(verify_admin_token)
 ):
-    """Вручную запустить мониторинг цен токенов"""
+    """Manually trigger token price monitoring."""
     try:
         await scheduler_service.run_price_monitor_now()
         return {

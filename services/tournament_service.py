@@ -47,11 +47,11 @@ class TournamentService:
             await db.execute(query, {"tournament_id": tournament_id})
             await db.commit()
 
-            logger.info(f"✅ Tournament snapshot created for tournament_id={tournament_id}")
+            logger.info(f"Tournament snapshot created for tournament_id={tournament_id}")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error creating tournament snapshot: {e}")
+            logger.error(f"Error creating tournament snapshot: {e}")
             await db.rollback()
             return False
 
@@ -86,28 +86,16 @@ class TournamentService:
             await db.commit()
             await db.refresh(tournament)
             
-            logger.info(f"✅ Tournament #{tournament.tournament_number} started (id={tournament.id})")
+            logger.info(f"Tournament #{tournament.tournament_number} started (id={tournament.id})")
             return tournament
             
         except Exception as e:
             await db.rollback()
-            logger.error(f"❌ Error starting tournament {tournament_id}: {e}")
+            logger.error(f"Error starting tournament {tournament_id}: {e}")
             raise
 
-    async def transition_featured_to_registration(self, tournament_id: int, db: AsyncSession):
-        """
-        Переводит турнир из FEATURED в REGISTRATION
-        Вызывается автоматически scheduler'ом при наступлении start_date
-        
-        Args:
-            tournament_id: ID турнира
-            db: Database session
-            
-        Raises:
-            ValueError: если турнир не найден или не в статусе FEATURED
-        """
+
         try:
-            # Получаем турнир
             result = await db.execute(
                 select(Tournament).where(Tournament.id == tournament_id)
             )
@@ -116,14 +104,14 @@ class TournamentService:
             if not tournament:
                 raise ValueError(f"Tournament {tournament_id} not found")
             
-            # Проверка текущего статуса
+            # Check current status
             if tournament.status != TournamentStatus.FEATURED:
                 raise ValueError(
                     f"Tournament {tournament_id} is in status '{tournament.status}', "
                     f"expected 'featured'"
                 )
             
-            # Проверка времени (опционально, для безопасности)
+            # Optional time check for safety
             now = datetime.now(timezone.utc)
             if tournament.start_date > now:
                 raise ValueError(
@@ -131,7 +119,7 @@ class TournamentService:
                     f"({tournament.start_date}) has not arrived yet"
                 )
             
-            # Переводим в REGISTRATION
+            # Transition to REGISTRATION
             tournament.status = TournamentStatus.REGISTRATION
             tournament.updated_at = datetime.now(timezone.utc)
             
@@ -139,7 +127,7 @@ class TournamentService:
             await db.refresh(tournament)
             
             logger.info(
-                f"✅ Tournament #{tournament.tournament_number} (id={tournament_id}) "
+                f"Tournament #{tournament.tournament_number} (id={tournament_id}) "
                 f"transitioned from FEATURED to REGISTRATION"
             )
             
@@ -148,7 +136,7 @@ class TournamentService:
         except Exception as e:
             await db.rollback()
             logger.error(
-                f"❌ Error transitioning tournament {tournament_id} to registration: {e}"
+                f"Error transitioning tournament {tournament_id} to registration: {e}"
             )
             raise
 
@@ -169,7 +157,7 @@ class TournamentService:
         Returns: number of tokens updated
         """
         try:
-            logger.info(f"🔄 Starting token weight recalculation for tournament {tournament_id}")
+            logger.info(f"Starting token weight recalculation for tournament {tournament_id}")
             
             # ========== STEP 1: Get current weight distribution ==========
             logger.info("Step 1: Getting current weight distribution...")
@@ -192,10 +180,10 @@ class TournamentService:
                 logger.info(f"  {count}x tokens with weight {weight}")
             
             if not weight_distribution:
-                logger.warning("⚠️ No active tokens found, skipping weight recalculation")
+                logger.warning("No active tokens found, skipping weight recalculation")
                 return 0
             
-            logger.info(f"✅ Total weight slots: {len(weight_distribution)}")
+            logger.info(f"Total weight slots: {len(weight_distribution)}")
             
             # ========== STEP 2: Get tournament end_date ==========
             logger.info("Step 2: Getting tournament end_date...")
@@ -209,7 +197,7 @@ class TournamentService:
                 raise ValueError(f"Tournament {tournament_id} not found")
             
             end_date = tournament.end_date
-            logger.info(f"✅ Tournament end_date: {end_date}")
+            logger.info(f"Tournament end_date: {end_date}")
             
             # ========== STEP 3: Get common rarity ID ==========
             logger.info("Step 3: Getting common rarity ID...")
@@ -223,7 +211,7 @@ class TournamentService:
                 raise ValueError("Common rarity not found in database")
             
             common_rarity_id = common_rarity.id
-            logger.info(f"✅ Common rarity_id: {common_rarity_id}")
+            logger.info(f"Common rarity_id: {common_rarity_id}")
             
             # ========== STEP 4: Collect token scores DIRECTLY from token_scores ==========
             logger.info("Step 4: Collecting token performance data...")
@@ -256,7 +244,7 @@ class TournamentService:
                 common_card = card_result.scalar_one_or_none()
                 
                 if not common_card:
-                    logger.warning(f"    ⚠️ No active common card found for {token.symbol}, skipping")
+                    logger.warning(f"    No active common card found for {token.symbol}, skipping")
                     continue
                 
                 logger.info(f"    Common card found: card_id={common_card.id}")
@@ -290,11 +278,11 @@ class TournamentService:
                 score_row = score_result.first()
                 
                 if not score_row or score_row[0] is None:
-                    logger.warning(f"    ⚠️ No tournament score found for {token.symbol}, skipping")
+                    logger.warning(f"    No tournament score found for {token.symbol}, skipping")
                     continue
                 
                 card_score = float(score_row[0])
-                logger.info(f"    ✅ Card score: {card_score}")
+                logger.info(f"    Card score: {card_score}")
                 
                 # Get market cap (last value before end_date)
                 market_cap_query = text("""
@@ -325,10 +313,10 @@ class TournamentService:
                 })
             
             if not token_performance:
-                logger.warning("⚠️ No tokens with tournament scores found, skipping weight update")
+                logger.warning("No tokens with tournament scores found, skipping weight update")
                 return 0
             
-            logger.info(f"✅ Collected data for {len(token_performance)} tokens")
+            logger.info(f"Collected data for {len(token_performance)} tokens")
             
             # ========== STEP 5: Sort tokens by performance ==========
             logger.info("Step 5: Sorting tokens by performance...")
@@ -348,7 +336,7 @@ class TournamentService:
             
             if len(token_performance) < len(weight_distribution):
                 logger.warning(
-                    f"⚠️ Only {len(token_performance)} tokens have scores, "
+                    f"Only {len(token_performance)} tokens have scores, "
                     f"but {len(weight_distribution)} weight slots exist"
                 )
             
@@ -388,12 +376,12 @@ class TournamentService:
             
             await db.commit()
             
-            logger.info(f"✅ Token weights recalculated: {updates_count} tokens updated")
+            logger.info(f"Token weights recalculated: {updates_count} tokens updated")
             return updates_count
             
         except Exception as e:
             await db.rollback()
-            logger.error(f"❌ Error recalculating token weights: {e}", exc_info=True)
+            logger.error(f"Error recalculating token weights: {e}", exc_info=True)
             raise
 
     async def finish_tournament(self, tournament_id: int, db: AsyncSession) -> Tournament:
@@ -415,53 +403,53 @@ class TournamentService:
                     f"Cannot finish: status is '{tournament.status}', expected 'ongoing'"
                 )
             
-            logger.info(f"🏁 Finishing tournament #{tournament.tournament_number}...")
-            
-            # Шаг 1: Меняем статус
-            logger.info(f"🏆 [1/6] Changing status to FINISHED...")
+            logger.info(f"Finishing tournament #{tournament.tournament_number}...")
+
+            # Step 1: Change status
+            logger.info("[1/6] Changing status to FINISHED...")
             tournament.status = TournamentStatus.FINISHED
             tournament.updated_at = datetime.now(timezone.utc)
             
-            # Шаг 2: Рассчитываем результаты
-            logger.info(f"📊 [2/6] Calculating final results...")
+            # Step 2: Calculate results
+            logger.info("[2/6] Calculating final results...")
             participants_count = await self.calculate_results(tournament_id, db)
-            logger.info(f"✅ Results calculated for {participants_count} participants")
-            
-            # Шаг 3: Распределяем награды (создаём UserReward)
-            logger.info(f"💰 [3/6] Distributing rewards...")
+            logger.info(f"Results calculated for {participants_count} participants")
+
+            # Step 3: Distribute rewards (create UserReward)
+            logger.info("[3/6] Distributing rewards...")
             rewards_count = await self.distribute_rewards(tournament_id, db)
-            logger.info(f"✅ Distributed {rewards_count} rewards")
-            
-            # Шаг 4: Пересчитываем веса токенов
-            logger.info(f"⚖️  [4/6] Recalculating token weights...")
+            logger.info(f"Distributed {rewards_count} rewards")
+
+            # Step 4: Recalculate token weights
+            logger.info("[4/6] Recalculating token weights...")
             weights_updated = await self.recalculate_token_weights(tournament_id, db)
-            logger.info(f"✅ Updated {weights_updated} token weights")
-            
-            # Шаг 5: Коммитим 
-            logger.info(f"💾 [5/6] Committing all changes...")
+            logger.info(f"Updated {weights_updated} token weights")
+
+            # Step 5: Commit changes
+            logger.info("[5/6] Committing all changes...")
             await db.commit()
             await db.refresh(tournament)
-            logger.info(f"✅ Transaction committed successfully")
-            
-            # Шаг 6: Рендерим карточки 
-            logger.info(f"🎨 [6/6] Rendering cards with updated weights...")
+            logger.info("Transaction committed successfully")
+
+            # Step 6: Render cards
+            logger.info("[6/6] Rendering cards with updated weights...")
             try:
                 render_result = await card_render_service.render_all_active_cards()
                 logger.info(
-                    f"✅ Cards rendered: {render_result.get('success', 0)} success, "
+                    f"Cards rendered: {render_result.get('success', 0)} success, "
                     f"{render_result.get('failed', 0)} failed"
                 )
             except Exception as render_error:
                 # Don't fail the whole tournament finalization if rendering fails
-                logger.error(f"⚠️ Card rendering failed (non-critical): {render_error}", exc_info=True)
-            
-            logger.info(f"✅✅✅ Tournament #{tournament.tournament_number} finished successfully!")
+                logger.error(f"Card rendering failed (non-critical): {render_error}", exc_info=True)
+
+            logger.info(f"Tournament #{tournament.tournament_number} finished successfully!")
             return tournament
             
         except Exception as e:
             await db.rollback()
-            logger.error(f"❌ Error finishing tournament {tournament_id}: {e}", exc_info=True)
-            logger.error(f"   Tournament status, rewards, and weights have been rolled back")
+            logger.error(f"Error finishing tournament {tournament_id}: {e}", exc_info=True)
+            logger.error("Tournament status, rewards, and weights have been rolled back")
             raise
 
 
@@ -471,9 +459,9 @@ class TournamentService:
         Uses token scores closest to (but not after) tournament end_date.
         """
         try:
-            logger.info(f"🔍 Starting calculate_results for tournament {tournament_id}")
-            
-            # Шаг 1: Получаем турнир и его end_date
+            logger.info(f"Starting calculate_results for tournament {tournament_id}")
+
+            # Step 1: Get tournament and end_date
             logger.info(f"Step 1: Fetching tournament...")
             tournament_result = await db.execute(
                 select(Tournament).where(Tournament.id == tournament_id)
@@ -485,7 +473,7 @@ class TournamentService:
             end_date = tournament.end_date
             logger.info(f"  Tournament #{tournament.tournament_number} ended at: {end_date}")
             
-            # Шаг 2: Получаем деки
+            # Step 2: Get decks
             logger.info(f"Step 2: Fetching valid decks...")
             decks_result = await db.execute(
                 select(TournamentDeck)
@@ -500,15 +488,15 @@ class TournamentService:
             decks = decks_result.scalars().all()
             
             if not decks:
-                logger.warning(f"⚠️ No valid participants in tournament {tournament_id}")
+                logger.warning(f"No valid participants in tournament {tournament_id}")
                 return 0
             
-            logger.info(f"✅ Found {len(decks)} valid decks")
+            logger.info(f"Found {len(decks)} valid decks")
             total_participants = len(decks)
             
             deck_scores = []
             
-            # Шаг 3: Считаем скоры для каждого дека
+            # Step 3: Calculate scores for each deck
             for idx, deck in enumerate(decks, start=1):
                 logger.info(f"Step 3.{idx}: Processing deck {deck.id} for user {deck.user_id}")
                 deck_composition = deck.deck_composition
@@ -518,13 +506,13 @@ class TournamentService:
                 card_scores_array = []
                 
                 for card_idx, card_entry in enumerate(deck_composition, start=1):
-                    # Поддержка двух форматов
+                    # Support both dict and int formats
                     if isinstance(card_entry, dict):
                         card_id = card_entry.get('card_id')
                     elif isinstance(card_entry, int):
                         card_id = card_entry
                     else:
-                        logger.error(f"  ❌ Unknown card_entry format: {type(card_entry)} = {card_entry}")
+                        logger.error(f"  Unknown card_entry format: {type(card_entry)} = {card_entry}")
                         card_scores_array.append(0.0)
                         continue
                     
@@ -569,15 +557,15 @@ class TournamentService:
                         if score_row:
                             card_score = float(score_row[0] or 0)
                             score_timestamp = score_row[1]
-                            logger.info(f"    ✅ Card {card_id} score: {card_score} (at {score_timestamp})")
+                            logger.info(f"    Card {card_id} score: {card_score} (at {score_timestamp})")
                             total_score += card_score
                             card_scores_array.append(card_score)
                         else:
-                            logger.warning(f"    ⚠️ No score found for card {card_id} before {end_date}")
+                            logger.warning(f"    No score found for card {card_id} before {end_date}")
                             card_scores_array.append(0.0)
                             
                     except Exception as card_error:
-                        logger.error(f"    ❌ Error getting score for card {card_id}: {card_error}", exc_info=True)
+                        logger.error(f"    Error getting score for card {card_id}: {card_error}", exc_info=True)
                         card_scores_array.append(0.0)
                         raise
                 
@@ -591,21 +579,21 @@ class TournamentService:
                     'card_scores': card_scores_array
                 })
             
-            # Шаг 4: Сортируем по скору
+            # Step 4: Sort by score
             logger.info(f"Step 4: Sorting {len(deck_scores)} decks by score...")
             deck_scores.sort(key=lambda x: x['total_score'], reverse=True)
-            logger.info(f"✅ Sorting complete. Top score: {deck_scores[0]['total_score'] if deck_scores else 0}")
+            logger.info(f"Sorting complete. Top score: {deck_scores[0]['total_score'] if deck_scores else 0}")
             
-            # Шаг 5: Генерируем структуры призов для каждого reward_type
+            # Step 5: Generate prize structures per reward_type
             logger.info(f"Step 5: Generating prize structures...")
             prize_config_service = PrizeConfigService(db)
             
-            # Получаем reward_types и prize_pools из турнира
+            # Get reward_types and prize_pools from tournament
             reward_types = tournament.reward_types or []
             prize_pools = tournament.prize_pools or {}
             
             if not reward_types:
-                logger.warning(f"⚠️ No reward_types configured for tournament {tournament_id}")
+                logger.warning(f"No reward_types configured for tournament {tournament_id}")
             else:
                 for reward_type_id in reward_types:
                     prize_pool = float(prize_pools.get(str(reward_type_id), 0))
@@ -622,10 +610,10 @@ class TournamentService:
                         )
                     else:
                         logger.warning(
-                            f"  ⚠️ No prize pool configured for reward_type {reward_type_id}"
+                            f"  No prize pool configured for reward_type {reward_type_id}"
                         )
             
-            # Шаг 6: Обрабатываем ties и вычисляем призы
+            # Step 6: Handle ties and compute prizes
             logger.info(f"Step 6: Handling ties and calculating prizes...")
             
             results_with_prizes = []
@@ -634,14 +622,14 @@ class TournamentService:
             while i < len(deck_scores):
                 current_score = deck_scores[i]['total_score']
                 
-                # Находим всех с таким же скором
+                # Find all with same score
                 same_score_group = []
                 j = i
                 while j < len(deck_scores) and deck_scores[j]['total_score'] == current_score:
                     same_score_group.append(deck_scores[j])
                     j += 1
                 
-                # Определяем диапазон мест
+                # Determine place range for tie group.
                 start_place = i + 1
                 end_place = i + len(same_score_group)
                 
@@ -650,7 +638,7 @@ class TournamentService:
                     f"{len(same_score_group)} player(s) with score {current_score}"
                 )
                 
-                # Вычисляем призы для каждого reward_type
+                # Compute prizes per reward_type.
                 prizes_dict = {}
                 for reward_type_id in reward_types:
                     avg_prize = await prize_config_service.calculate_avg_prize_for_tie(
@@ -664,17 +652,17 @@ class TournamentService:
                 if prizes_dict:
                     logger.info(f"    Prizes: {prizes_dict}")
                 
-                # Добавляем информацию о призе для каждого в группе
+                # Add prize info for each in the group.
                 for deck_info in same_score_group:
                     results_with_prizes.append({
                         **deck_info,
-                        'position': start_place,  # показываем первую позицию в группе
+                        'position': start_place,  # First position in tie group
                         'prizes': prizes_dict
                     })
                 
                 i = j
             
-            # Шаг 7: Сохраняем результаты
+            # Step 7: Save results
             logger.info(f"Step 7: Saving results to database...")
             for result_info in results_with_prizes:
                 logger.info(
@@ -713,13 +701,13 @@ class TournamentService:
             
             logger.info("Step 8: Committing results...")
             await db.commit()
-            logger.info(f"✅ Results calculated for {len(results_with_prizes)} participants")
+            logger.info(f"Results calculated for {len(results_with_prizes)} participants")
             
             return len(results_with_prizes)
             
         except Exception as e:
             await db.rollback()
-            logger.error(f"❌ Error calculating results: {e}", exc_info=True)
+            logger.error(f"Error calculating results: {e}", exc_info=True)
             raise
 
     async def distribute_rewards(self, tournament_id: int, db: AsyncSession) -> int:
@@ -734,7 +722,7 @@ class TournamentService:
         try:
             logger.info(f"💰 Starting reward distribution for tournament {tournament_id}")
             
-            # Проверяем статус турнира
+            # Check tournament status
             tournament_query = await db.execute(
                 select(Tournament).where(Tournament.id == tournament_id)
             )
@@ -745,13 +733,13 @@ class TournamentService:
             
             if tournament.status != TournamentStatus.FINISHED:
                 logger.warning(
-                    f"⚠️ Tournament {tournament_id} is not FINISHED (status: {tournament.status}). "
+                    f"Tournament {tournament_id} is not FINISHED (status: {tournament.status}). "
                     "Rewards should only be distributed for finished tournaments."
                 )
-                # Можно либо raise, либо просто вернуть 0
+                # Could raise or return 0
                 # return 0
             
-            # Получаем все результаты турнира
+            # Get all tournament results
             results_query = await db.execute(
                 select(TournamentResult)
                 .where(TournamentResult.tournament_id == tournament_id)
@@ -760,27 +748,27 @@ class TournamentService:
             results = results_query.scalars().all()
             
             if not results:
-                logger.warning(f"⚠️ No results found for tournament {tournament_id}")
+                logger.warning(f"No results found for tournament {tournament_id}")
                 return 0
             
             rewards_created = 0
             
             for result in results:
-                # Получаем дек для user_id
+                # Get deck for user_id
                 deck_query = await db.execute(
                     select(TournamentDeck).where(TournamentDeck.id == result.tournament_deck_id)
                 )
                 deck = deck_query.scalar_one_or_none()
                 
                 if not deck:
-                    logger.error(f"❌ Deck {result.tournament_deck_id} not found for result {result.id}")
+                    logger.error(f"Deck {result.tournament_deck_id} not found for result {result.id}")
                     continue
                 
-                # Парсим prizes из JSON: {"1": "12250.50", "2": "45000"}
+                # Parse prizes from JSON: {"1": "12250.50", "2": "45000"}
                 prizes = result.prizes or {}
                 
                 if not prizes:
-                    logger.info(f"ℹ️ No prizes for position {result.final_position} (user {deck.user_id})")
+                    logger.info(f"No prizes for position {result.final_position} (user {deck.user_id})")
                     continue
                 
                 logger.info(
@@ -788,7 +776,7 @@ class TournamentService:
                     f"prizes={prizes}"
                 )
                 
-                # Создаём UserReward для каждого reward_type
+                # Create UserReward for each reward_type
                 for reward_type_id_str, amount_str in prizes.items():
                     reward_type_id = int(reward_type_id_str)
                     amount = Decimal(amount_str)
@@ -796,7 +784,7 @@ class TournamentService:
                     if amount <= 0:
                         continue
                     
-                    # Проверяем, не создали ли уже такую награду
+                    # Check if reward already exists
                     existing_reward_query = await db.execute(
                         select(UserReward).where(
                             and_(
@@ -810,12 +798,12 @@ class TournamentService:
                     
                     if existing_reward:
                         logger.info(
-                            f"    ⏭️  Reward already exists for user {deck.user_id}, "
+                            f"    Reward already exists for user {deck.user_id}, "
                             f"reward_type {reward_type_id}"
                         )
                         continue
                     
-                    # Создаём новую награду
+                    # Create new reward
                     user_reward = UserReward(
                         user_id=deck.user_id,
                         reward_type_id=reward_type_id,
@@ -835,18 +823,18 @@ class TournamentService:
                     rewards_created += 1
                     
                     logger.info(
-                        f"    ✅ Created reward: user={deck.user_id}, "
+                        f"    Created reward: user={deck.user_id}, "
                         f"reward_type={reward_type_id}, amount={amount}"
                     )
             
             await db.commit()
-            logger.info(f"✅ Created {rewards_created} rewards for tournament {tournament_id}")
+            logger.info(f"Created {rewards_created} rewards for tournament {tournament_id}")
             
             return rewards_created
             
         except Exception as e:
             await db.rollback()
-            logger.error(f"❌ Error distributing rewards for tournament {tournament_id}: {e}", exc_info=True)
+            logger.error(f"Error distributing rewards for tournament {tournament_id}: {e}", exc_info=True)
             raise
 
     async def claim_tournament_rewards(
@@ -861,7 +849,7 @@ class TournamentService:
             {"claimed_count": int, "reward_ids": list[int]}
         """
         try:
-            # Находим все pending награды пользователя по этому турниру (через tournament_result)
+            # Find all pending rewards for this user and tournament (via tournament_result)
             subq = (
                 select(UserReward.id)
                 .join(
@@ -891,13 +879,13 @@ class TournamentService:
             )
             await db.commit()
             logger.info(
-                f"✅ User {user_id} claimed {len(reward_ids)} rewards for tournament {tournament_id}"
+                f"User {user_id} claimed {len(reward_ids)} rewards for tournament {tournament_id}"
             )
             return {"claimed_count": len(reward_ids), "reward_ids": reward_ids}
         except Exception as e:
             await db.rollback()
             logger.error(
-                f"❌ Error claiming rewards for user {user_id} tournament {tournament_id}: {e}",
+                f"Error claiming rewards for user {user_id} tournament {tournament_id}: {e}",
                 exc_info=True,
             )
             raise

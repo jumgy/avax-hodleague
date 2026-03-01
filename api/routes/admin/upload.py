@@ -1,4 +1,4 @@
-# api/routes/admin_upload.py
+# api/routes/admin/upload.py
 import os
 import logging
 from datetime import datetime
@@ -16,7 +16,7 @@ from services.card_render_service import card_render_service
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/panel/upload")
 
-# Разрешённые форматы
+# Allowed image formats
 ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
@@ -100,13 +100,13 @@ async def upload_card_template(
         # Build filename
         filename = f"{token_clean}_{design_clean}_{rarity_clean}_{timestamp}{file_ext}"
         
-        # Сохраняем во временный файл и загружаем в R2
+        # Write to temp file then upload to R2
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
             temp_file.write(content)
             temp_path = temp_file.name
         
         try:
-            # Загружаем в R2 в папку card_templates/
+            # Upload to R2 under card_templates/
             object_key = f"card_templates/{filename}"
             file_url = r2_storage.upload_file(
                 temp_path,
@@ -114,7 +114,7 @@ async def upload_card_template(
                 content_type=f"image/{file_ext[1:]}"  # image/png, image/jpeg
             )
             
-            logger.info(f"✅ Template uploaded to R2: {filename} ({file_size / 1024:.2f} KB)")
+            logger.info(f"Template uploaded to R2: {filename} ({file_size / 1024:.2f} KB)")
             
             return {
                 "success": True,
@@ -128,14 +128,14 @@ async def upload_card_template(
             }
         
         finally:
-            # Удаляем временный файл
+            # Remove temp file
             if os.path.exists(temp_path):
                 os.remove(temp_path)
     
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Upload failed: {e}", exc_info=True)
+        logger.error(f"Upload failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Upload failed")
     
 from typing import List
@@ -160,7 +160,7 @@ async def upload_card_templates_bulk(
     
     for file in files:
         try:
-            # Валидация файла
+            # Validate file
             if not file.filename:
                 errors.append({
                     "filename": "unknown",
@@ -175,12 +175,8 @@ async def upload_card_templates_bulk(
                 })
                 continue
             
-            # ⬇️ ИЗВЛЕКАЕМ ТИКЕР ИЗ ИМЕНИ ФАЙЛА
-            # btc.png → btc
-            # BTC_template.png → btc
-            # solana-logo.png → solana
+            # Extract token symbol from filename (e.g. btc.png -> btc, BTC_template.png -> btc)
             filename_without_ext = os.path.splitext(file.filename)[0]
-            # Берём первую часть до _, -, или пробела
             token_symbol = re.split(r'[_\-\s]', filename_without_ext)[0].upper()
             
             if not token_symbol:
@@ -190,9 +186,8 @@ async def upload_card_templates_bulk(
                 })
                 continue
             
-            logger.info(f"📁 Processing: {file.filename} → Token: {token_symbol}")
+            logger.info(f"Processing: {file.filename} -> Token: {token_symbol}")
             
-            # Читаем файл
             content = await file.read()
             file_size = len(content)
             
@@ -203,7 +198,7 @@ async def upload_card_templates_bulk(
                 })
                 continue
             
-            # Генерируем имя файла
+            # Generate filename
             file_ext = get_file_extension(file.filename)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             token_clean = sanitize_filename(token_symbol)
@@ -212,13 +207,13 @@ async def upload_card_templates_bulk(
             
             new_filename = f"{token_clean}_{design_clean}_{rarity_clean}_{timestamp}{file_ext}"
             
-            # Сохраняем во временный файл
+            # Write to temp file
             with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
                 temp_file.write(content)
                 temp_path = temp_file.name
             
             try:
-                # Загружаем в R2
+                # Upload to R2
                 object_key = f"card_templates/{new_filename}"
                 file_url = r2_storage.upload_file(
                     temp_path,
@@ -226,7 +221,7 @@ async def upload_card_templates_bulk(
                     content_type=f"image/{file_ext[1:]}"
                 )
                 
-                logger.info(f"✅ Uploaded: {new_filename} ({file_size/1024:.1f}KB)")
+                logger.info(f"Uploaded: {new_filename} ({file_size/1024:.1f}KB)")
                 
                 results.append({
                     "original_filename": file.filename,
@@ -241,7 +236,7 @@ async def upload_card_templates_bulk(
                     os.remove(temp_path)
                     
         except Exception as e:
-            logger.error(f"❌ Failed to upload {file.filename}: {e}")
+            logger.error(f"Failed to upload {file.filename}: {e}")
             errors.append({
                 "filename": file.filename,
                 "error": str(e)
@@ -267,7 +262,7 @@ async def list_templates(
     List all uploaded card templates from R2.
     """
     try:
-        # Получаем список объектов из R2
+        # List objects in R2
         response = r2_storage.client.list_objects_v2(
             Bucket=r2_storage.bucket_name,
             Prefix="card_templates/"
@@ -279,7 +274,7 @@ async def list_templates(
             for obj in response['Contents']:
                 filename = obj['Key'].replace('card_templates/', '')
                 
-                # Пропускаем если это просто папка
+                # Skip folder placeholder
                 if not filename:
                     continue
                 
@@ -310,7 +305,7 @@ async def list_templates(
         }
     
     except Exception as e:
-        logger.error(f"❌ Failed to list templates: {e}")
+        logger.error(f"Failed to list templates: {e}")
         raise HTTPException(status_code=500, detail="Failed to list templates")
 
 
@@ -323,26 +318,23 @@ async def delete_template(
     Delete a template from R2.
     """
     try:
-        # ✅ Проверка 1: Запретить path traversal символы
+        # Reject path traversal
         if '..' in filename or '/' in filename or '\\' in filename:
             raise HTTPException(400, "Invalid filename: path traversal detected")
         
-        # ✅ Проверка 2: Только разрешённые расширения
+        # Only allowed extensions
         if not is_allowed_file(filename):
             raise HTTPException(400, "Invalid file type")
         
-        # Удаляем из R2
         object_key = f"card_templates/{filename}"
         
-        # Проверяем существование
         if not r2_storage.file_exists(object_key):
             raise HTTPException(404, "Template not found")
         
-        # Удаляем
         success = r2_storage.delete_file(object_key)
         
         if success:
-            logger.info(f"🗑️ Template deleted from R2 by {admin['username']}: {filename}")
+            logger.info(f"Template deleted from R2 by {admin.get('sub', 'admin')}: {filename}")
             return {
                 "success": True,
                 "message": f"Template {filename} deleted successfully from CDN"
@@ -353,7 +345,7 @@ async def delete_template(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Failed to delete template: {e}")
+        logger.error(f"Failed to delete template: {e}")
         raise HTTPException(500, "Failed to delete template")
 
 
@@ -367,7 +359,7 @@ async def render_card_manually(
     Useful for testing.
     """
     try:
-        logger.info(f"🎨 Manual render requested for card {card_id}")
+        logger.info(f"Manual render requested for card {card_id}")
         result_url = await card_render_service.render_card_by_id(card_id)
         
         if result_url:
@@ -381,7 +373,7 @@ async def render_card_manually(
             raise HTTPException(status_code=500, detail="Rendering failed")
     
     except Exception as e:
-        logger.error(f"❌ Manual render failed: {e}")
+        logger.error(f"Manual render failed: {e}")
         raise HTTPException(status_code=500, detail="Rendering failed")
 
 
@@ -394,7 +386,7 @@ async def render_all_cards_manually(
     Use with caution - may take a while!
     """
     try:
-        logger.info("🎨 Manual render requested for ALL cards")
+        logger.info("Manual render requested for ALL cards")
         result = await card_render_service.render_all_active_cards()
         
         return {
@@ -406,5 +398,5 @@ async def render_all_cards_manually(
         }
     
     except Exception as e:
-        logger.error(f"❌ Batch render failed: {e}")
+        logger.error(f"Batch render failed: {e}")
         raise HTTPException(status_code=500, detail="Batch render failed")

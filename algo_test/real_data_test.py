@@ -21,9 +21,9 @@ class ProxyManager:
         self.load_proxies()
     
     def load_proxies(self):
-        """Загрузка прокси из файла"""
+        """Load proxies from file."""
         if not os.path.exists(self.proxy_file):
-            print(f"⚠️ Файл {self.proxy_file} не найден. Работаем без прокси.")
+            print(f"[WARNING] File {self.proxy_file} not found. Running without proxy.")
             return
         
         try:
@@ -33,9 +33,9 @@ class ProxyManager:
             for line in lines:
                 line = line.strip()
                 if line and not line.startswith('#'):
-                    # Поддерживаем различные форматы прокси
+                    # Support various proxy formats.
                     if '://' not in line:
-                        # Если нет протокола, добавляем http://
+                        # Add http:// if no protocol.
                         proxy_url = f"http://{line}"
                     else:
                         proxy_url = line
@@ -43,20 +43,20 @@ class ProxyManager:
                     self.proxies.append(proxy_url)
             
             if self.proxies:
-                print(f"✅ Загружено {len(self.proxies)} прокси из {self.proxy_file}")
-                random.shuffle(self.proxies)  # Перемешиваем для случайности
+                print(f"[OK] Loaded {len(self.proxies)} proxies from {self.proxy_file}")
+                random.shuffle(self.proxies)
             else:
-                print(f"⚠️ Файл {self.proxy_file} пуст или не содержит валидных прокси")
-                
+                print(f"[WARNING] File {self.proxy_file} is empty or has no valid proxies")
+
         except Exception as e:
-            print(f"❌ Ошибка загрузки прокси: {str(e)}")
+            print(f"[ERROR] Proxy load error: {e}")
     
     def get_current_proxy(self) -> Optional[Dict[str, str]]:
-        """Получить текущий прокси"""
+        """Get current proxy."""
         if not self.proxies or len(self.proxies) == len(self.failed_proxies):
             return None
-        
-        # Ищем рабочий прокси
+
+        # Find working proxy.
         attempts = 0
         while attempts < len(self.proxies):
             proxy_url = self.proxies[self.current_proxy_index]
@@ -74,23 +74,23 @@ class ProxyManager:
         return None
     
     def switch_proxy(self):
-        """Переключение на следующий прокси"""
+        """Switch to next proxy."""
         if self.proxies:
             self.current_proxy_index = (self.current_proxy_index + 1) % len(self.proxies)
     
     def mark_proxy_failed(self, proxy_url: str):
-        """Отметить прокси как неработающий"""
+        """Mark proxy as failed."""
         self.failed_proxies.add(proxy_url)
-        print(f"❌ Прокси {proxy_url} помечен как неработающий")
+        print(f"[ERROR] Proxy {proxy_url} marked as failed")
     
     def get_random_proxy(self) -> Optional[Dict[str, str]]:
-        """Получить случайный прокси"""
+        """Get random proxy."""
         if not self.proxies:
             return None
-        
+
         available_proxies = [p for p in self.proxies if p not in self.failed_proxies]
         if not available_proxies:
-            print("⚠️ Все прокси исчерпаны. Сброс списка неудачных прокси.")
+            print("[WARNING] All proxies exhausted. Resetting failed list.")
             self.failed_proxies.clear()
             available_proxies = self.proxies
         
@@ -112,7 +112,7 @@ class CoinMarketCapClient:
             'X-CMC_PRO_API_KEY': api_key,
         }
         
-        # Расширенный список стейблкоинов для фильтрации
+        # Extended list of stablecoins for filtering.
         self.stablecoins = {
             'USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'USDP', 'USDD', 'FRAX',
             'PYUSD', 'FDUSD', 'USDE', 'CRVUSD', 'LUSD', 'GUSD', 'SUSD',
@@ -122,7 +122,7 @@ class CoinMarketCapClient:
         }
     
     def get_top_listings(self, limit: int = 200) -> Dict[str, Any]:
-        """Получить топ листинги по маркет капу"""
+        """Get top listings by market cap."""
         url = f"{self.base_url}/cryptocurrency/listings/latest"
         parameters = {
             'start': '1',
@@ -150,7 +150,7 @@ class CoinMarketCapClient:
             raise Exception(f"JSON decode error: {str(e)}")
     
     def filter_stablecoins(self, tokens: List[Dict]) -> List[Dict]:
-        """Фильтрация стейблкоинов из списка токенов"""
+        """Filter stablecoins from token list."""
         filtered_tokens = []
         
         for token in tokens:
@@ -168,16 +168,16 @@ class CoinMarketCapClient:
         return filtered_tokens
     
     def get_top_100_non_stablecoins(self) -> List[Dict[str, Any]]:
-        """Получить топ-100 токенов исключая стейблкоины"""
+        """Get top 100 tokens excluding stablecoins."""
         try:
-            print("📊 Получение данных из CoinMarketCap...")
+            print("Fetching data from CoinMarketCap...")
             data = self.get_top_listings(limit=200)
-            
+
             all_tokens = data.get('data', [])
-            print(f"Получено {len(all_tokens)} токенов")
-            
+            print(f"Received {len(all_tokens)} tokens")
+
             filtered_tokens = self.filter_stablecoins(all_tokens)
-            print(f"После фильтрации осталось {len(filtered_tokens)} токенов")
+            print(f"After filtering: {len(filtered_tokens)} tokens")
             
             top_100 = filtered_tokens[:100]
             
@@ -202,7 +202,7 @@ class CoinMarketCapClient:
             return result
             
         except Exception as e:
-            print(f"❌ Ошибка при получении данных: {str(e)}")
+            print(f"[ERROR] Failed to get data: {e}")
             return []
 
 class CoinPaprikaClient:
@@ -211,10 +211,10 @@ class CoinPaprikaClient:
         self.proxy_manager = proxy_manager
         
     def _make_request_with_retries(self, url: str, params: Dict = None, max_retries: int = 3) -> Optional[requests.Response]:
-        """Выполнить запрос с повторными попытками и сменой прокси"""
-        
+        """Execute request with retries and proxy rotation."""
+
         for attempt in range(max_retries):
-            # Каждый запрос получает свой прокси
+            # Each request gets its own proxy.
             proxy = self.proxy_manager.get_random_proxy()
             
             try:
@@ -256,7 +256,7 @@ class CoinPaprikaClient:
         return None
         
     def find_coin_id(self, symbol: str) -> Optional[str]:
-        """Найти ID монеты по символу в CoinPaprika"""
+        """Find coin ID by symbol in CoinPaprika."""
         try:
             url = f"{self.base_url}/coins"
             response = self._make_request_with_retries(url)
@@ -266,7 +266,7 @@ class CoinPaprikaClient:
             
             coins = response.json()
             
-            # Ищем активную монету с подходящим символом
+            # Find active coin with matching symbol.
             for coin in coins:
                 if (coin.get('symbol', '').upper() == symbol.upper() and 
                     coin.get('is_active', False)):
@@ -275,11 +275,11 @@ class CoinPaprikaClient:
             return None
             
         except Exception as e:
-            print(f"⚠️ Ошибка поиска ID для {symbol}: {str(e)}")
+            print(f"[WARNING] Error finding ID for {symbol}: {e}")
             return None
-    
+
     def get_historical_data(self, coin_id: str, start_date: str, end_date: str) -> Optional[Dict]:
-        """Получить исторические данные для монеты"""
+        """Get historical data for coin."""
         try:
             url = f"{self.base_url}/tickers/{coin_id}/historical"
             params = {
@@ -299,10 +299,10 @@ class CoinPaprikaClient:
             if not data or not isinstance(data, list):
                 return None
             
-            # Сортируем по дате
+            # Sort by date.
             data.sort(key=lambda x: x.get('timestamp', ''))
-            
-            # Фильтруем данные строго по диапазону дат
+
+            # Filter data strictly by date range.
             filtered_data = []
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
             end_dt = datetime.strptime(end_date, '%Y-%m-%d')
@@ -336,7 +336,7 @@ class CoinPaprikaClient:
             }
             
         except Exception as e:
-            print(f"⚠️ Ошибка получения данных для {coin_id}: {str(e)}")
+            print(f"[WARNING] Error getting data for {coin_id}: {e}")
             return None
 
 class FantasyCryptoRankSystem:
@@ -355,7 +355,7 @@ class FantasyCryptoRankSystem:
         self.weekly_data = {}
         self.scores = {}
         
-        # Инициализируем weekly_data из переданных данных
+        # Initialize weekly_data from passed data.
         for symbol, data in tokens_data.items():
             self.weekly_data[symbol] = {
                 'market_cap': data['market_cap'],
@@ -365,22 +365,20 @@ class FantasyCryptoRankSystem:
     
     def calculate_mc_factor(self, market_cap: float, weekly_change: float) -> float:
         """
-        Асимметричный MC фактор: 
-        - При росте: обычная формула (market_cap_billions ** 0.15) * 12
-        - При падении: обратная формула (market_cap_billions ** -0.15) * 12
+        Asymmetric MC factor:
+        - On growth: (market_cap_billions ** 0.15) * 12
+        - On decline: (market_cap_billions ** -0.15) * 12
         """
-        market_cap_billions = market_cap / 1e9  # Приводим к миллиардам
-        market_cap_billions = max(market_cap_billions, 0.001)  # Избегаем деления на ноль
-        
+        market_cap_billions = market_cap / 1e9
+        market_cap_billions = max(market_cap_billions, 0.001)
+
         if weekly_change >= 0:
-            # При росте - стандартный фактор
             return (market_cap_billions ** 0.15) * 12
         else:
-            # При падении - обратный фактор (штраф для крупных токенов)
             return (market_cap_billions ** -0.05) * 12
     
     def calculate_daily_growth_bias(self, prices: List[float]) -> float:
-        """Рассчитать bias роста за дни (активность/волатильность)"""
+        """Calculate growth bias over days (activity/volatility)."""
         if len(prices) < 2:
             return 0
         
@@ -393,9 +391,9 @@ class FantasyCryptoRankSystem:
         return sum(daily_changes) if daily_changes else 0
     
     def calculate_rank_based_scores(self) -> Dict[str, Dict]:
-        """Основная функция расчета скоров с ранжированием"""
-        
-        # 1. Собираем данные для ранжирования
+        """Main rank-based score calculation."""
+
+        # 1. Gather data for ranking.
         token_metrics = []
         
         for token, data in self.weekly_data.items():
@@ -405,12 +403,12 @@ class FantasyCryptoRankSystem:
             if len(prices) < 2:
                 continue
                 
-            # Рассчитываем недельное изменение (с начала до конца периода)
+            # Weekly change (start to end of period).
             start_price = prices[0]
             end_price = prices[-1]
             weekly_change_pct = ((end_price - start_price) / start_price) * 100 if start_price > 0 else 0
             
-            # Рассчитываем активность (волатильность)
+            # Activity (volatility).
             activity_score = self.calculate_daily_growth_bias(prices)
             
             token_metrics.append({
@@ -422,17 +420,17 @@ class FantasyCryptoRankSystem:
                 'prices': prices
             })
         
-        # 2. Ранжируем по недельному изменению (лучший = ранг 1)
+        # 2. Rank by weekly change (best = rank 1).
         token_metrics.sort(key=lambda x: x['weekly_change_pct'], reverse=True)
         for i, token_data in enumerate(token_metrics):
             token_data['weekly_rank'] = i + 1
         
-        # 3. Ранжируем по активности (самый активный = ранг 1)
+        # 3. Rank by activity (most active = rank 1).
         token_metrics.sort(key=lambda x: x['activity_score'], reverse=True)
         for i, token_data in enumerate(token_metrics):
             token_data['activity_rank'] = i + 1
         
-        # 4. Рассчитываем очки и финальные скоры
+        # 4. Calculate points and final scores.
         total_tokens = len(token_metrics)
         results = {}
         
@@ -443,14 +441,13 @@ class FantasyCryptoRankSystem:
             weekly_rank = token_data['weekly_rank']
             activity_rank = token_data['activity_rank']
             
-            # Очки за ранг (чем лучше ранг, тем больше очков)
-            weekly_rank_points = total_tokens - weekly_rank + 1  # 100 для 1-го места, 1 для 100-го
+            # Points by rank (better rank = more points).
+            weekly_rank_points = total_tokens - weekly_rank + 1
             activity_rank_points = total_tokens - activity_rank + 1
-            
-            # Применяем асимметричный MC фактор
+
             mc_factor = self.calculate_mc_factor(market_cap, weekly_change)
-            
-            # Итоговый raw score
+
+            # Final raw score.
             raw_score = (weekly_rank_points * mc_factor * 4) + (activity_rank_points * mc_factor * 1)
             
             results[symbol] = {
@@ -470,16 +467,16 @@ class FantasyCryptoRankSystem:
         return results
     
     def balanced_normalize(self, scores: Dict[str, Dict]) -> Dict[str, Dict]:
-        """Масштабирование скоров на основе реальных различий с декомпозицией"""
-        
-        # Сортируем по raw_score
+        """Scale scores based on real differences with decomposition."""
+
+        # Sort by raw_score.
         sorted_tokens = sorted(scores.items(), key=lambda x: x[1]['raw_score'], reverse=True)
         total_tokens = len(sorted_tokens)
         
         if not sorted_tokens:
             return scores
         
-        # Получаем raw_score значения
+        # Get raw_score values.
         raw_scores = [data[1]['raw_score'] for data in sorted_tokens]
         max_raw = max(raw_scores)
         min_raw = min(raw_scores)
@@ -489,17 +486,17 @@ class FantasyCryptoRankSystem:
             rank = i + 1
             raw_score = data['raw_score']
             
-            # Вычисляем компоненты raw_score
+            # Compute raw_score components.
             weekly_component = data['weekly_rank_points'] * data['mc_factor'] * 4
             activity_component = data['activity_rank_points'] * data['mc_factor'] * 1
             
             if raw_range > 0:
-                # Нормализуем raw_score от 0 до 1
+                # Normalize raw_score 0 to 1.
                 normalized = (raw_score - min_raw) / raw_range
                 smooth_normalized = normalized ** 0.7
                 final_score = int(1000 * smooth_normalized)
                 
-                # Пропорционально делим final_score между компонентами
+                # Split final_score between components proportionally.
                 total_components = weekly_component + activity_component
                 if total_components > 0:
                     weekly_score = int(final_score * (weekly_component / total_components))
@@ -509,7 +506,7 @@ class FantasyCryptoRankSystem:
                     activity_score = final_score // 2
                     
             else:
-                # Если все raw_score одинаковые
+                # All raw_scores equal.
                 final_score = 500
                 weekly_score = 250
                 activity_score = 250
@@ -519,13 +516,13 @@ class FantasyCryptoRankSystem:
                 'final_score': final_score,
                 'weekly_score': weekly_score,
                 'activity_score_points': activity_score,
-                'card_weight': 50  # заглушка
+                'card_weight': 50  # placeholder
             })
         
         return scores
     
     def calculate_daily_progression(self, tokens_data: Dict[str, Dict]) -> Dict[str, Dict]:
-        """Рассчитать промежуточные скоры по дням"""
+        """Calculate intermediate scores by day."""
         daily_results = {}
         
         for symbol, data in tokens_data.items():
@@ -535,17 +532,17 @@ class FantasyCryptoRankSystem:
                 
             daily_progression = []
             
-            # Для каждого дня рассчитываем промежуточный результат
+            # For each day compute intermediate result.
             for day in range(1, len(prices)):
-                # Берем цены от начала до текущего дня
+                # Prices from start to current day.
                 partial_prices = prices[:day+1]
                 
-                # Рассчитываем изменение за этот период
+                # Change over this period.
                 start_price = partial_prices[0]
                 current_price = partial_prices[-1]
                 partial_change = ((current_price - start_price) / start_price) * 100 if start_price > 0 else 0
                 
-                # Рассчитываем активность за период
+                # Activity over period.
                 partial_activity = self.calculate_daily_growth_bias(partial_prices)
                 
                 daily_progression.append({
@@ -563,17 +560,17 @@ class FantasyCryptoRankSystem:
         return daily_results
     
     def run_simulation(self) -> Dict[str, Dict]:
-        """Запуск полной симуляции с промежуточными результатами"""
-        print("🔄 Расчет rank-based скоров...")
+        """Run full simulation with intermediate results."""
+        print("Calculating rank-based scores...")
         raw_scores = self.calculate_rank_based_scores()
-        
-        print("⚖️ Нормализация скоров...")
+
+        print("Normalizing scores...")
         final_scores = self.balanced_normalize(raw_scores)
-        
-        print("📅 Расчет промежуточных результатов по дням...")
+
+        print("Calculating daily progression...")
         daily_data = self.calculate_daily_progression(self.tokens)
-        
-        # Добавляем промежуточные данные в результаты
+
+        # Add intermediate data to results.
         for symbol in final_scores:
             if symbol in daily_data:
                 final_scores[symbol]['daily_progression'] = daily_data[symbol]['daily_progression']
@@ -581,66 +578,66 @@ class FantasyCryptoRankSystem:
         return final_scores
 
 def select_30_tokens_for_game(top_100: List[Dict]) -> List[str]:
-    """Выбираем 30 токенов для игры: топ + середина + низ"""
-    
-    # Топ-10 (позиции 1-10)
+    """Select 30 tokens for game: top + middle + bottom."""
+
+    # Top 10 (positions 1-10).
     top_tokens = [token['symbol'] for token in top_100[:10]]
     
-    # Середина (позиции 30-59) - выбираем 10
+    # Middle (positions 30-59), pick 10.
     middle_start = min(29, len(top_100) - 1)
     middle_end = min(59, len(top_100))
     middle_tokens = [token['symbol'] for token in top_100[middle_start:middle_end:3]][:10]
     
-    # Нижняя часть (позиции 70-100) - выбираем 10
+    # Bottom (positions 70-100), pick 10.
     bottom_start = min(69, len(top_100) - 1)
     bottom_tokens = [token['symbol'] for token in top_100[bottom_start::3]][:10]
     
-    # Объединяем и берем ровно 30
+    # Combine and take exactly 30.
     selected = (top_tokens + middle_tokens + bottom_tokens)[:30]
-    
-    print(f"🎯 Выбрано {len(selected)} токенов для игры:")
-    print(f"   Топ-10: {', '.join(top_tokens)}")
-    print(f"   Середина: {', '.join(middle_tokens)}")  
-    print(f"   Низ: {', '.join(bottom_tokens)}")
+
+    print(f"Selected {len(selected)} tokens for game:")
+    print(f"   Top 10: {', '.join(top_tokens)}")
+    print(f"   Middle: {', '.join(middle_tokens)}")
+    print(f"   Bottom: {', '.join(bottom_tokens)}")
     
     return selected
 
 def create_sample_proxy_file():
-    """Создать пример файла прокси"""
-    sample_proxies = """# Пример файла прокси (proxies.txt)
-# Поддерживаемые форматы:
+    """Create sample proxy file."""
+    sample_proxies = """# Sample proxy file (proxies.txt)
+# Supported formats:
 # http://proxy_ip:port
 # http://user:pass@proxy_ip:port
 # https://proxy_ip:port
-# proxy_ip:port (автоматически добавится http://)
+# proxy_ip:port (http:// will be added automatically)
 
-# Примеры:
+# Examples:
 # 192.168.1.1:8080
 # http://123.456.789.012:3128
 # http://user:password@proxy.example.com:8080
 # https://secure.proxy.com:8443
 
-# Добавьте свои прокси ниже (по одному на строку):
+# Add your proxies below (one per line):
 """
-    
+
     if not os.path.exists("proxies.txt"):
         with open("proxies.txt", "w", encoding="utf-8") as f:
             f.write(sample_proxies)
-        print("📝 Создан пример файла proxies.txt")
-        print("   Добавьте в него свои прокси-серверы и перезапустите скрипт")
+        print("Created sample file proxies.txt")
+        print("   Add your proxy servers and restart the script")
 
 def process_single_token(args):
-    """Обработка одного токена - для многопоточности"""
+    """Process single token (for multithreading)."""
     token, coinpaprika_client, start_date, end_date = args
     symbol = token['symbol']
     
     try:
-        # Находим ID
+        # Find ID.
         coin_id = coinpaprika_client.find_coin_id(symbol)
         if not coin_id:
-            return symbol, None, f"ID не найден"
-        
-        # Получаем исторические данные
+            return symbol, None, "ID not found"
+
+        # Get historical data.
         historical_data = coinpaprika_client.get_historical_data(coin_id, start_date, end_date)
         if historical_data and len(historical_data['prices']) > 0:
             result = {
@@ -650,81 +647,74 @@ def process_single_token(args):
                 'dates': historical_data['dates'],
                 'volumes': historical_data['volumes']
             }
-            return symbol, result, f"✅ {len(historical_data['prices'])} дней"
+            return symbol, result, f"{len(historical_data['prices'])} days"
         else:
-            return symbol, None, "Нет данных"
-            
+            return symbol, None, "No data"
+
     except Exception as e:
-        return symbol, None, f"Ошибка: {str(e)[:30]}..."
+        return symbol, None, f"Error: {str(e)[:30]}..."
 
 def main():
-    # ВАЖНО: Замените на ваш реальный API ключ от CoinMarketCap
+    # Replace with your real CoinMarketCap API key.
     CMC_API_KEY = "cc981d6b1e204a0e9edf9bc940a38f54"
-    
+
     if CMC_API_KEY == "YOUR_API_KEY_HERE":
-        print("❌ Необходимо указать реальный API ключ от CoinMarketCap!")
-        print("Зарегистрируйтесь на https://coinmarketcap.com/api/ и получите бесплатный ключ")
+        print("[ERROR] Set a real CoinMarketCap API key.")
+        print("Register at https://coinmarketcap.com/api/ and get a free key")
         return
-    
-    # Создаем пример файла прокси если его нет
+
+    # Create sample proxy file if missing.
     create_sample_proxy_file()
     
-    # Исправленные даты для получения ровно 5 дней (3-7 ноября включительно)
     start_date = "2025-11-03"
     end_date = "2025-11-07"
-    
-    print(f"🚀 Запуск полного анализа топ-100 токенов за период {start_date} - {end_date}")
-    print("   📅 Ожидаем получить данные за 5 дней: 3, 4, 5, 6, 7 ноября")
+
+    print(f"Running full top-100 token analysis for {start_date} - {end_date}")
+    print("   Expecting 5 days of data: Nov 3, 4, 5, 6, 7")
     print("=" * 80)
-    
-    # Инициализируем менеджер прокси
-    print("\n🌐 Инициализация прокси...")
+
+    print("\nInitializing proxy...")
     proxy_manager = ProxyManager("proxies.txt")
     
-    # Инициализируем клиентов
     cmc_client = CoinMarketCapClient(CMC_API_KEY)
     coinpaprika_client = CoinPaprikaClient(proxy_manager)
-    
-    # 1. Получаем топ-100 токенов
-    print("\n📊 Шаг 1: Получение топ-100 токенов...")
+
+    # 1. Get top 100 tokens.
+    print("\nStep 1: Fetching top 100 tokens...")
     top_100 = cmc_client.get_top_100_non_stablecoins()
     if not top_100:
-        print("❌ Не удалось получить список токенов")
+        print("[ERROR] Failed to get token list")
         return
-    
-    print(f"✅ Получен список из {len(top_100)} токенов")
-    
-    # 2. Выбираем 30 токенов для игры
-    print("\n🎯 Шаг 2: Выбор 30 токенов для игры...")
+
+    print(f"[OK] Got list of {len(top_100)} tokens")
+
+    # 2. Select 30 tokens for game.
+    print("\nStep 2: Selecting 30 tokens for game...")
     game_tokens = select_30_tokens_for_game(top_100)
     
-    # Создаем словарь для быстрого поиска данных токенов
     token_lookup = {token['symbol']: token for token in top_100}
-    
-    # 3. Получаем исторические данные параллельно
-    print(f"\n📈 Шаг 3: Параллельная загрузка исторических данных за {start_date} - {end_date}...")
-    print("   🚀 Используем многопоточность для быстрой обработки 100 токенов...")
+
+    # 3. Fetch historical data in parallel.
+    print(f"\nStep 3: Parallel load of historical data for {start_date} - {end_date}...")
+    print("   Using multithreading for 100 tokens...")
     
     all_historical_data = {}
     failed_tokens = []
     successful_requests = 0
     
-    # Подготавливаем аргументы для каждого токена
     task_args = [(token, coinpaprika_client, start_date, end_date) for token in top_100]
-    
-    # Определяем количество потоков (не больше количества прокси)
+
     max_workers = min(50, len(proxy_manager.proxies) if proxy_manager.proxies else 10)
-    print(f"   🔧 Запускаем {max_workers} параллельных потоков...")
+    print(f"   Starting {max_workers} parallel threads...")
     
     completed = 0
     start_time = time.time()
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Запускаем все задачи
-        future_to_symbol = {executor.submit(process_single_token, args): args[0]['symbol'] 
+        future_to_symbol = {executor.submit(process_single_token, args): args[0]['symbol']
                            for args in task_args}
-        
-        # Обрабатываем результаты по мере выполнения
+
+        # Process results as they complete.
         for future in as_completed(future_to_symbol):
             symbol = future_to_symbol[future]
             completed += 1
@@ -732,13 +722,12 @@ def main():
             try:
                 symbol_result, data, status = future.result()
                 
-                # Обновляем прогресс
                 progress = (completed / len(top_100)) * 100
                 elapsed = time.time() - start_time
                 eta = (elapsed / completed) * (len(top_100) - completed) if completed > 0 else 0
-                
+
                 print(f"\r[{completed:3d}/100] {progress:5.1f}% | {symbol:<8} {status:<20} | "
-                      f"⏱️ {elapsed:.1f}s | ETA: {eta:.1f}s", end='', flush=True)
+                      f"{elapsed:.1f}s | ETA: {eta:.1f}s", end='', flush=True)
                 
                 if data:
                     all_historical_data[symbol_result] = data
@@ -748,57 +737,56 @@ def main():
                     
             except Exception as e:
                 failed_tokens.append(symbol)
-                print(f"\n⚠️ Ошибка обработки {symbol}: {str(e)}")
-    
-    print()  # Новая строка после прогресс-бара
-    
+                print(f"\n[WARNING] Error processing {symbol}: {e}")
+
+    print()
+
     total_time = time.time() - start_time
     success_rate = (successful_requests / len(top_100)) * 100
-    
-    print(f"\n🏁 Параллельная загрузка завершена за {total_time:.1f} секунд!")
-    print(f"   ✅ Успешно: {successful_requests}/100 токенов ({success_rate:.1f}%)")
-    print(f"   ❌ Неудачно: {len(failed_tokens)} токенов")
-    print(f"   ⚡ Скорость: {successful_requests/total_time:.1f} токенов/сек")
-    
-    print()  # Новая строка после прогресс-бара
-    
-    
+
+    print(f"\nParallel load completed in {total_time:.1f}s")
+    print(f"   Success: {successful_requests}/100 tokens ({success_rate:.1f}%)")
+    print(f"   Failed: {len(failed_tokens)} tokens")
+    print(f"   Rate: {successful_requests/total_time:.1f} tokens/s")
+
+    print()
+
     if failed_tokens:
-        print(f"   ⚠️ Токены без данных: {', '.join(failed_tokens[:15])}{'...' if len(failed_tokens) > 15 else ''}")
-    
+        print(f"   Tokens without data: {', '.join(failed_tokens[:15])}{'...' if len(failed_tokens) > 15 else ''}")
+
     if len(all_historical_data) < 30:
-        print("❌ Критически мало исторических данных для качественного анализа")
-        print(f"   Получено данных только для {len(all_historical_data)} токенов из {len(top_100)}")
+        print("[ERROR] Too little historical data for analysis")
+        print(f"   Got data for only {len(all_historical_data)} tokens out of {len(top_100)}")
         return
     
-    # Проверяем качество данных
+    # Data quality.
     data_quality_info = {}
     for symbol, data in all_historical_data.items():
         days_count = len(data['prices'])
         data_quality_info[days_count] = data_quality_info.get(days_count, 0) + 1
     
-    print(f"\n📈 Качество исторических данных:")
+    print("\nHistorical data quality:")
     for days, count in sorted(data_quality_info.items(), reverse=True):
-        print(f"   📅 {days} дней: {count} токенов")
-    
-    # 4. Запускаем симуляцию со всеми данными
-    print(f"\n🎮 Шаг 4: Запуск симуляции с алгоритмом FantasyCryptoRankSystem...")
+        print(f"   {days} days: {count} tokens")
+
+    # 4. Run simulation with all data.
+    print("\nStep 4: Running FantasyCryptoRankSystem simulation...")
     print("=" * 60)
-    print("   🔄 Расчет асимметричных MC-факторов...")
-    print("   📊 Ранжирование по недельным изменениям и активности...")
-    print("   ⚖️ Нормализация скоров в систему очков...")
+    print("   Calculating asymmetric MC factors...")
+    print("   Ranking by weekly change and activity...")
+    print("   Normalizing scores...")
     
     fantasy_system = FantasyCryptoRankSystem(all_historical_data)
     results = fantasy_system.run_simulation()
     
     if not results:
-        print("❌ Не удалось выполнить симуляцию")
+        print("[ERROR] Simulation failed")
         return
-    
-    # 5. Анализируем результаты
-    print(f"\n🏆 Шаг 5: Анализ результатов...")
-    
-    # Статистика по изменениям
+
+    # 5. Analyze results.
+    print("\nStep 5: Analyzing results...")
+
+    # Change statistics.
     positive_changes = sum(1 for data in results.values() if data['weekly_change_pct'] > 0)
     negative_changes = len(results) - positive_changes
     
@@ -807,34 +795,34 @@ def main():
     max_gain = max(changes) if changes else 0
     max_loss = min(changes) if changes else 0
     
-    print(f"   📈 Токенов в плюсе: {positive_changes}")
-    print(f"   📉 Токенов в минусе: {negative_changes}")
-    print(f"   📊 Среднее изменение: {avg_change:+.2f}%")
-    print(f"   🚀 Максимальный рост: {max_gain:+.2f}%")
-    print(f"   💥 Максимальное падение: {max_loss:+.2f}%")
-    
-    # 6. Показываем результаты для всех токенов
-    print(f"\n🏆 ПОЛНЫЕ РЕЗУЛЬТАТЫ СИМУЛЯЦИИ (ТОП-50)")
+    print(f"   Tokens in plus: {positive_changes}")
+    print(f"   Tokens in minus: {negative_changes}")
+    print(f"   Avg change: {avg_change:+.2f}%")
+    print(f"   Max gain: {max_gain:+.2f}%")
+    print(f"   Max loss: {max_loss:+.2f}%")
+
+    # 6. Show results for all tokens.
+    print("\nFULL SIMULATION RESULTS (TOP 50)")
     print("=" * 110)
-    print(f"{'Ранг':<4} {'Символ':<8} {'Название':<25} {'Изм %':<8} {'Активн':<8} {'Скор':<8} {'Вес':<4} {'MC Фактор':<10}")
+    print(f"{'Rank':<4} {'Symbol':<8} {'Name':<25} {'Chg %':<8} {'Activ':<8} {'Score':<8} {'Wgt':<4} {'MC Factor':<10}")
     print("-" * 110)
     
     sorted_results = sorted(results.items(), key=lambda x: x[1]['final_rank'])
     
-    for symbol, data in sorted_results[:50]:  # Показываем топ-50
+    for symbol, data in sorted_results[:50]:
         name_truncated = data['name'][:24] + "…" if len(data['name']) > 24 else data['name']
         print(f"{data['final_rank']:<4} {symbol:<8} {name_truncated:<25} "
               f"{data['weekly_change_pct']:+6.2f}% {data['activity_score']:<8.1f} "
               f"{data['final_score']:<8.0f} {data['card_weight']:<4} {data['mc_factor']:<10.2f}")
     
     if len(sorted_results) > 50:
-        print(f"   ... и еще {len(sorted_results) - 50} токенов")
-    
-    # 7. Показываем результаты только для игровых токенов
-    print(f"\n🎯 РЕЗУЛЬТАТЫ ДЛЯ ИГРОВЫХ ТОКЕНОВ (30 штук)")
-    print("="*180)
-    print(f"{'Общий':<6} {'Игр.':<4} {'Символ':<8} {'Название':<25} {'Маркет кап':<12} {'Изм %':<8} {'Ранг':<4} {'За рост':<8} {'За акт':<7} {'Ранг':<4} {'Скор':<6} {'Вес':<4}")
-    print(f"{'ранг':<6} {'ранг':<4} {'':<8} {'':<25} {'':<12} {'':<8} {'рост':<4} {'очки':<8} {'очки':<7} {'акт':<4} {'':<6} {'':<4}")
+        print(f"   ... and {len(sorted_results) - 50} more tokens")
+
+    # 7. Results for game tokens only.
+    print("\nRESULTS FOR GAME TOKENS (30)")
+    print("=" * 180)
+    print(f"{'Overall':<6} {'Game':<4} {'Symbol':<8} {'Name':<25} {'Market cap':<12} {'Chg %':<8} {'Rank':<4} {'Growth':<8} {'Activ':<7} {'Rank':<4} {'Score':<6} {'Wgt':<4}")
+    print(f"{'rank':<6} {'rank':<4} {'':<8} {'':<25} {'':<12} {'':<8} {'chg':<4} {'pts':<8} {'pts':<7} {'act':<4} {'':<6} {'':<4}")
     print("-"*180)
 
     game_results = []
@@ -842,13 +830,13 @@ def main():
         if symbol in game_tokens:
             game_results.append((symbol, data))
 
-    # Сортируем игровые результаты по общему рангу
+    # Sort game results by overall rank.
     game_results.sort(key=lambda x: x[1]['final_rank'])
 
     for game_rank, (symbol, data) in enumerate(game_results, 1):
         name_truncated = data['name'][:24] + "…" if len(data['name']) > 24 else data['name']
         
-        # Форматируем маркет кап
+        # Format market cap.
         mc = data['market_cap']
         if mc >= 1e12:
             mc_str = f"${mc/1e12:.1f}T"
@@ -864,8 +852,8 @@ def main():
             f"{data['weekly_score']:<8} {data['activity_score_points']:<7} {data['activity_rank']:<4} "
             f"{data['final_score']:<6} {data['card_weight']:<4}")
 
-    # 8. Показываем промежуточные результаты по дням для топ-10 игровых токенов
-    print(f"\n📅 ПРОМЕЖУТОЧНЫЕ РЕЗУЛЬТАТЫ ПО ДНЯМ (ТОП-10 ИГРОВЫХ ТОКЕНОВ)")
+    # 8. Daily progression for top 10 game tokens.
+    print("\nDAILY PROGRESSION (TOP 10 GAME TOKENS)")
     print("="*120)
 
     top_10_game = game_results[:10]
@@ -874,7 +862,7 @@ def main():
         print("-" * 80)
         
         if 'daily_progression' in data:
-            print(f"{'День':<4} {'Цена':<12} {'Изм %':<8} {'Активность':<12} {'Статус':<20}")
+            print(f"{'Day':<4} {'Price':<12} {'Chg %':<8} {'Activity':<12} {'Status':<20}")
             print("-" * 80)
             
             for day_data in data['daily_progression']:
@@ -883,44 +871,43 @@ def main():
                 change = day_data['change_pct']
                 activity = day_data['activity']
                 
-                # Определяем статус
                 if change > 5:
-                    status = "🚀 Сильный рост"
+                    status = "Strong growth"
                 elif change > 0:
-                    status = "📈 Рост"
+                    status = "Growth"
                 elif change > -5:
-                    status = "📉 Падение"
+                    status = "Decline"
                 else:
-                    status = "💥 Сильное падение"
+                    status = "Strong decline"
                 
                 print(f"{day:<4} ${price:<11.4f} {change:+6.2f}% {activity:<12.1f} {status}")
         else:
-            print("   Нет промежуточных данных")
-    
-    # 9. Сохраняем результаты
-    print(f"\n💾 Шаг 6: Сохранение результатов...")
+            print("   No intermediate data")
+
+    # 9. Save results.
+    print("\nStep 6: Saving results...")
     os.makedirs('crypto_game_results', exist_ok=True)
     
-    # Сохраняем все результаты
+    # Save all results.
     all_results_export = {}
     for symbol, data in results.items():
-        # Убираем объекты, которые не сериализуются в JSON
+        # Remove non-JSON-serializable fields.
         export_data = {k: v for k, v in data.items() if k != 'prices'}
         all_results_export[symbol] = export_data
     
     with open('crypto_game_results/all_results.json', 'w', encoding='utf-8') as f:
         json.dump(all_results_export, f, indent=2, ensure_ascii=False, default=str)
     
-    # Сохраняем игровые токены отдельно
+    # Save game tokens separately.
     game_only_results = {symbol: all_results_export[symbol] for symbol, data in results.items() if symbol in game_tokens}
     with open('crypto_game_results/game_tokens_results.json', 'w', encoding='utf-8') as f:
         json.dump(game_only_results, f, indent=2, ensure_ascii=False, default=str)
     
-    # Сохраняем исторические данные
+    # Save historical data.
     with open('crypto_game_results/historical_data.json', 'w', encoding='utf-8') as f:
         json.dump(all_historical_data, f, indent=2, ensure_ascii=False, default=str)
     
-    # Сохраняем список игровых токенов
+    # Save game token list.
     game_tokens_info = []
     for symbol in game_tokens:
         if symbol in token_lookup:
@@ -936,7 +923,7 @@ def main():
     with open('crypto_game_results/selected_game_tokens.json', 'w', encoding='utf-8') as f:
         json.dump(game_tokens_info, f, indent=2, ensure_ascii=False, default=str)
     
-    # Создаем подробный CSV для анализа
+    # Detailed CSV for analysis.
     csv_data = []
     for symbol, data in results.items():
         row = {
@@ -962,7 +949,7 @@ def main():
     df = pd.DataFrame(csv_data)
     df.to_csv('crypto_game_results/detailed_simulation_results.csv', index=False)
     
-    # Создаем упрощенный CSV только для игровых токенов
+    # Simplified CSV for game tokens only.
     game_csv_data = []
     for i, (symbol, data) in enumerate(game_results, 1):
         row = {
@@ -980,67 +967,57 @@ def main():
     game_df = pd.DataFrame(game_csv_data)
     game_df.to_csv('crypto_game_results/game_tokens_only.csv', index=False)
     
-    print(f"✅ Результаты сохранены в папку 'crypto_game_results/':")
-    print(f"   📊 all_results.json - полные результаты всех токенов")
-    print(f"   🎯 game_tokens_results.json - результаты только игровых токенов")
-    print(f"   📈 historical_data.json - исторические данные цен")
-    print(f"   📝 selected_game_tokens.json - информация о выбранных игровых токенах")
-    print(f"   📋 detailed_simulation_results.csv - подробный CSV для анализа")
-    print(f"   🎮 game_tokens_only.csv - упрощенный CSV только игровых токенов")
-    
-    # 10. Итоговая статистика и рекомендации
-    print(f"\n📈 ИТОГОВАЯ СТАТИСТИКА И ВЫВОДЫ")
+    print("Results saved to 'crypto_game_results/':")
+    print("   all_results.json - full results for all tokens")
+    print("   game_tokens_results.json - game tokens only")
+    print("   historical_data.json - price history")
+    print("   selected_game_tokens.json - selected game tokens info")
+    print("   detailed_simulation_results.csv - detailed CSV")
+    print("   game_tokens_only.csv - game tokens CSV")
+
+    # 10. Final stats and recommendations.
+    print("\nFINAL STATISTICS AND SUMMARY")
     print("=" * 60)
     
-    # Топ-5 игровых токенов
     top_5_game = game_results[:5]
-    print("🏆 Топ-5 игровых токенов по итоговому скору:")
+    print("Top 5 game tokens by final score:")
     for i, (symbol, data) in enumerate(top_5_game, 1):
-        trend_emoji = "📈" if data['weekly_change_pct'] > 0 else "📉"
         print(f"  {i}. {symbol} ({data['name'][:20]}...)")
-        print(f"      {trend_emoji} {data['weekly_change_pct']:+.2f}% | "
-              f"🏆 {data['final_score']:.0f} очков | ⚖️ Вес {data['card_weight']}")
-    
-    # Худшие 3 игровых токена
+        print(f"      {data['weekly_change_pct']:+.2f}% | {data['final_score']:.0f} pts | Weight {data['card_weight']}")
+
     worst_3_game = game_results[-3:]
-    print(f"\n📉 Худшие 3 игровых токена:")
+    print("\nWorst 3 game tokens:")
     for i, (symbol, data) in enumerate(worst_3_game, len(game_results) - 2):
-        trend_emoji = "📈" if data['weekly_change_pct'] > 0 else "📉"
         print(f"  {i}. {symbol} ({data['name'][:20]}...)")
-        print(f"      {trend_emoji} {data['weekly_change_pct']:+.2f}% | "
-              f"🏆 {data['final_score']:.0f} очков | ⚖️ Вес {data['card_weight']}")
-    
-    # Статистика по категориям токенов
-    print(f"\n📊 Распределение игровых токенов по рангам:")
+        print(f"      {data['weekly_change_pct']:+.2f}% | {data['final_score']:.0f} pts | Weight {data['card_weight']}")
+
+    print("\nGame token distribution by rank:")
     rank_categories = {
-        'Топ-10 (1-10 ранг)': len([s for s, d in game_results if d['final_rank'] <= 10]),
-        'Середина (11-50 ранг)': len([s for s, d in game_results if 11 <= d['final_rank'] <= 50]),
-        'Низ (51+ ранг)': len([s for s, d in game_results if d['final_rank'] > 50])
+        'Top 10 (rank 1-10)': len([s for s, d in game_results if d['final_rank'] <= 10]),
+        'Middle (rank 11-50)': len([s for s, d in game_results if 11 <= d['final_rank'] <= 50]),
+        'Bottom (rank 51+)': len([s for s, d in game_results if d['final_rank'] > 50])
     }
-    
+
     for category, count in rank_categories.items():
-        print(f"   {category}: {count} токенов")
-    
-    # Рекомендации для игры
-    print(f"\n🎯 РЕКОМЕНДАЦИИ ДЛЯ ИГРЫ:")
+        print(f"   {category}: {count} tokens")
+
+    print("\nGAME RECOMMENDATIONS:")
     print("-" * 40)
-    print("✅ Система готова для запуска реальной игры")
-    print(f"📊 Обработано {len(results)} токенов, выбрано {len(game_tokens)} для игры")
-    print(f"🎮 Качество данных: {success_rate:.1f}% успешных запросов")
-    
-    # Самые перспективные токены
+    print("System ready for real game run")
+    print(f"Processed {len(results)} tokens, selected {len(game_tokens)} for game")
+    print(f"Data quality: {success_rate:.1f}% successful requests")
+
     high_potential = [s for s, d in game_results[:10] if d['weekly_change_pct'] > avg_change]
     if high_potential:
-        print(f"🚀 Высокопотенциальные токены: {', '.join(high_potential[:5])}")
-    
-    # Самые стабильные токены
+        print(f"High potential tokens: {', '.join(high_potential[:5])}")
+
     stable_tokens = [s for s, d in game_results if d['activity_score'] < 10 and d['weekly_change_pct'] > 0]
     if stable_tokens:
-        print(f"🛡️ Стабильные токены: {', '.join(stable_tokens[:3])}")
-    
-    print(f"\n🎊 Анализ успешно завершен!")
-    print(f"📁 Все данные сохранены в папке 'crypto_game_results/'")
-    print(f"🚀 Система готова для реального использования!")
+        print(f"Stable tokens: {', '.join(stable_tokens[:3])}")
+
+    print("\nAnalysis completed successfully.")
+    print("All data saved to 'crypto_game_results/'")
+    print("System ready for production use.")
 
 if __name__ == "__main__":
     main()

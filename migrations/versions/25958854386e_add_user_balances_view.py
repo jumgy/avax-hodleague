@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Создание представления user_balances_view
+    # Create view user_balances_view
     op.execute("""
         CREATE VIEW user_balances_view AS
         SELECT 
@@ -40,5 +40,5 @@ def upgrade() -> None:
     """)
 
 def downgrade() -> None:
-    # Удаление представления
+    # Drop view
     op.execute("DROP VIEW IF EXISTS user_balances_view;")

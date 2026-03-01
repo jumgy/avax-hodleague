@@ -1,236 +1,236 @@
 # Development Scripts
 
-Набор автоматизированных скриптов для разработки Fantasy Crypto Tournament бэкенда.
+Automated scripts for Fantasy Crypto Tournament backend development.
 
-## Быстрый старт
+## Quick Start
 
-Все задачи интегрированы в VS Code/Cursor:
+All tasks are integrated into VS Code/Cursor:
 
-1. Нажмите `Ctrl+Shift+P` (Windows) или `Cmd+Shift+P` (macOS)
-2. Выберите **Tasks: Run Task**
-3. Выберите нужную задачу из списка
+1. Press `Ctrl+Shift+P` (Windows) or `Cmd+Shift+P` (macOS)
+2. Select **Tasks: Run Task**
+3. Choose the task from the list
 
-## Доступные задачи
+## Available Tasks
 
-### 🧪 Тестирование
+### Testing
 
-- **Run Tests** - запуск всех тестов
-- **Run Tests with Coverage** - тесты с отчетом о покрытии
-- **Run Single Test File** - запуск текущего файла теста
+- **Run Tests** - run all tests
+- **Run Tests with Coverage** - tests with coverage report
+- **Run Single Test File** - run current test file
 
-**CLI альтернативы:**
+**CLI alternatives:**
 ```powershell
-# Все тесты
+# All tests
 pytest -v
 
-# С покрытием
+# With coverage
 .\scripts\run_tests.ps1 -Coverage
 
-# Один файл
+# Single file
 .\scripts\run_tests.ps1 -File tests/test_scoring.py
 
-# По ключевому слову
+# By keyword
 .\scripts\run_tests.ps1 -Keyword "tournament"
 
-# Fail fast (остановка на первой ошибке)
+# Fail fast (stop on first failure)
 .\scripts\run_tests.ps1 -FailFast
 ```
 
-### 🔍 Линтинг и форматирование
+### Linting and Formatting
 
-- **Lint (Ruff)** - проверка кода на ошибки
-- **Lint & Fix (Ruff)** - автоматическое исправление
-- **Format (Ruff)** - форматирование кода
-- **Type Check (mypy)** - проверка типов
-- **Full Check** - все проверки сразу
+- **Lint (Ruff)** - check code for errors
+- **Lint & Fix (Ruff)** - auto-fix issues
+- **Format (Ruff)** - format code
+- **Type Check (mypy)** - type checking
+- **Full Check** - all checks at once
 
-**CLI альтернативы:**
+**CLI alternatives:**
 ```powershell
-# Только проверка
+# Check only
 .\scripts\lint.ps1
 
-# С автофиксом
+# With autofix
 .\scripts\lint.ps1 -Fix
 
-# С проверкой типов
+# With type check
 .\scripts\lint.ps1 -TypeCheck
 
-# Все вместе
+# All together
 .\scripts\lint.ps1 -All
 
-# Конкретный путь
+# Specific path
 .\scripts\lint.ps1 -Fix -Path api/routes/tournaments.py
 ```
 
-### 🗄️ Миграции базы данных
+### Database Migrations
 
-- **Create Migration** - создать новую миграцию
-- **Run Migrations** - применить миграции
-- **Rollback Migration** - откатить последнюю миграцию
-- **Show Migration History** - история миграций
+- **Create Migration** - create new migration
+- **Run Migrations** - apply migrations
+- **Rollback Migration** - rollback last migration
+- **Show Migration History** - migration history
 
-**CLI альтернативы:**
+**CLI alternatives:**
 ```powershell
-# Создать миграцию (интерактивно)
+# Create migration (interactive)
 .\scripts\create_migration.ps1
 
-# С сообщением
+# With message
 .\scripts\create_migration.ps1 -Message "add user notifications table"
 
-# Применить миграции
+# Apply migrations
 alembic upgrade head
 
-# Откатить последнюю
+# Rollback last
 alembic downgrade -1
 
-# История
+# History
 alembic history --verbose
 
-# Текущая версия
+# Current version
 alembic current
 ```
 
-### 🐳 Docker окружение
+### Docker Environment
 
-- **Start Dev Environment** - запустить dev-окружение
-- **Stop Dev Environment** - остановить
-- **Restart Dev Environment** - перезапустить
-- **Show Dev Logs** - показать логи
+- **Start Dev Environment** - start dev environment
+- **Stop Dev Environment** - stop
+- **Restart Dev Environment** - restart
+- **Show Dev Logs** - show logs
 
-**CLI альтернативы:**
+**CLI alternatives:**
 ```powershell
-# Запустить
+# Start
 .\scripts\docker_dev.ps1 start
 
-# Остановить
+# Stop
 .\scripts\docker_dev.ps1 stop
 
-# Перезапустить
+# Restart
 .\scripts\docker_dev.ps1 restart
 
-# Статус
+# Status
 .\scripts\docker_dev.ps1 status
 
-# Логи
+# Logs
 .\scripts\docker_dev.ps1 logs -Follow
 
-# Логи конкретного сервиса
+# Logs for specific service
 .\scripts\docker_dev.ps1 logs -Service postgres -Follow
 
-# Пересборка (долго!)
+# Rebuild (takes a while)
 .\scripts\docker_dev.ps1 rebuild
 
-# Очистить все (включая БД!)
+# Clean all (including DB)
 .\scripts\docker_dev.ps1 clean
 ```
 
-### 🎨 Генераторы кода
+### Code Generators
 
-- **Create New Endpoint** - создать новый API-эндпоинт
+- **Create New Endpoint** - create new API endpoint
 
-**CLI альтернатива:**
+**CLI alternative:**
 ```powershell
-# Интерактивно
+# Interactive
 .\scripts\create_endpoint.ps1
 
-# С именем ресурса
+# With resource name
 .\scripts\create_endpoint.ps1 -Name notification
 ```
 
-#### Что создается при генерации эндпоинта:
+#### What is created when generating an endpoint:
 
 1. **Router** (`api/routes/{resource}s.py`):
-   - GET /resources - список
-   - GET /resources/{id} - один элемент
-   - POST /resources - создание (с auth)
-   - DELETE /resources/{id} - удаление (с auth)
-   - Pydantic схемы (Request/Response)
-   - Готовая обработка ошибок
+   - GET /resources - list
+   - GET /resources/{id} - single item
+   - POST /resources - create (with auth)
+   - DELETE /resources/{id} - delete (with auth)
+   - Pydantic schemas (Request/Response)
+   - Error handling
 
 2. **Service** (`services/{resource}_service.py`):
-   - CRUD операции
-   - Логирование с emoji
-   - Обработка транзакций
+   - CRUD operations
+   - Logging
+   - Transaction handling
 
 3. **Tests** (`tests/test_{resource}.py`):
-   - Тесты для всех эндпоинтов
-   - Проверки auth
-   - Placeholder'ы для расширения
+   - Tests for all endpoints
+   - Auth checks
+   - Placeholders for extension
 
-**После генерации нужно:**
-1. Создать модель в `models/{resource}_models.py`
-2. Обновить service для работы с моделью
-3. Зарегистрировать router в `main.py`
-4. Создать миграцию для модели
-5. Запустить тесты
+**After generation:**
+1. Create model in `models/{resource}_models.py`
+2. Update service to work with the model
+3. Register router in `main.py`
+4. Create migration for the model
+5. Run tests
 
-### 🚀 Dev сервер
+### Dev Server
 
-- **Run Server (Dev)** - запуск uvicorn с hot-reload
+- **Run Server (Dev)** - run uvicorn with hot-reload
 
 ```powershell
-# Или напрямую
+# Or directly
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## Keyboard shortcuts
+## Keyboard Shortcuts
 
-Можно настроить горячие клавиши в VS Code/Cursor:
+You can configure shortcuts in VS Code/Cursor:
 
-1. `Ctrl+Shift+P` → **Preferences: Open Keyboard Shortcuts (JSON)**
-2. Добавить:
+1. `Ctrl+Shift+P` -> **Preferences: Open Keyboard Shortcuts (JSON)**
+2. Add:
 
 ```json
 [
   {
     "key": "ctrl+shift+t",
     "command": "workbench.action.tasks.runTask",
-    "args": "🧪 Run Tests"
+    "args": "Run Tests"
   },
   {
     "key": "ctrl+shift+l",
     "command": "workbench.action.tasks.runTask",
-    "args": "✅ Full Check (Lint + Format + Type)"
+    "args": "Full Check (Lint + Format + Type)"
   }
 ]
 ```
 
-## Рекомендуемый workflow
+## Recommended Workflow
 
-### Перед коммитом
+### Before Commit
 ```powershell
-# 1. Проверить код
+# 1. Check code
 .\scripts\lint.ps1 -All
 
-# 2. Запустить тесты
+# 2. Run tests
 .\scripts\run_tests.ps1 -Coverage
 
-# 3. Проверить покрытие
-# Открыть htmlcov/index.html в браузере
+# 3. Check coverage
+# Open htmlcov/index.html in browser
 ```
 
-### Создание новой фичи
+### Creating a New Feature
 ```powershell
-# 1. Создать эндпоинт
+# 1. Create endpoint
 .\scripts\create_endpoint.ps1 -Name feature
 
-# 2. Создать модель (вручную)
+# 2. Create model (manually)
 # models/feature_models.py
 
-# 3. Создать миграцию
+# 3. Create migration
 .\scripts\create_migration.ps1 -Message "add feature table"
 
-# 4. Обновить service (вручную)
+# 4. Update service (manually)
 # services/feature_service.py
 
-# 5. Запустить тесты
+# 5. Run tests
 .\scripts\run_tests.ps1 -File tests/test_feature.py
 
-# 6. Проверить линтинг
+# 6. Run lint
 .\scripts\lint.ps1 -Fix
 ```
 
-## Установка dev-зависимостей
+## Installing Dev Dependencies
 
 ```powershell
 pip install -r requirements.txt
@@ -240,33 +240,33 @@ pip install -r requirements-dev.txt
 ## Troubleshooting
 
 ### PowerShell Execution Policy
-Если скрипты не выполняются:
+If scripts do not run:
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-### Ruff не найден
+### Ruff not found
 ```powershell
 pip install ruff
 ```
 
-### mypy не найден
+### mypy not found
 ```powershell
 pip install mypy
 ```
 
-### pytest-cov не найден
+### pytest-cov not found
 ```powershell
 pip install pytest-cov
 ```
 
-## Дополнительно
+## Additional Info
 
-Все скрипты находятся в `scripts/`:
-- `create_endpoint.ps1` - генератор эндпоинтов
-- `create_migration.ps1` - создание миграций
-- `run_tests.ps1` - запуск тестов
-- `lint.ps1` - линтинг и форматирование
-- `docker_dev.ps1` - управление Docker
+All scripts are in `scripts/`:
+- `create_endpoint.ps1` - endpoint generator
+- `create_migration.ps1` - create migrations
+- `run_tests.ps1` - run tests
+- `lint.ps1` - lint and format
+- `docker_dev.ps1` - Docker management
 
-VS Code tasks в `.vscode/tasks.json`.
+VS Code tasks are in `.vscode/tasks.json`.

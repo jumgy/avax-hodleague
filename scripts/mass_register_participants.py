@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_or_create_fake_user(db: AsyncSession, index: int) -> User:
-    """Создаёт или получает фейкового юзера"""
+    """Create or retrieve a fake user for testing."""
     nickname = f"fakeuser{index}"
     
     result = await db.execute(
@@ -35,7 +35,7 @@ async def get_or_create_fake_user(db: AsyncSession, index: int) -> User:
     
     if not user:
         user = User(
-            wallet_address=f"0x{index:040d}",  # ИСПРАВЛЕНО: 0x + 40 цифр = 42 символа
+            wallet_address=f"0x{index:040d}",  # 0x + 40 hex digits = 42 chars
             nickname=nickname,
             referral_route=f"fake{index}",
             avatar_url=f"https://i.pravatar.cc/150?u=fake{index}",
@@ -50,11 +50,11 @@ async def get_or_create_fake_user(db: AsyncSession, index: int) -> User:
 from sqlalchemy.orm import selectinload
 
 async def get_random_cards(db: AsyncSession, count: int = 5) -> list:
-    """Получает случайные активные карточки"""
+    """Get random active cards."""
     result = await db.execute(
         select(Card)
         .join(Token)
-        .options(selectinload(Card.token))  # ИСПРАВЛЕНО: загружаем token, а не rarity
+        .options(selectinload(Card.token))
         .where(Token.is_active == True)
         .order_by(Card.id)
     )
@@ -67,11 +67,11 @@ async def get_random_cards(db: AsyncSession, count: int = 5) -> list:
 
 
 async def create_user_cards_for_user(db: AsyncSession, user: User, cards: list) -> list:
-    """Создаёт user_cards для пользователя"""
+    """Create user_cards for the given user."""
     user_card_ids = []
     
     for card in cards:
-        # Проверяем, есть ли уже такая карта у юзера
+        # Check if user already has this card
         existing = await db.execute(
             select(UserCard).where(
                 UserCard.user_id == user.id,
@@ -97,12 +97,12 @@ async def create_user_cards_for_user(db: AsyncSession, user: User, cards: list) 
 
 
 async def register_participant(db: AsyncSession, tournament_id: int, user_index: int) -> bool:
-    """Регистрирует одного участника"""
+    """Register a single participant."""
     try:
-        # Создаём/получаем юзера
+        # Create or get user
         user = await get_or_create_fake_user(db, user_index)
         
-        # Проверяем, не зарегистрирован ли уже
+        # Check if already registered
         existing_deck = await db.execute(
             select(TournamentDeck).where(
                 TournamentDeck.tournament_id == tournament_id,
@@ -114,16 +114,16 @@ async def register_participant(db: AsyncSession, tournament_id: int, user_index:
             logger.info(f"  User {user_index} already registered, skipping")
             return False
         
-        # Получаем случайные карточки
+        # Get random cards
         cards = await get_random_cards(db, count=5)
         
-        # Создаём user_cards
+        # Create user_cards
         user_card_ids = await create_user_cards_for_user(db, user, cards)
         
-        # Считаем общий вес из токенов
-        total_weight = sum(card.token.weight for card in cards)  # ИСПРАВЛЕНО
-        
-        # Создаём дек
+        # Sum total weight from tokens
+        total_weight = sum(card.token.weight for card in cards)
+
+        # Create deck
         deck = TournamentDeck(
             tournament_id=tournament_id,
             user_id=user.id,
@@ -138,15 +138,15 @@ async def register_participant(db: AsyncSession, tournament_id: int, user_index:
         return True
         
     except Exception as e:
-        logger.error(f"❌ Error registering user {user_index}: {e}")
+        logger.error(f"Error registering user {user_index}: {e}")
         raise
 
 
 async def mass_register(tournament_id: int, participants_count: int = 350):
-    """Массовая регистрация участников"""
+    """Mass-register participants for a tournament."""
     async with AsyncSessionLocal() as db:
         try:
-            # Проверяем турнир
+            # Check tournament
             result = await db.execute(
                 select(Tournament).where(Tournament.id == tournament_id)
             )
@@ -155,11 +155,11 @@ async def mass_register(tournament_id: int, participants_count: int = 350):
             if not tournament:
                 raise ValueError(f"Tournament {tournament_id} not found")
             
-            logger.info(f"🏆 Tournament #{tournament.tournament_number} found")
-            logger.info(f"📝 Starting mass registration for {participants_count} participants...")
+            logger.info(f"Tournament #{tournament.tournament_number} found")
+            logger.info(f"Starting mass registration for {participants_count} participants...")
             
             registered = 0
-            batch_size = 50  # Коммитим каждые 50 участников
+            batch_size = 50  # Commit every 50 participants
             
             for i in range(1, participants_count + 1):
                 success = await register_participant(db, tournament_id, i)
@@ -167,18 +167,17 @@ async def mass_register(tournament_id: int, participants_count: int = 350):
                 if success:
                     registered += 1
                 
-                # Коммитим батчами
+                # Commit in batches
                 if i % batch_size == 0:
                     await db.commit()
-                    logger.info(f"✅ Registered {registered}/{i} participants (committed)")
-            
-            # Финальный коммит
+                    logger.info(f"Registered {registered}/{i} participants (committed)")
+
             await db.commit()
-            logger.info(f"✅✅✅ Total registered: {registered} participants")
+            logger.info(f"Total registered: {registered} participants")
             
         except Exception as e:
             await db.rollback()
-            logger.error(f"❌ Mass registration failed: {e}")
+            logger.error(f"Mass registration failed: {e}")
             raise
 
 

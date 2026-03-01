@@ -269,8 +269,8 @@ class ScoreService:
         # Exact formula from simulation
         activity = Decimal(0)
         for i in range(1, len(prices)):
-            if prices[i-1] > 0:  # Защита от деления на ноль
-                # abs((новая - старая) / старая) * 100
+            if prices[i-1] > 0:  # Avoid division by zero
+                # abs((new - old) / old) * 100
                 pct_change = abs((prices[i] - prices[i-1]) / prices[i-1]) * 100
                 activity += pct_change
         
@@ -285,7 +285,7 @@ class ScoreService:
         # Secondary sort by token_id for stability
         sorted_by_change = sorted(
             tokens, 
-            key=lambda x: (x['period_change'], -x['token_id']),  # ← стабильная сортировка
+            key=lambda x: (x['period_change'], -x['token_id']),  # Stable sort
             reverse=True
         )
         for rank, token in enumerate(sorted_by_change, start=1):
@@ -294,7 +294,7 @@ class ScoreService:
         # Rank by activity (descending - higher is better)
         sorted_by_activity = sorted(
             tokens, 
-            key=lambda x: (x['activity'], -x['token_id']),  # ← стабильная сортировка
+            key=lambda x: (x['activity'], -x['token_id']),  # Stable sort
             reverse=True
         )
         for rank, token in enumerate(sorted_by_activity, start=1):
@@ -304,16 +304,16 @@ class ScoreService:
 
     def _calculate_mc_factor(self, market_cap: int, all_market_caps: List[int]) -> float:
         """
-        Calculate market cap factor using DEGREE formula (simplified).
-        Степенная функция дает плавный рост без сильной асимметрии.
+        Calculate market cap factor using degree formula (simplified).
+        Power function gives smooth growth without strong asymmetry.
         """
         if not all_market_caps or market_cap <= 0:
             return 1.0
-        
-        # Переводим в миллиарды
+
+        # Convert to billions
         market_cap_billions = market_cap / 1_000_000_000
         
-        # Степенная формула
+        # Power formula
         mc_factor = (market_cap_billions ** 0.12) * 12
         
         return mc_factor
@@ -392,7 +392,7 @@ class ScoreService:
     async def _get_token_data_for_tournament(self, tournament_id: int) -> List[Dict]:
         """
         Get current price, snapshot price, and market cap for all active tokens.
-        FIXED: Uses subquery to correctly get latest price for each token.
+        Uses subquery to get latest price per token.
         """
         # Subquery to get latest price timestamp for each token
         latest_price_subq = (

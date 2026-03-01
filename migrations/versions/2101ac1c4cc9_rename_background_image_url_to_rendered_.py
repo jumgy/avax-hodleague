@@ -16,11 +16,11 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
-    # Переименование колонки вместо удаления/создания
+    # Rename column instead of drop/create
     op.alter_column('cards', 'background_image_url', 
                     new_column_name='rendered_image_url')
 
 def downgrade() -> None:
-    # Откат переименования
+    # Rollback rename
     op.alter_column('cards', 'rendered_image_url', 
                     new_column_name='background_image_url')

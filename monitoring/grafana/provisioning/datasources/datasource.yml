@@ -1,4 +1,4 @@
-# Автоматический источник данных Prometheus (метрики postgres_exporter).
+# Auto-provisioned Prometheus datasource (postgres_exporter metrics).
 apiVersion: 1
 datasources:
   - name: Prometheus

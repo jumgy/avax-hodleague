@@ -11,7 +11,7 @@ from models.database import get_async_db
 from models.reward_models import RewardType, RewardCategory
 from .auth import verify_admin_token
 
-# --- Pydantic models (БЕЗ ИЗМЕНЕНИЙ) ---
+# --- Pydantic models ---
 
 class RewardTypeCreate(BaseModel):
     name: str
@@ -176,13 +176,12 @@ async def get_reward_types(
     admin: dict = Depends(verify_admin_token)
 ):
     """
-    Получить все типы наград с фильтрацией, сортировкой и пагинацией
+    Get all reward types with filtering, sorting and pagination.
     """
     
-    # Базовый запрос
     query = select(RewardType)
-    
-    # Применяем фильтры
+
+    # Apply filters
     if id is not None:
         query = query.where(RewardType.id == id)
     
@@ -222,19 +221,19 @@ async def get_reward_types(
     if updated_to:
         query = query.where(RewardType.updated_at <= updated_to)
     
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(RewardType, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
     
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     items = result.scalars().all()
@@ -254,7 +253,7 @@ async def get_reward_type(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретный тип награды по ID"""
+    """Get reward type by ID."""
     
     query = select(RewardType).where(RewardType.id == reward_type_id)
     result = await db.execute(query)
@@ -271,9 +270,9 @@ async def create_reward_type(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Создать новый тип награды с проверкой уникальности имени"""
+    """Create new reward type with name uniqueness check."""
     
-    # Проверяем уникальность имени
+    # Check name uniqueness
     existing_query = select(RewardType).where(RewardType.name.ilike(data.name))
     existing_result = await db.execute(existing_query)
     existing = existing_result.scalar_one_or_none()
@@ -285,7 +284,7 @@ async def create_reward_type(
         )
     
     try:
-        # Создаем новый тип награды
+        # Create reward type
         obj = RewardType(
             name=data.name,
             description=data.description,
@@ -317,9 +316,9 @@ async def update_reward_type(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Обновить существующий тип награды с проверкой ограничений"""
+    """Update existing reward type with constraint checks."""
     
-    # Получаем существующий тип награды
+    # Load existing reward type
     query = select(RewardType).where(RewardType.id == reward_type_id)
     result = await db.execute(query)
     obj = result.scalar_one_or_none()
@@ -327,7 +326,7 @@ async def update_reward_type(
     if not obj:
         raise HTTPException(status_code=404, detail="Reward type not found")
     
-    # Проверка уникальности имени если оно меняется
+    # Check name uniqueness if changed
     if data.name and data.name.lower() != obj.name.lower():
         existing_query = select(RewardType).where(RewardType.name.ilike(data.name))
         existing_result = await db.execute(existing_query)
@@ -340,7 +339,7 @@ async def update_reward_type(
             )
     
     try:
-        # Обновляем поля
+        # Apply updates
         update_data = data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(obj, field, value)

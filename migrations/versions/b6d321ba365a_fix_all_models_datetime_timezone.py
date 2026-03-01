@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def table_exists(table_name: str) -> bool:
-    """Проверка существования таблицы"""
+    """Check that table exists."""
     bind = op.get_bind()
     inspector = inspect(bind)
     return table_name in inspector.get_table_names()

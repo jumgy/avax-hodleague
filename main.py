@@ -25,34 +25,28 @@ from models.database import init_database, close_database
 
 _logging_configured = False
 def setup_logging():
-    """Настройка логирования без дублирования"""
+    """Configure logging without duplication."""
     global _logging_configured
     if _logging_configured:
         return
-    
-    # Получаем root logger
+
     root_logger = logging.getLogger()
-    
-    # ПОЛНОСТЬЮ очищаем все handlers
     root_logger.handlers.clear()
-    
-    # Настраиваем уровень
+
     log_level = getattr(logging, Config.LOG_LEVEL, logging.INFO)
     root_logger.setLevel(log_level)
-    
-    # Создаем ОДИН консольный обработчик
+
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(log_level)
-    
-    # Форматтер
+
     formatter = logging.Formatter(
         '%(asctime)s %(levelname)s %(name)s %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
-    
-    # Отключаем SQLAlchemy логи если DB_ECHO=False
+
+    # Disable SQLAlchemy logs when DB_ECHO=False.
     if not Config.DB_ECHO:
         logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
         logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
@@ -62,15 +56,15 @@ def setup_logging():
     logging.getLogger('boto3').setLevel(logging.WARNING)
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('s3transfer').setLevel(logging.WARNING)
-    
-    # Очищаем uvicorn handlers и отключаем propagation
+
+    # Clear uvicorn handlers and set propagation.
     for logger_name in ['uvicorn', 'uvicorn.access', 'uvicorn.error']:
         uvicorn_logger = logging.getLogger(logger_name)
         uvicorn_logger.handlers.clear()
         uvicorn_logger.propagate = True
     
     _logging_configured = True
-# Вызываем настройку
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -79,49 +73,45 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan manager - handles startup and shutdown"""
     # STARTUP
-    logger.info("🚀 Hodleague starting up...")
-    
-    # Initialize database
+    logger.info("Hodleague starting up...")
+
     try:
         await init_database()
-        logger.info("✅ Database tables created/verified")
+        logger.info("Database tables created/verified")
     except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}", exc_info=True)
-    
-    # Start scheduler
+        logger.error("Database initialization failed: %s", e, exc_info=True)
+
     try:
         await scheduler_service.start()
-        logger.info("✅ Price monitoring scheduler started")
+        logger.info("Price monitoring scheduler started")
     except Exception as e:
-        logger.error(f"❌ Failed to start scheduler: {e}", exc_info=True)
-    
-    logger.info("✅ Application startup complete")
+        logger.error("Failed to start scheduler: %s", e, exc_info=True)
+
+    logger.info("Application startup complete")
     
     yield
-    
+
     # SHUTDOWN
-    logger.info("🛑 Hodleague shutting down...")
-    
-    # Stop scheduler
+    logger.info("Hodleague shutting down...")
+
     try:
         await scheduler_service.stop()
-        logger.info("✅ Price monitoring scheduler stopped")
+        logger.info("Price monitoring scheduler stopped")
     except Exception as e:
-        logger.error(f"❌ Error stopping scheduler: {e}", exc_info=True)
-    
-    # Close database connections
+        logger.error("Error stopping scheduler: %s", e, exc_info=True)
+
     try:
         await close_database()
-        logger.info("✅ Database connections closed")
+        logger.info("Database connections closed")
     except Exception as e:
-        logger.error(f"❌ Error closing database: {e}", exc_info=True)
-    
-    logger.info("✅ Application shutdown complete")
+        logger.error("Error closing database: %s", e, exc_info=True)
+
+    logger.info("Application shutdown complete")
 
 
 security = HTTPBasic()
 def verify_swagger_access(credentials: HTTPBasicCredentials = Depends(security)):
-    """Проверка доступа к Swagger в production"""
+    """Verify Swagger access in production."""
     correct_username = secrets.compare_digest(
         credentials.username.encode("utf8"), 
         Config.SWAGGER_USERNAME.encode("utf8")
@@ -139,10 +129,10 @@ def verify_swagger_access(credentials: HTTPBasicCredentials = Depends(security))
         )
     return True
 def get_swagger_dependency():
-    """Возвращает dependency в зависимости от окружения"""
+    """Return dependency based on environment (auth required in production only)."""
     if Config.ENVIRONMENT == "production":
         return Depends(verify_swagger_access)
-    return None  # В development не требуем авторизацию
+    return None
 
 
 app = FastAPI(
@@ -150,9 +140,9 @@ app = FastAPI(
     description="API for fantasy cryptocurrency trading game", 
     version="1.0.0",
     lifespan=lifespan,
-    docs_url=None,  # Отключаем стандартный
-    redoc_url=None,  # Отключаем стандартный
-    openapi_url=None  # Отключаем стандартный
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
 )
 
 app.state.limiter = limiter
@@ -172,7 +162,7 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 app.include_router(admin_router)
 
-# ============ ЗАЩИЩЕННЫЕ DOCS ENDPOINTS ============
+# ============ PROTECTED DOCS ENDPOINTS ============
 
 @limiter.exempt
 @app.get("/openapi.json", include_in_schema=False)
@@ -208,7 +198,7 @@ from pathlib import Path
 @limiter.exempt
 @app.get("/panel/bulk-upload", response_class=HTMLResponse)
 async def bulk_upload_page(authorized: bool = get_swagger_dependency()):
-    """Страница для bulk загрузки темплейтов"""
+    """Bulk template upload page."""
     html_path = Path(__file__).parent / "static" / "bulk_upload.html"
     if html_path.exists():
         return html_path.read_text(encoding='utf-8')

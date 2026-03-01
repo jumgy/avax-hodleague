@@ -14,30 +14,26 @@ logger = logging.getLogger(__name__)
 
 
 class UserPackGrantService:
-    """Сервис для выдачи всех доступных паков пользователю"""
-    
+    """Service for granting all available pack types to a user."""
+
     def __init__(self):
         self.db_session = None
-    
+
     def _get_next_friday_17utc(self) -> datetime:
-        """Возвращает ближайшую пятницу 17:00 UTC"""
+        """Return next Friday 17:00 UTC."""
         now = datetime.utcnow().replace(tzinfo=timezone.utc)
         current_weekday = now.weekday()  # 0 = Monday, 4 = Friday
-        
-        # Если сегодня пятница
+
+        # If today is Friday
         if current_weekday == 4:
             friday_17 = now.replace(hour=17, minute=0, second=0, microsecond=0)
             if now < friday_17:
-                # Ещё не 17:00 → возвращаем сегодня
                 return friday_17
             else:
-                # Уже после 17:00 → следующая пятница
                 return friday_17 + timedelta(days=7)
-        
-        # Если понедельник-четверг → ближайшая пятница
+
         if current_weekday < 4:
             days_until_friday = 4 - current_weekday
-        # Если суббота-воскресенье → следующая пятница
         else:
             days_until_friday = 7 - current_weekday + 4
         
@@ -49,17 +45,18 @@ class UserPackGrantService:
         user_id: int, 
         source: str = PackSource.ADMIN
     ) -> List[UserPack]:
-        """
-        Выдает пользователю все активные типы паков из базы данных
+        """Grant user all active pack types from the database.
+
         Args:
-            user_id: ID пользователя
-            source: Источник получения пака (ADMIN, REWARD, PURCHASE)
+            user_id: User ID.
+            source: Pack source (ADMIN, REWARD, PURCHASE).
+
         Returns:
-            List[UserPack]: Список созданных паков
+            List of created UserPack records.
         """
         async with DatabaseSession() as session:
             try:
-                # Проверяем существование пользователя
+                # Check user exists
                 user_query = select(User).where(User.id == user_id)
                 result = await session.execute(user_query)
                 user = result.scalar_one_or_none()
@@ -68,7 +65,7 @@ class UserPackGrantService:
                     logger.error(f"User with id {user_id} not found")
                     raise ValueError(f"User with id {user_id} not found")
                 
-                # Получаем все активные типы паков
+                # Get all active pack types
                 active_packs_query = select(PackType).where(PackType.is_active == True)
                 result = await session.execute(active_packs_query)
                 active_pack_types = result.scalars().all()
@@ -77,11 +74,11 @@ class UserPackGrantService:
                     logger.info("No active pack types found in database")
                     return []
                 
-                # Рассчитываем expires_at
+                # Calculate expires_at
                 expires_at = self._get_next_friday_17utc()
-                logger.info(f"📦 Packs will expire at: {expires_at}")
-                
-                # Создаем новые UserPack записи
+                logger.info(f"Packs will expire at: {expires_at}")
+
+                # Create new UserPack records
                 new_user_packs = []
                 for pack_type in active_pack_types:
                     user_pack = UserPack(
@@ -95,7 +92,7 @@ class UserPackGrantService:
                     new_user_packs.append(user_pack)
                     session.add(user_pack)
                 
-                # Flush чтобы получить ID
+                # Flush to get IDs
                 await session.flush()
                 
                 logger.info(
@@ -112,5 +109,4 @@ class UserPackGrantService:
                 raise
 
 
-# Создаем экземпляр сервиса
 user_pack_grant_service = UserPackGrantService()

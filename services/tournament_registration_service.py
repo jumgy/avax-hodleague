@@ -22,13 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 class TournamentRegistrationService:
-    """
-    Сервис для управления регистрацией игроков в турниры с блокчейн-верификацией
-    """
+    """Service for tournament registration with blockchain verification."""
 
     @staticmethod
     def generate_deck_hash(tournament_id: int, user_id: int, deck_composition: list[int]) -> str:
-        """Генерирует SHA256 хеш деки"""
+        """Generate SHA256 hash of the deck."""
         sorted_deck = sorted(deck_composition)
         hash_string = f"{tournament_id}:{user_id}:{':'.join(map(str, sorted_deck))}"
         return hashlib.sha256(hash_string.encode()).hexdigest()
@@ -37,19 +35,20 @@ class TournamentRegistrationService:
     async def _validate_deck_common(
         db: AsyncSession, tournament_id: int, user_id: int, deck_composition: list[int]
     ) -> tuple:
+        """Common deck validation (used for preview and final registration).
+
+        Returns:
+            Tuple of (tournament, cards_result, total_weight).
         """
-        Общая валидация деки (используется и для preview, и для финальной регистрации).
-        Возвращает: (tournament, cards_result, total_weight)
-        """
-        # 1. Проверка: ровно 5 карт
+        # 1. Exactly 5 cards
         if len(deck_composition) != 5:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Deck must contain exactly 5 cards")
 
-        # 2. Проверка: нет дубликатов user_card_id
+        # 2. No duplicate user_card_id
         if len(set(deck_composition)) != 5:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Deck cannot contain duplicate cards")
 
-        # 3. Турнир существует и status = "registration"
+        # 3. Tournament exists and status is "registration"
         tournament_query = select(Tournament).where(Tournament.id == tournament_id)
         tournament = (await db.execute(tournament_query)).scalar_one_or_none()
 
@@ -62,7 +61,7 @@ class TournamentRegistrationService:
                 detail=f"Tournament registration is closed. Current status: {tournament.status}",
             )
 
-        # 4. Юзер еще не зарегистрирован
+        # 4. User not already registered
         existing_deck_query = select(TournamentDeck).where(
             and_(
                 TournamentDeck.tournament_id == tournament_id,
@@ -77,7 +76,7 @@ class TournamentRegistrationService:
                 status_code=status.HTTP_400_BAD_REQUEST, detail="You are already registered for this tournament"
             )
 
-        # 5. Получаем карты с join к Card и Token
+        # 5. Get cards with join to Card and Token
         cards_query = (
             select(UserCard, Card, Token, Rarity)
             .join(Card, UserCard.card_id == Card.id)
@@ -87,16 +86,16 @@ class TournamentRegistrationService:
         )
         cards_result = (await db.execute(cards_query)).all()
 
-        # 6. Все карты принадлежат юзеру
+        # 6. All cards belong to user
         if len(cards_result) != 5:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="One or more cards do not belong to you"
             )
 
-        # 7. Проверка: нет двух карт одного токена
+        # 7. No two cards of the same token
         token_ids = [token.id for _, _, token, _ in cards_result]
         if len(set(token_ids)) != 5:
-            # Находим дубликаты для сообщения об ошибке
+            # Find duplicates for error message
             from collections import Counter
 
             token_counts = Counter(token_ids)
@@ -108,36 +107,36 @@ class TournamentRegistrationService:
                 detail=f"Deck cannot contain multiple cards of the same token. Duplicate token(s): {', '.join(duplicate_tokens_unique)}",
             )
 
-        # 8. Валидация статуса и подсчёт веса
+        # 8. Validate status and sum weight
         total_weight = 0.0
         now = datetime.now(UTC)
 
         for user_card, card, token, rarity in cards_result:
-            # Проверка expires_at
+            # Check expires_at
             if user_card.expires_at and user_card.expires_at <= now:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Card #{user_card.id} ({token.name} - {rarity.name}) has expired",
                 )
 
-            # Проверка статуса
+            # Check status
             if user_card.status != "available":
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Card #{user_card.id} ({token.name} - {rarity.name}) is not available. Status: {user_card.status}",
                 )
 
-            # Проверка is_active
+            # Check is_active
             if not user_card.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Card #{user_card.id} ({token.name} - {rarity.name}) is not active",
                 )
 
-            # Суммируем вес
+            # Sum weight
             total_weight += float(token.weight)
 
-        # 9. Проверка лимита веса
+        # 9. Check weight limit
         if total_weight > float(tournament.weight_limit):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -150,30 +149,24 @@ class TournamentRegistrationService:
     async def validate_deck_preview(
         db: AsyncSession, tournament_id: int, user_id: int, deck_composition: list[int]
     ) -> dict:
-        """
-        ПРЕ-ВАЛИДАЦИЯ деки БЕЗ ЗАПИСИ В БД.
+        """Pre-validate deck without writing to DB.
 
-        Используется фронтендом ПЕРЕД вызовом смарт-контракта.
-        Возвращает deck_hash который нужно передать в контракт.
+        Used by frontend before calling the smart contract.
+        Returns deck_hash to pass to the contract.
 
-        :return: {
-            "valid": True,
-            "deck_hash": "0x...",
-            "total_weight": float,
-            "weight_limit": float,
-            "cards": [...]
-        }
+        Returns:
+            Dict with valid, deck_hash, total_weight, weight_limit, cards.
         """
 
-        # Выполняем все проверки (без записи в БД)
+        # Run all checks (no DB write)
         tournament, cards_result, total_weight = await TournamentRegistrationService._validate_deck_common(
             db, tournament_id, user_id, deck_composition
         )
 
-        # Генерируем deck_hash
+        # Generate deck_hash
         deck_hash = TournamentRegistrationService.generate_deck_hash(tournament_id, user_id, deck_composition)
 
-        # Формируем ответ
+        # Build response
         cards_info = [
             {"user_card_id": uc.id, "card_name": token.name, "rarity": rarity.name, "weight": float(token.weight)}
             for uc, card, token, rarity in cards_result
@@ -181,7 +174,7 @@ class TournamentRegistrationService:
 
         return {
             "valid": True,
-            "deck_hash": f"0x{deck_hash}",  # Добавляем 0x для контракта
+            "deck_hash": f"0x{deck_hash}",  # 0x prefix for contract
             "total_weight": total_weight,
             "weight_limit": float(tournament.weight_limit),
             "cards": cards_info,
@@ -190,12 +183,13 @@ class TournamentRegistrationService:
 
     @staticmethod
     async def get_registration_network_recommendation(wallet_address: str) -> dict[str, Any]:
-        """
-        Рекомендация сети для регистрации по балансу газа.
-        Если на Abstract нет газа, но есть на Avalanche — рекомендуем переключиться на Avalanche.
-        При ошибках RPC или при отсутствии конфига Avalanche — fallback на Abstract.
+        """Recommend network for registration based on gas balance.
 
-        :return: preferred_network, switch_network_required, avalanche_chain_id, avalanche_contract_address, message
+        If no gas on Abstract but gas on Avalanche, recommend switching to Avalanche.
+        On RPC errors or missing Avalanche config, fallback to Abstract.
+
+        Returns:
+            Dict with preferred_network, switch_network_required, avalanche_chain_id, etc.
         """
         result: dict[str, Any] = {
             "preferred_network": "abstract",
@@ -256,10 +250,9 @@ class TournamentRegistrationService:
 
     @staticmethod
     def get_network_info_for_chain_id(chain_id: int | None) -> dict[str, Any] | None:
-        """
-        По chain_id (из tournament_decks.registration_chain_id) возвращает данные сети
-        для unregister: network, chain_id, contract_address.
-        Нужно фронту, чтобы вызвать unregister в той же сети, в которой была регистрация.
+        """Return network info for unregister by chain_id (from tournament_decks.registration_chain_id).
+
+        Returns network, chain_id, contract_address for the frontend to call unregister in the same network.
         """
         if chain_id is None:
             return None
@@ -284,20 +277,10 @@ class TournamentRegistrationService:
         wallet_address: str,
         timeout_seconds: float = 1.0,
     ) -> dict[str, Any]:
-        """
-        Быстрая проверка регистрации напрямую в смарт-контракте.
+        """Quick check of registration directly in the smart contract.
 
-        Проверяем все доступные сети (Abstract + Avalanche) параллельно.
-        Каждая RPC‑операция ограничена по времени через asyncio.wait_for,
-        чтобы не блокировать обработку запроса слишком долго.
-
-        :return: {
-            "is_registered": bool,
-            "network": Optional["abstract" | "avalanche"],
-            "chain_id": Optional[int],
-            "contract_address": Optional[str],
-            "deck_hash": Optional[str],
-        }
+        Checks all available networks (Abstract + Avalanche) in parallel.
+        Each RPC call is time-limited via asyncio.wait_for to avoid blocking.
         """
 
         wallet = (wallet_address or "").strip()
@@ -357,13 +340,13 @@ class TournamentRegistrationService:
                 )
                 return network, {"is_registered": False}
 
-        # Параллельно проверяем все доступные сети
+        # Check all available networks in parallel
         check_results = await asyncio.gather(*[_check_network(net) for net in networks])
 
         for network, data in check_results:
             if data.get("is_registered"):
                 logger.info(
-                    "✅ On-chain registration detected for tournament_id=%s, wallet=%s, network=%s",
+                    "On-chain registration detected for tournament_id=%s, wallet=%s, network=%s",
                     tournament_id,
                     wallet,
                     network,
@@ -402,27 +385,28 @@ class TournamentRegistrationService:
         tx_hash: str,
         network: str = "abstract",
     ) -> TournamentDeck:
+        """Final registration with blockchain transaction verification.
+
+        Called after the user has signed the transaction in the contract.
+
+        Args:
+            network: "abstract" or "avalanche" — network where the transaction was signed.
+
+        Returns:
+            TournamentDeck.
         """
-        ФИНАЛЬНАЯ РЕГИСТРАЦИЯ с проверкой блокчейн-транзакции.
-
-        Вызывается ПОСЛЕ того как юзер подписал транзакцию в контракте.
-
-        :param network: "abstract" или "avalanche" — сеть, в которой подписана транзакция
-        :return: TournamentDeck
-        """
-
-        # 1. Базовая валидация деки
+        # 1. Basic deck validation
         tournament, cards_result, total_weight = await TournamentRegistrationService._validate_deck_common(
             db, tournament_id, user_id, deck_composition
         )
 
-        # 2. Генерируем deck_hash
+        # 2. Generate deck_hash
         deck_hash = TournamentRegistrationService.generate_deck_hash(tournament_id, user_id, deck_composition)
 
-        # 3. ПРОВЕРЯЕМ БЛОКЧЕЙН-ТРАНЗАКЦИЮ в выбранной сети
+        # 3. Verify blockchain transaction in selected network
         provider_url, contract_address, chain_id = TournamentRegistrationService._web3_config_for_network(network)
         logger.info(
-            f"🔍 Verifying transaction {tx_hash} in network={network} "
+            f"Verifying transaction {tx_hash} in network={network} "
             f"(provider={provider_url}, contract={contract_address}, chain_id={chain_id})"
         )
 
@@ -436,18 +420,18 @@ class TournamentRegistrationService:
             tx_hash=tx_hash, tournament_id=tournament_id, expected_deck_hash=deck_hash, user_wallet=user_wallet
         )
 
-        # Если транзакция не найдена в указанной сети, пробуем другую сеть (fallback)
+        # If transaction not found in given network, try fallback network
         if not verification["valid"] and "Transaction not found" in verification.get("error", ""):
             fallback_network = "avalanche" if network == "abstract" else "abstract"
 
-            # Проверяем, настроена ли альтернативная сеть
+            # Check if fallback network is configured
             if (
                 fallback_network == "avalanche"
                 and Config.WEB3_PROVIDER_URL_AVALANCHE
                 and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE
             ):
                 logger.warning(
-                    f"⚠️ Transaction {tx_hash} not found in {network} network, "
+                    f"Transaction {tx_hash} not found in {network} network, "
                     f"trying fallback network: {fallback_network}"
                 )
                 try:
@@ -455,7 +439,7 @@ class TournamentRegistrationService:
                         TournamentRegistrationService._web3_config_for_network(fallback_network)
                     )
                     logger.info(
-                        f"🔄 Fallback verification: provider={fallback_provider_url}, "
+                        f"Fallback verification: provider={fallback_provider_url}, "
                         f"contract={fallback_contract_address}, chain_id={fallback_chain_id}"
                     )
                     fallback_web3_service = Web3VerificationService(
@@ -471,18 +455,18 @@ class TournamentRegistrationService:
                     )
                     if verification["valid"]:
                         logger.info(
-                            f"✅ Transaction {tx_hash} found in fallback network {fallback_network}, "
+                            f"Transaction {tx_hash} found in fallback network {fallback_network}, "
                             f"updating chain_id from {chain_id} to {fallback_chain_id}"
                         )
-                        chain_id = fallback_chain_id  # Обновляем chain_id для сохранения в БД
-                        network = fallback_network  # Обновляем network для логирования
+                        chain_id = fallback_chain_id  # Update chain_id for DB
+                        network = fallback_network
                     else:
                         logger.error(
-                            f"❌ Transaction {tx_hash} also not found in fallback network {fallback_network}: "
+                            f"Transaction {tx_hash} also not found in fallback network {fallback_network}: "
                             f"{verification.get('error', 'Unknown error')}"
                         )
                 except Exception as e:
-                    logger.error(f"❌ Fallback verification failed: {e}")
+                    logger.error(f"Fallback verification failed: {e}")
 
         if not verification["valid"]:
             raise HTTPException(
@@ -490,7 +474,7 @@ class TournamentRegistrationService:
                 detail=f"Transaction verification failed: {verification['error']}",
             )
 
-        # 4. Создаём TournamentDeck (сохраняем chain_id для аудита)
+        # 4. Create TournamentDeck (store chain_id for audit)
         tournament_deck = TournamentDeck(
             tournament_id=tournament_id,
             user_id=user_id,
@@ -505,7 +489,7 @@ class TournamentRegistrationService:
 
         db.add(tournament_deck)
 
-        # 5. Блокируем карты
+        # 5. Lock cards
         for user_card, card, token, rarity in cards_result:
             user_card.status = "locked"
 
@@ -523,17 +507,18 @@ class TournamentRegistrationService:
         tx_hash: str,
         network: str = "abstract",
     ) -> dict:
+        """Unregister with blockchain transaction verification.
+
+        User must call unregisterDeck in the contract (same network as registration),
+        then pass tx_hash and network here to unlock cards.
+
+        Args:
+            network: "abstract" or "avalanche" — network where unregister was signed.
+
+        Returns:
+            Dict with success, cards_unlocked, tx_hash.
         """
-        Отмена регистрации с проверкой блокчейн-транзакции.
-
-        Юзер должен сначала вызвать unregisterDeck в контракте (в той же сети, что и при регистрации),
-        потом передать tx_hash и network сюда для разблокировки карт.
-
-        :param network: "abstract" или "avalanche" — сеть, в которой подписана unregister-транзакция
-        :return: {"success": True, "cards_unlocked": int, "tx_hash": str}
-        """
-
-        # 1. Проверяем что турнир в статусе registration
+        # 1. Ensure tournament is in registration status
         tournament_query = select(Tournament).where(Tournament.id == tournament_id)
         tournament = (await db.execute(tournament_query)).scalar_one_or_none()
 
@@ -545,7 +530,7 @@ class TournamentRegistrationService:
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot unregister after registration closed"
             )
 
-        # 2. Найти активную деку
+        # 2. Find active deck
         deck_query = select(TournamentDeck).where(
             and_(
                 TournamentDeck.tournament_id == tournament_id,
@@ -558,7 +543,7 @@ class TournamentRegistrationService:
         if not deck:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not registered in this tournament")
 
-        # 3. ПРОВЕРЯЕМ ТРАНЗАКЦИЮ UNREGISTER в выбранной сети (с fallback на другую сеть при "Transaction not found")
+        # 3. Verify UNREGISTER transaction in selected network (fallback on "Transaction not found")
         provider_url, contract_address, _ = TournamentRegistrationService._web3_config_for_network(network)
         web3_service = Web3VerificationService(
             web3_provider_url=provider_url,
@@ -578,7 +563,7 @@ class TournamentRegistrationService:
                 and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE
             ):
                 logger.warning(
-                    "⚠️ Unregister tx %s not found in %s, trying fallback network: %s",
+                    "Unregister tx %s not found in %s, trying fallback network: %s",
                     tx_hash,
                     network,
                     fallback_network,
@@ -597,12 +582,12 @@ class TournamentRegistrationService:
                     )
                     if verification["valid"]:
                         logger.info(
-                            "✅ Unregister tx %s found in fallback network %s",
+                            "Unregister tx %s found in fallback network %s",
                             tx_hash,
                             fallback_network,
                         )
                 except Exception as e:
-                    logger.error("❌ Fallback unregister verification failed: %s", e)
+                    logger.error("Fallback unregister verification failed: %s", e)
 
         if not verification["valid"]:
             raise HTTPException(
@@ -610,7 +595,7 @@ class TournamentRegistrationService:
                 detail=f"Unregister verification failed: {verification['error']}",
             )
 
-        # 4. РАЗБЛОКИРУЕМ КАРТЫ
+        # 4. Unlock cards
         cards_query = select(UserCard).where(UserCard.id.in_(deck.deck_composition))
         cards = (await db.execute(cards_query)).scalars().all()
 
@@ -620,7 +605,7 @@ class TournamentRegistrationService:
                 card.status = "available"
                 unlocked_count += 1
 
-        # 5. ДЕАКТИВИРУЕМ ДЕКУ
+        # 5. Deactivate deck
         deck.is_active = False
 
         await db.commit()

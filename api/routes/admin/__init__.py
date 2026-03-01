@@ -22,7 +22,7 @@ from .alpha_test import router as admin_alpha_test_router
 # Create admin router
 admin_router = APIRouter()
 
-# Include all admin route modules с отдельными тегами
+# Include all admin route modules with separate tags
 admin_router.include_router(auth_router, tags=["Admin - Auth"])
 admin_router.include_router(admin_alpha_test_router, tags=["Admin - Alpha Test"])
 admin_router.include_router(tokens_router, tags=["Admin - Tokens"])

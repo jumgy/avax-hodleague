@@ -12,18 +12,16 @@ from models.user_models import User
 logger = logging.getLogger(__name__)
 
 class UserCardGrantService:
-    """Сервис для выдачи всех доступных карточек пользователю"""
+    """Service for granting all available cards to a user."""
 
     def __init__(self):
         self.db_session = None
 
     async def grant_all_active_cards_to_user(self, user_id: int, source: str = UserCardSource.ADMIN) -> List[UserCard]:
-        """
-        Выдает пользователю все активные карточки из базы данных
-        """
+        """Grant user all active cards from the database."""
         async with DatabaseSession() as session:
             try:
-                # Проверяем существование пользователя
+                # Check user exists
                 user_query = select(User).where(User.id == user_id)
                 result = await session.execute(user_query)
                 user = result.scalar_one_or_none()
@@ -32,7 +30,6 @@ class UserCardGrantService:
                     logger.error(f"User with id {user_id} not found")
                     raise ValueError(f"User with id {user_id} not found")
 
-                # Получаем все активные карточки
                 active_cards_query = select(Card).where(Card.is_active == True)
                 result = await session.execute(active_cards_query)
                 active_cards = result.scalars().all()
@@ -41,7 +38,7 @@ class UserCardGrantService:
                     logger.info("No active cards found in database")
                     return []
 
-                # Получаем карточки, которые уже есть у пользователя
+                # Get cards user already has
                 existing_user_cards_query = select(UserCard.card_id).where(
                     UserCard.user_id == user_id,
                     UserCard.is_active == True
@@ -49,7 +46,7 @@ class UserCardGrantService:
                 result = await session.execute(existing_user_cards_query)
                 existing_card_ids = {card_id for card_id in result.scalars().all()}
 
-                # Определяем карточки, которых у пользователя еще нет
+                # Cards the user does not have yet.
                 cards_to_grant = [
                     card for card in active_cards 
                     if card.id not in existing_card_ids
@@ -59,7 +56,7 @@ class UserCardGrantService:
                     logger.info(f"User {user_id} already has all available active cards")
                     return []
 
-                # Создаем новые UserCard записи
+                # Create new UserCard records
                 new_user_cards = []
                 for card in cards_to_grant:
                     user_card = UserCard(
@@ -72,7 +69,7 @@ class UserCardGrantService:
                     new_user_cards.append(user_card)
                     session.add(user_card)
 
-                # Flush чтобы получить ID
+                # Flush to get IDs
                 await session.flush()
                 
                 logger.info(f"Successfully granted {len(new_user_cards)} new cards to user {user_id}")
@@ -87,16 +84,17 @@ class UserCardGrantService:
                 raise
 
     async def get_user_cards_with_details(self, user_id: int) -> List[dict]:
-        """
-        Получает все карточки пользователя с полной информацией
+        """Get all user cards with full details.
+
         Args:
-            user_id: ID пользователя
+            user_id: User ID.
+
         Returns:
-            List[dict]: Список карточек с детальной информацией
+            List of card dicts with full info.
         """
         async with DatabaseSession() as session:
             try:
-                # Используем joinedload для загрузки связанных данных за один запрос
+                # Use joinedload to fetch related data in one query.
                 from sqlalchemy.orm import joinedload
                 
                 query = select(UserCard).options(
@@ -109,7 +107,7 @@ class UserCardGrantService:
                 result = await session.execute(query)
                 user_cards = result.unique().scalars().all()
 
-                # Формируем детальную информацию
+                # Build detailed card info.
                 cards_info = []
                 for user_card in user_cards:
                     card_info = {
@@ -133,21 +131,20 @@ class UserCardGrantService:
                 raise
 
     async def get_missing_cards_for_user(self, user_id: int) -> List[Card]:
-        """
-        Получает список активных карточек, которых у пользователя еще нет
+        """Get active cards the user does not have yet.
+
         Args:
-            user_id: ID пользователя
+            user_id: User ID.
+
         Returns:
-            List[Card]: Список карточек, которых нет у пользователя
+            List of Card records the user is missing.
         """
         async with DatabaseSession() as session:
             try:
-                # Получаем все активные карточки
                 all_active_cards_query = select(Card).where(Card.is_active == True)
                 result = await session.execute(all_active_cards_query)
                 all_active_cards = result.scalars().all()
 
-                # Получаем карточки пользователя
                 user_cards_query = select(UserCard.card_id).where(
                     UserCard.user_id == user_id,
                     UserCard.is_active == True
@@ -155,7 +152,7 @@ class UserCardGrantService:
                 result = await session.execute(user_cards_query)
                 user_card_ids = {card_id for card_id in result.scalars().all()}
 
-                # Находим карточки, которых у пользователя нет
+                # Cards user does not have
                 missing_cards = [
                     card for card in all_active_cards 
                     if card.id not in user_card_ids
@@ -168,7 +165,7 @@ class UserCardGrantService:
                 raise
 
     async def get_active_cards_count(self) -> int:
-        """Получает количество активных карточек в системе"""
+        """Return count of active cards in the system."""
         async with DatabaseSession() as session:
             try:
                 query = select(Card).where(Card.is_active == True)
@@ -180,5 +177,4 @@ class UserCardGrantService:
                 logger.error(f"Error counting active cards: {e}")
                 raise
 
-# Создаем экземпляр сервиса
 user_card_grant_service = UserCardGrantService()

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class PriceMonitorService:
-    # Хардкоженные токены для DexScreener
+    # Hardcoded tokens for DexScreener
     DEXSCREENER_TOKENS = {
         'ABX': {
             'chain_id': 'abstract',
@@ -58,19 +58,18 @@ class PriceMonitorService:
                         logger.warning(f"No DexScreener data for {symbol}")
                         return None
                     
-                    # Берем первую пару (обычно самая ликвидная)
+                    # First pair (usually most liquid)
                     pair = data[0]
                     
-                    # Извлекаем данные
+                    # Extract data
                     price_usd = float(pair.get('priceUsd', 0))
                     market_cap = pair.get('marketCap')
                     fdv = pair.get('fdv')
                     
-                    # Получаем изменение за 24ч (из priceChange объекта)
                     price_change = pair.get('priceChange', {})
-                    change_24h = price_change.get('h24', 0)  # изменение за 24 часа
-                    
-                    # Объем за 24ч
+                    change_24h = price_change.get('h24', 0)
+
+                    # 24h volume
                     volume = pair.get('volume', {})
                     volume_24h = volume.get('h24', 0)
                     
@@ -78,11 +77,11 @@ class PriceMonitorService:
                         'price': price_usd,
                         'change_24h': change_24h,
                         'volume': volume_24h,
-                        'market_cap': market_cap if market_cap else fdv,  # используем market_cap или FDV
+                        'market_cap': market_cap if market_cap else fdv,
                         'source': 'dexscreener'
                     }
                     
-                    logger.info(f"🔍 DexScreener {symbol}: ${price_usd:.6f} (±{change_24h:.2f}%)")
+                    logger.info(f"DexScreener {symbol}: ${price_usd:.6f} (+/-{change_24h:.2f}%)")
                     return {symbol.upper(): result}
                     
                 else:
@@ -96,7 +95,7 @@ class PriceMonitorService:
     async def get_binance_prices(self, symbols: List[str]) -> Dict[str, Dict]:
         """Get prices from Binance API"""
         try:
-            # Binance - пары типа BTCUSDT
+            # Binance pairs like BTCUSDT
             binance_symbols = [f"{symbol.upper()}USDT" for symbol in symbols]
             url = "https://api.binance.com/api/v3/ticker/24hr"
             
@@ -294,7 +293,7 @@ class PriceMonitorService:
         
         async with AsyncSessionLocal() as db:
             try:
-                # Получаем активные токены из БД
+                # Get active tokens from DB
                 query = select(Token).where(Token.is_active == True)
                 result = await db.execute(query)
                 active_tokens = result.scalars().all()
@@ -306,11 +305,11 @@ class PriceMonitorService:
                 symbols = [token.symbol for token in active_tokens]
                 logger.info(f"Monitoring prices for {len(symbols)} tokens: {symbols}")
                 
-                # Разделяем токены на обычные и DexScreener
+                # Split by regular vs DexScreener
                 dexscreener_symbols = [s for s in symbols if s.upper() in self.DEXSCREENER_TOKENS]
                 regular_symbols = [s for s in symbols if s.upper() not in self.DEXSCREENER_TOKENS]
                 
-                # Создаем задачи для обычных токенов
+                # Tasks for regular tokens
                 tasks = []
                 
                 if regular_symbols:
@@ -322,42 +321,40 @@ class PriceMonitorService:
                         self.get_coinmarketcap_market_caps(regular_symbols)
                     ])
                 
-                # Добавляем задачи для DexScreener токенов
+                # Add DexScreener token tasks
                 for symbol in dexscreener_symbols:
                     tasks.append(self.get_dexscreener_price(symbol))
                 
-                # Выполняем все запросы параллельно
+                # Run all requests in parallel
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 
-                # Обрабатываем результаты
+                # Process results
                 prices_data = []
                 market_caps = {}
                 
                 if regular_symbols:
-                    # Первые результаты - это данные по обычным токенам
-                    regular_results = results[:5]  # 4 биржи + CMC
-                    
-                    # Первые 4 - цены с бирж
+                    regular_results = results[:5]  # 4 exchanges + CMC
+
+                    # First 4 are exchange prices
                     for data in regular_results[:4]:
                         if isinstance(data, dict) and data:
                             prices_data.append(data)
                     
-                    # Последний - market caps с CoinMarketCap
+                    # Last is market caps from CoinMarketCap
                     if isinstance(regular_results[4], dict):
                         market_caps.update(regular_results[4])
                     
-                    # Остальные результаты - DexScreener
+                    # Remaining are DexScreener
                     dex_results = results[5:]
                 else:
-                    # Все результаты - DexScreener
+                    # All results from DexScreener.
                     dex_results = results
                 
-                # Обрабатываем DexScreener результаты
+                # Process DexScreener results
                 for dex_data in dex_results:
                     if isinstance(dex_data, dict) and dex_data:
-                        # DexScreener уже содержит market_cap в данных
+                        # DexScreener already includes market_cap in data.
                         for symbol, data in dex_data.items():
-                            # Извлекаем market_cap из данных DexScreener
                             if 'market_cap' in data:
                                 market_caps[symbol] = data['market_cap']
                         
@@ -367,22 +364,22 @@ class PriceMonitorService:
                     logger.error("No price data received from any source")
                     return
                 
-                # Рассчитываем средние цены (или берем единственное значение для DexScreener)
+                # Average prices (or single value for DexScreener)
                 average_prices = self.calculate_average_price(prices_data)
                 
-                # Добавляем market caps к данным о ценах
+                # Add market caps to price data
                 for symbol in average_prices:
                     if symbol in market_caps:
                         average_prices[symbol]['market_cap'] = market_caps[symbol]
                 
-                # Обновляем БД
+                # Update DB
                 updated_count = 0
                 for token in active_tokens:
                     symbol = token.symbol.upper()
                     if symbol in average_prices:
                         price_data = average_prices[symbol]
                         
-                        # Создаем запись в TokenPrice
+                        # Create TokenPrice record
                         token_price = TokenPrice(
                             token_id=token.id,
                             price=price_data['price'],
@@ -394,7 +391,7 @@ class PriceMonitorService:
                         db.add(token_price)
                         updated_count += 1
                         
-                        # Форматируем market cap для лога
+                        # Format market cap for log
                         market_cap_value = price_data.get('market_cap')
                         if market_cap_value:
                             if market_cap_value >= 1e9:
@@ -406,19 +403,19 @@ class PriceMonitorService:
                         else:
                             market_cap_str = "N/A"
                         
-                        # Специальная метка для DexScreener токенов
+                        # Label for DexScreener tokens
                         source_info = f"from {price_data['sources_count']} sources"
                         if symbol in self.DEXSCREENER_TOKENS:
                             source_info = "from DexScreener"
                         
                         logger.info(
-                            f"💰 {symbol}: ${price_data['price']:.6f} "
+                            f"{symbol}: ${price_data['price']:.6f} "
                             f"(±{price_data.get('change_24h', 0):.2f}%) "
                             f"MC: {market_cap_str} {source_info}"
                         )
                 
                 await db.commit()
-                logger.info(f"✅ Updated prices for {updated_count}/{len(active_tokens)} tokens")
+                logger.info(f"Updated prices for {updated_count}/{len(active_tokens)} tokens")
                 
             except Exception as e:
                 logger.error(f"Error in price monitoring: {e}")

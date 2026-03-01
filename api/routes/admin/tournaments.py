@@ -77,11 +77,11 @@ class TournamentCreate(BaseModel):
 
     @validator('status')
     def validate_status_for_gameplay_date(cls, v, values):
-        """ОБНОВИТЬ: добавить проверку для FEATURED"""
+        """TODO: add validation for FEATURED."""
         if v == TournamentStatus.FEATURED:
             return v
             
-        # REGISTRATION нельзя создать если gameplay_start_date уже прошла
+        # Cannot create REGISTRATION if gameplay_start_date is in the past
         if v == TournamentStatus.REGISTRATION and 'gameplay_start_date' in values:
             if values['gameplay_start_date'] <= datetime.now(timezone.utc):
                 raise ValueError(
@@ -190,11 +190,10 @@ async def get_all_tournaments(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить все турниры с фильтрацией, сортировкой и пагинацией"""
-    # Базовый запрос
+    """Get all tournaments with filtering, sorting and pagination."""
     query = select(Tournament)
 
-    # Применяем фильтры
+    # Apply filters
     if id is not None:
         query = query.where(Tournament.id == id)
     if tournament_number is not None:
@@ -229,19 +228,19 @@ async def get_all_tournaments(
     if updated_to:
         query = query.where(Tournament.updated_at <= updated_to)
 
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
 
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(Tournament, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
 
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     items = result.scalars().all()
@@ -262,7 +261,7 @@ async def get_tournament(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретный турнир по ID"""
+    """Get tournament by ID."""
     query = select(Tournament).where(Tournament.id == tournament_id)
     result = await db.execute(query)
     tournament = result.scalar_one_or_none()
@@ -279,9 +278,9 @@ async def create_tournament(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Создать новый турнир"""
+    """Create new tournament."""
     
-    # Проверяем существование турнира с таким номером
+    # Check tournament number uniqueness
     existing_query = select(Tournament).where(
         Tournament.tournament_number == tournament_data.tournament_number
     )
@@ -293,7 +292,7 @@ async def create_tournament(
             status_code=400,
             detail=f"Tournament with number {tournament_data.tournament_number} already exists"
         )
-    # Проверка на пересечение по времени с другими активными турнирами
+    # Check time overlap with other active tournaments
     if tournament_data.status in [TournamentStatus.REGISTRATION, TournamentStatus.ONGOING]:
         overlap_query = select(Tournament).where(
             and_(
@@ -319,7 +318,7 @@ async def create_tournament(
                 )
             )
     
-    # Создаем новый турнир
+    # Create tournament
     new_tournament = Tournament(
         tournament_number=tournament_data.tournament_number,
         status=tournament_data.status,
@@ -345,8 +344,7 @@ async def update_tournament(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Обновить существующий турнир"""
-    # Получаем турнир
+    """Update existing tournament."""
     query = select(Tournament).where(Tournament.id == tournament_id)
     result = await db.execute(query)
     tournament = result.scalar_one_or_none()
@@ -354,7 +352,7 @@ async def update_tournament(
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
-    # Проверяем уникальность номера турнира
+    # Check tournament number uniqueness
     if tournament_data.tournament_number and tournament_data.tournament_number != tournament.tournament_number:
         existing_query = select(Tournament).where(
             Tournament.tournament_number == tournament_data.tournament_number
@@ -368,7 +366,7 @@ async def update_tournament(
                 detail=f"Tournament with number {tournament_data.tournament_number} already exists"
             )
 
-    # Защита - нельзя изменить gameplay_start_date если она в прошлом
+    # Cannot change gameplay_start_date if it is in the past
     if tournament_data.gameplay_start_date is not None:
         if tournament.gameplay_start_date and tournament.gameplay_start_date <= datetime.now(timezone.utc):
             raise HTTPException(
@@ -376,7 +374,7 @@ async def update_tournament(
                 detail="Cannot change gameplay_start_date - it's already in the past"
             )
 
-    # Валидация хронологии дат
+    # Validate date chronology
     new_start_date = tournament_data.start_date or tournament.start_date
     new_end_date = tournament_data.end_date or tournament.end_date
     new_gameplay_start = tournament_data.gameplay_start_date or tournament.gameplay_start_date
@@ -399,7 +397,7 @@ async def update_tournament(
             detail="End date must be after start date"
         )
 
-    # Защита - нельзя установить статус 'registration' если gameplay_start_date прошла
+    # Cannot set status to registration if gameplay_start_date has passed
     if tournament_data.status == TournamentStatus.REGISTRATION:
         if new_gameplay_start and new_gameplay_start <= datetime.now(timezone.utc):
             raise HTTPException(
@@ -408,7 +406,7 @@ async def update_tournament(
             )
 
     if tournament_data.status and tournament_data.status != tournament.status:
-        # Запрещенные переходы
+        # Forbidden transitions
         forbidden_transitions = [
             (TournamentStatus.ONGOING, TournamentStatus.FEATURED),
             (TournamentStatus.ONGOING, TournamentStatus.REGISTRATION),
@@ -447,7 +445,7 @@ async def update_tournament(
                     )
                 )
 
-    # Применяем обновления
+    # Apply updates
     update_data = tournament_data.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(tournament, field, value)
@@ -466,7 +464,7 @@ async def delete_tournament(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Деактивировать турнир (мягкое удаление)"""
+    """Deactivate tournament (soft delete)."""
     query = select(Tournament).where(Tournament.id == tournament_id)
     result = await db.execute(query)
     tournament = result.scalar_one_or_none()
@@ -474,7 +472,7 @@ async def delete_tournament(
     if not tournament:
         raise HTTPException(status_code=404, detail="Tournament not found")
 
-    # Проверка что турнир можно деактивировать
+    # Ensure tournament can be deactivated
     if tournament.status in [
         TournamentStatus.REGISTRATION, 
         TournamentStatus.ONGOING
@@ -504,13 +502,12 @@ async def get_tournaments_summary(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить статистику по турнирам"""
-    # Общее количество турниров
+    """Get tournament statistics."""
     total_query = select(func.count()).select_from(Tournament)
     total_result = await db.execute(total_query)
     total_tournaments = total_result.scalar()
 
-    # Количество по статусам
+    # Count by status
     registration_query = select(func.count()).select_from(Tournament).where(
         Tournament.status == TournamentStatus.REGISTRATION
     )
@@ -566,12 +563,9 @@ async def create_tournament_snapshot(
     admin: dict = Depends(verify_admin_token)
 ):
     """
-    Вручную создать снапшот цен для турнира (только для администраторов)
-    
-    Обычно снапшоты создаются автоматически сервисом управления турнирами
-    когда наступает gameplay_start_date.
+    Manually create price snapshot for tournament (admin only).
+    Snapshots are usually created automatically by tournament service when gameplay_start_date is reached.
     """
-    # Проверяем существование турнира
     query = select(Tournament).where(Tournament.id == tournament_id)
     result = await db.execute(query)
     tournament = result.scalar_one_or_none()
@@ -580,7 +574,7 @@ async def create_tournament_snapshot(
         raise HTTPException(status_code=404, detail="Tournament not found")
 
     try:
-        # Вызываем асинхронный сервис создания снапшота
+        # Call async snapshot creation service
         success = await tournament_service.create_tournament_snapshot(tournament_id, db)
         
         if not success:
@@ -589,7 +583,7 @@ async def create_tournament_snapshot(
                 detail="Failed to create tournament snapshot"
             )
 
-        # Подсчитываем созданные снапшоты
+        # Count created snapshots
         count_query = select(func.count()).select_from(TournamentTokenSnapshot).where(
             TournamentTokenSnapshot.tournament_id == tournament_id
         )

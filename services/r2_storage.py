@@ -4,8 +4,8 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
-# Загружаем .env
 load_dotenv()
+
 
 class R2Storage:
     def __init__(self):
@@ -15,11 +15,10 @@ class R2Storage:
         self.bucket_name = os.getenv('R2_BUCKET_NAME')
         self.public_url = os.getenv('R2_PUBLIC_URL')
         
-        # Проверка что все переменные загружены
         if not all([self.account_id, self.access_key_id, self.secret_access_key, self.bucket_name]):
-            raise ValueError("Не все R2 переменные окружения установлены!")
-        
-        # Создаем S3-клиент для R2
+            raise ValueError("Not all R2 environment variables are set.")
+
+        # S3-compatible client for R2
         self.client = boto3.client(
             's3',
             endpoint_url=f'https://{self.account_id}.r2.cloudflarestorage.com',
@@ -27,19 +26,18 @@ class R2Storage:
             aws_secret_access_key=self.secret_access_key,
             config=Config(signature_version='s3v4', region_name='auto')
         )
-        print(f"✅ R2 клиент инициализирован для bucket: {self.bucket_name}")
-    
+        print(f"R2 client initialized for bucket: {self.bucket_name}")
+
     def upload_file(self, file_path: str, object_key: str, content_type: str = 'image/png') -> str:
-        """
-        Загружает файл в R2
-        
+        """Upload file to R2.
+
         Args:
-            file_path: путь к локальному файлу
-            object_key: имя файла в bucket (например: 'images/card_123.png')
-            content_type: MIME тип файла
-            
+            file_path: Path to local file.
+            object_key: Object key in bucket (e.g. 'images/card_123.png').
+            content_type: MIME type.
+
         Returns:
-            Публичная ссылка на файл
+            Public URL of the uploaded file.
         """
         try:
             with open(file_path, 'rb') as f:
@@ -57,23 +55,23 @@ class R2Storage:
             return url
             
         except ClientError as e:
-            print(f"❌ Ошибка загрузки в R2: {e}")
+            print(f"R2 upload error: {e}")
             raise
         except FileNotFoundError:
-            print(f"❌ Файл не найден: {file_path}")
+            print(f"File not found: {file_path}")
             raise
-    
+
     def delete_file(self, object_key: str) -> bool:
-        """Удаляет файл из R2"""
+        """Delete file from R2."""
         try:
             self.client.delete_object(Bucket=self.bucket_name, Key=object_key)
             return True
         except ClientError as e:
-            print(f"❌ Ошибка удаления из R2: {e}")
+            print(f"R2 delete error: {e}")
             return False
-    
+
     def file_exists(self, object_key: str) -> bool:
-        """Проверяет существование файла в R2"""
+        """Check if file exists in R2."""
         try:
             self.client.head_object(Bucket=self.bucket_name, Key=object_key)
             return True

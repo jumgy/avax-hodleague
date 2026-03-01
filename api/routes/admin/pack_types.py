@@ -194,7 +194,7 @@ router = APIRouter(prefix="/panel/pack-types")
 async def get_pack_types(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=1000),
-    # Фильтрация по всем возможным полям и диапазонам
+    # Filter by all available fields and ranges
     id: Optional[int] = Query(None),
     name: Optional[str] = Query(None),
     description: Optional[str] = Query(None),
@@ -221,13 +221,12 @@ async def get_pack_types(
     admin: dict = Depends(verify_admin_token)
 ):
     """
-    Получить все типы паков с фильтрацией, сортировкой и пагинацией
+    Get all pack types with filtering, sorting and pagination.
     """
     
-    # Базовый запрос
     query = select(PackType)
-    
-    # Применяем фильтры
+
+    # Apply filters
     if id is not None:
         query = query.where(PackType.id == id)
     
@@ -288,19 +287,19 @@ async def get_pack_types(
     if updated_to:
         query = query.where(PackType.updated_at <= updated_to)
     
-    # Подсчитываем общее количество с учетом всех фильтров
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(PackType, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
     
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     items = result.scalars().all()
@@ -320,7 +319,7 @@ async def get_pack_type(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретный тип пака по ID"""
+    """Get pack type by ID."""
     
     query = select(PackType).where(PackType.id == pack_type_id)
     result = await db.execute(query)
@@ -337,9 +336,9 @@ async def create_pack_type(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Создать новый тип пака с проверкой уникальности имени"""
+    """Create new pack type with name uniqueness check."""
     
-    # Проверяем уникальность имени
+    # Check name uniqueness
     existing_query = select(PackType).where(PackType.name.ilike(data.name))
     existing_result = await db.execute(existing_query)
     existing = existing_result.scalar_one_or_none()
@@ -351,7 +350,7 @@ async def create_pack_type(
         )
     
     try:
-        # Создаем новый тип пака
+        # Create pack type
         new_pack = PackType(
             name=data.name,
             description=data.description,
@@ -387,9 +386,9 @@ async def update_pack_type(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Обновить существующий тип пака с проверкой ограничений"""
+    """Update existing pack type with constraint checks."""
     
-    # Получаем существующий пак
+    # Load existing pack type
     query = select(PackType).where(PackType.id == pack_type_id)
     result = await db.execute(query)
     pack = result.scalar_one_or_none()
@@ -397,7 +396,7 @@ async def update_pack_type(
     if not pack:
         raise HTTPException(status_code=404, detail="Pack type not found")
     
-    # Проверка дублирования имени
+    # Check duplicate name
     if data.name and data.name.lower() != pack.name.lower():
         existing_query = select(PackType).where(PackType.name.ilike(data.name))
         existing_result = await db.execute(existing_query)
@@ -409,9 +408,9 @@ async def update_pack_type(
                 detail=f"Pack type name '{data.name}' already exists"
             )
     
-    # Проверка supply если обновляется
+    # Check supply when updated
     if data.supply is not None:
-        # Проверяем сколько паков уже куплено/выдано
+        # Check how many packs already bought/granted
         count_query = select(func.count(UserPack.id)).where(
             UserPack.pack_type_id == pack_type_id
         )
@@ -425,7 +424,7 @@ async def update_pack_type(
             )
     
     try:
-        # Обновление полей
+        # Apply updates
         update_data = data.dict(exclude_unset=True)
         for field, value in update_data.items():
             setattr(pack, field, value)

@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade():
-    # Добавляем referred_by_id (nullable, FK)
+    # Add referred_by_id (nullable, FK)
     op.add_column('users', sa.Column('referred_by_id', sa.Integer(), nullable=True))
     op.create_foreign_key(
         'fk_users_referred_by',
@@ -28,10 +28,10 @@ def upgrade():
         ondelete='SET NULL'
     )
     
-    # Добавляем referral_count с DEFAULT 0
+    # Add referral_count with DEFAULT 0
     op.add_column('users', sa.Column('referral_count', sa.Integer(), nullable=False, server_default='0'))
     
-    # Создаем индекс
+    # Create index
     op.create_index('idx_users_referred_by', 'users', ['referred_by_id'])
 def downgrade():
     op.drop_index('idx_users_referred_by', table_name='users')

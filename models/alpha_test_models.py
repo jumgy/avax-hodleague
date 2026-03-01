@@ -4,9 +4,7 @@ from datetime import datetime, timezone
 from .database import Base
 
 class AlphaTestAccess(Base):
-    """
-    Whitelist адресов для доступа к альфа-тесту
-    """
+    """Whitelist of addresses for alpha test access."""
     __tablename__ = 'alpha_test_access'
     
     id = Column(Integer, primary_key=True, autoincrement=True)

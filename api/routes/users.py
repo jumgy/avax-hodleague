@@ -78,7 +78,7 @@ class UserProfileResponse(BaseModel):
 
 
 class LeaderboardUserEntry(BaseModel):
-    """Публичные данные пользователя для лидерборда + активные балансы."""
+    """Public user data for leaderboard and active balances."""
 
     user_id: int
     wallet_address: str
@@ -101,7 +101,7 @@ class LeaderboardResponse(BaseModel):
     pagination: PaginationMeta
 
 class UpdateOnboardingRequest(BaseModel):
-    """Запрос на обновление шагов онбординга"""
+    """Request to update onboarding step completion."""
     step: str  # "1", "2", "3"
     completed: bool
 
@@ -110,7 +110,7 @@ class UpdateOnboardingRequest(BaseModel):
 # ============================================
 
 class TournamentCardInfo(BaseModel):
-    """Информация о карте в турнирном деке"""
+    """Card info in a tournament deck."""
     user_card_id: int
     card_id: int
     token_symbol: str
@@ -122,7 +122,7 @@ class TournamentCardInfo(BaseModel):
 
 
 class TournamentRewardInfo(BaseModel):
-    """Информация о награде"""
+    """Reward information."""
     reward_type_id: int
     reward_name: str
     reward_category: str
@@ -135,30 +135,30 @@ class TournamentRewardInfo(BaseModel):
 
 
 class UserTournamentHistory(BaseModel):
-    """История участия в турнире"""
+    """User participation in a tournament."""
     tournament_id: int
     tournament_number: int
     status: str
     start_date: str
     end_date: str
     
-    # Результаты пользователя
+    # User results
     position: int
     final_score: float
     deck_id: int
     deck_composition: List[int]  # user_card_ids
     cards: List[TournamentCardInfo]
     
-    # Награды
+    # Prizes
     prizes: List[TournamentRewardInfo]
     
-    # Даты
+    # Dates
     registered_at: str
     calculated_at: Optional[str]
 
 
 class UserTournamentsResponse(BaseModel):
-    """Список турниров пользователя"""
+    """List of user tournaments."""
     user_id: int
     wallet_address: str
     tournaments: List[UserTournamentHistory]
@@ -231,7 +231,6 @@ async def get_my_profile(
             detail="Failed to retrieve profile"
         )
     
-# В конец файла, после get_my_tournament_history
 @router.patch(
     "/users/me/onboarding",
     summary="Update onboarding step",
@@ -243,10 +242,8 @@ async def update_onboarding_step(
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Обновить статус шага онбординга
-    - **step**: Номер шага ("1", "2", "3")
-    - **completed**: true/false
-    - Требует JWT аутентификацию
+    Update onboarding step completion status.
+    step: step number ("1", "2", "3"); completed: true/false. Requires JWT.
     """
     try:
         wallet_address = current_user["wallet_address"]
@@ -270,7 +267,7 @@ async def update_onboarding_step(
         # Update the step
         user.onboarding_steps[request.step] = request.completed
         
-        # Mark as updated (для trigger onupdate)
+        # Mark as updated (for onupdate trigger)
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(user, "onboarding_steps")
         
@@ -303,9 +300,7 @@ async def get_onboarding_status(
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Получить текущий статус онбординга
-    - Требует JWT аутентификацию
-    - Возвращает только onboarding_steps
+    Get current onboarding status. Requires JWT. Returns onboarding_steps only.
     """
     try:
         wallet_address = current_user["wallet_address"]
@@ -366,7 +361,7 @@ async def get_leaderboard(
     db: AsyncSession = Depends(get_async_db),
 ):
     """
-    Публичный лидерборд: топ по балансу (сумма available по всем типам наград) или по дате регистрации.
+    Public leaderboard: top by balance (sum of available per reward type) or by registration date.
     """
     from models.user_models import User
 
@@ -376,7 +371,7 @@ async def get_leaderboard(
         total = total_result.scalar() or 0
 
         if sort_by == LeaderboardSortBy.balance:
-            # Сортировка по сумме available_balance по всем типам наград
+            # Sort by sum of available_balance across reward types
             order_dir = "DESC" if sort_order == LeaderboardSortOrder.desc else "ASC"
             ids_query = text(
                 "SELECT u.id FROM users u "
@@ -519,10 +514,8 @@ async def get_my_tournament_history(
     db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Получить историю участия в турнирах текущего пользователя
-    - Требует JWT аутентификацию
-    - Возвращает все турниры, в которых участвовал пользователь
-    - Включает позицию, скор, карты, награды со статусом клейма
+    Get current user's tournament participation history.
+    Requires JWT. Returns all tournaments the user participated in, with position, score, cards, and reward claim status.
     """
     try:
         user_id = current_user.get('user_id')
@@ -534,7 +527,7 @@ async def get_my_tournament_history(
                 detail="Invalid user data in token"
             )
         
-        # Получаем все ЗАВЕРШЕННЫЕ турниры пользователя с результатами
+        # Load all FINISHED tournaments for user with results
         tournaments_query = select(
             Tournament,
             TournamentDeck,
@@ -563,9 +556,9 @@ async def get_my_tournament_history(
         best_score = None
         
         for tournament, deck, tournament_result in rows:
-            # Убираем проверку if not tournament_result, т.к. теперь результат всегда есть
+            # Result is always present for finished tournaments
             
-            # Получаем информацию о картах деки
+            # Load deck card info
             deck_card_ids = []
             if deck.deck_composition:
                 for card_entry in deck.deck_composition:
@@ -576,14 +569,14 @@ async def get_my_tournament_history(
             
             cards_info = await _get_deck_cards_info(deck_card_ids, db)
             
-            # Получаем информацию о наградах со статусом клейма
+            # Load prizes with claim status
             prizes_info = await _get_prizes_with_claim_status(
                 tournament_result.id,
                 user_id,
                 db
             )
             
-            # Обновляем лучшие показатели
+            # Update best position/score
             if tournament_result.final_position:
                 if best_position is None or tournament_result.final_position < best_position:
                     best_position = tournament_result.final_position
@@ -631,7 +624,7 @@ async def get_my_tournament_history(
 # HELPER FUNCTIONS
 
 async def _get_deck_cards_info(card_ids: List[int], db: AsyncSession) -> List[TournamentCardInfo]:
-    """Получить информацию о картах деки"""
+    """Get deck card info by card IDs."""
     if not card_ids:
         return []
     
@@ -669,7 +662,7 @@ async def _get_deck_cards_info(card_ids: List[int], db: AsyncSession) -> List[To
                 rarity_name=row.rarity_name
             )
         
-        # Возвращаем в том же порядке, что и в деке
+        # Return in same order as deck
         return [cards_dict[card_id] for card_id in card_ids if card_id in cards_dict]
     
     except Exception as e:
@@ -683,8 +676,7 @@ async def _get_prizes_with_claim_status(
     db: AsyncSession
 ) -> List[TournamentRewardInfo]:
     """
-    Получить информацию о наградах пользователя со статусом клейма
-    из таблицы user_rewards
+    Get user rewards with claim status from user_rewards table.
     """
     try:
         rewards_query = select(

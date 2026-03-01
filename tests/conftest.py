@@ -1,6 +1,6 @@
 """
-Pytest fixtures для интеграционного тестирования.
-Использует реальную БД и чистит данные после тестов.
+Pytest fixtures for integration testing.
+Uses real DB and cleans data after tests.
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from models.tournament_models import Tournament, TournamentStatus
 from models.user_models import User
 from models.user_pack_models import PackSource, UserPack
 
-# Импортируем реальные сервисы
+# Real services for tests.
 from services.pack_opening_service import PackOpeningService
 from services.user_pack_grant_service import user_pack_grant_service
 
@@ -26,7 +26,7 @@ from services.user_pack_grant_service import user_pack_grant_service
 
 @pytest.fixture(scope="session")
 def event_loop():
-    """Создаёт event loop для всей сессии тестов"""
+    """Create event loop for the whole test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
@@ -39,7 +39,7 @@ def event_loop():
 
 @pytest.fixture(scope="function")
 async def db_session():
-    """Создаёт сессию реальной БД для теста"""
+    """Create real DB session for the test."""
     async with AsyncSessionLocal() as session:
         yield session
 
@@ -51,19 +51,19 @@ async def db_session():
 
 @pytest.fixture(scope="function", autouse=True)
 async def auto_cleanup():
-    """Чистит тестовые данные ПЕРЕД тестом через raw SQL"""
+    """Clean test data BEFORE the test via raw SQL."""
     from sqlalchemy import text
 
     async with AsyncSessionLocal() as session:
         try:
-            # 1. Удаляем тестовых пользователей и их данные
+            # 1. Remove test users and their data.
             result = await session.execute(text("SELECT id FROM users WHERE wallet_address LIKE '0xTest%'"))
             test_user_ids = [row[0] for row in result.fetchall()]
 
             if test_user_ids:
                 ids_str = ",".join(map(str, test_user_ids))
 
-                # Удаляем в правильном порядке
+                # Delete in correct order (FK constraints).
                 await session.execute(text(f"DELETE FROM user_rewards WHERE user_id IN ({ids_str})"))
                 await session.execute(text(f"DELETE FROM user_cards WHERE user_id IN ({ids_str})"))
                 await session.execute(text(f"DELETE FROM pack_openings WHERE user_id IN ({ids_str})"))
@@ -71,14 +71,14 @@ async def auto_cleanup():
                 await session.execute(text(f"DELETE FROM tournament_decks WHERE user_id IN ({ids_str})"))
                 await session.execute(text(f"DELETE FROM users WHERE id IN ({ids_str})"))
 
-            # 2. Удаляем тестовые турниры (tournament_number >= 9000)
+            # 2. Remove test tournaments (tournament_number >= 9000).
             result = await session.execute(text("SELECT id FROM tournaments WHERE tournament_number >= 9000"))
             test_tournament_ids = [row[0] for row in result.fetchall()]
 
             if test_tournament_ids:
                 t_ids_str = ",".join(map(str, test_tournament_ids))
 
-                # Удаляем tournament_prize_config ПЕРВЫМ (из-за FK constraint)
+                # Delete tournament_prize_config first (FK constraint).
                 try:
                     await session.execute(
                         text(f"DELETE FROM tournament_prize_config WHERE tournament_id IN ({t_ids_str})")
@@ -86,20 +86,20 @@ async def auto_cleanup():
                 except Exception as e:
                     print(f"[WARNING] tournament_prize_config cleanup: {e}")
 
-                # Находим tournament_results
+                # Find tournament_results.
                 result = await session.execute(
                     text(f"SELECT id FROM tournament_results WHERE tournament_id IN ({t_ids_str})")
                 )
                 test_tr_ids = [row[0] for row in result.fetchall()]
 
-                # Удаляем user_rewards связанные с tournament_results
+                # Delete user_rewards linked to tournament_results.
                 if test_tr_ids:
                     tr_ids_str = ",".join(map(str, test_tr_ids))
                     await session.execute(
                         text(f"DELETE FROM user_rewards WHERE tournament_result_id IN ({tr_ids_str})")
                     )
 
-                # Удаляем связанные данные турниров
+                # Delete tournament-related data.
                 await session.execute(text(f"DELETE FROM token_scores WHERE tournament_id IN ({t_ids_str})"))
                 await session.execute(text(f"DELETE FROM tournament_results WHERE tournament_id IN ({t_ids_str})"))
                 await session.execute(
@@ -107,7 +107,7 @@ async def auto_cleanup():
                 )
                 await session.execute(text(f"DELETE FROM tournament_decks WHERE tournament_id IN ({t_ids_str})"))
 
-                # Удаляем сами турниры
+                # Delete tournaments themselves.
                 await session.execute(text(f"DELETE FROM tournaments WHERE id IN ({t_ids_str})"))
 
             await session.commit()
@@ -125,7 +125,7 @@ async def auto_cleanup():
 
 @pytest.fixture
 def pack_opening_service():
-    """Возвращает реальный PackOpeningService"""
+    """Return real PackOpeningService."""
     return PackOpeningService()
 
 
@@ -136,7 +136,7 @@ def pack_opening_service():
 
 @pytest.fixture
 async def create_test_user(db_session):
-    """Создаёт тестового пользователя"""
+    """Create a test user."""
 
     async def _create_user(wallet_address: str = None, nickname: str = None, is_active: bool = True):
         timestamp = int(time.time() * 1000000)
@@ -158,7 +158,7 @@ async def create_test_user(db_session):
 
 @pytest.fixture
 async def create_test_tournament(db_session):
-    """Создаёт тестовый турнир"""
+    """Create a test tournament."""
 
     async def _create_tournament(
         status: str = TournamentStatus.REGISTRATION,
@@ -188,18 +188,18 @@ async def create_test_tournament(db_session):
 
 @pytest.fixture
 async def grant_pack_to_user(db_session):
-    """Выдаёт пак пользователю"""
+    """Grant a pack to a user."""
 
     async def _grant_pack(user_id: int, source: str = PackSource.ADMIN, pack_type_id: int = None):
         if pack_type_id:
-            # Выдаём конкретный тип пака
+            # Grant specific pack type.
             user_pack = UserPack(user_id=user_id, pack_type_id=pack_type_id, source=source, is_opened=False)
             db_session.add(user_pack)
             await db_session.commit()
             await db_session.refresh(user_pack)
             return [user_pack]
         else:
-            # Выдаём все активные паки через сервис
+            # Grant all active packs via service.
             await user_pack_grant_service.grant_all_active_packs_to_user(user_id=user_id, source=source)
 
             async with AsyncSessionLocal() as fresh_session:

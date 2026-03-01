@@ -7,7 +7,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, text
 from datetime import datetime
 
-# Импортируем только сервис CoinMarketCap и конфиг
 from services.coinmarketcap_service import CoinMarketCapService
 from config import Config
 
@@ -20,32 +19,32 @@ logger = logging.getLogger(__name__)
 
 # Game tokens with their weights
 GAME_TOKENS_WEIGHTS = {
-    # Вес 10
+    # Weight 10
     'BTC': 10, 'ETH': 10, 'XRP': 10,
-    # Вес 9
+    # Weight 9
     'BNB': 9, 'SOL': 9, 'TRX': 9,
-    # Вес 8
+    # Weight 8
     'DOGE': 8, 'ADA': 8, 'AVAX': 8,
-    # Вес 7
+    # Weight 7
     'HYPE': 7, 'WLFI': 7, 'ZEC': 7,
-    # Вес 6
+    # Weight 6
     'ENA': 6, 'APT': 6, 'M': 6,
-    # Вес 5
+    # Weight 5
     'PUMP': 5, 'KCS': 5, 'POL': 5,
-    # Вес 4
+    # Weight 4
     'KAS': 4, 'FLR': 4, 'DASH': 4,
-    # Вес 3
+    # Weight 3
     'FET': 3, 'LDO': 3, 'XTZ': 3,
-    # Вес 2
+    # Weight 2
     'DCR': 2, 'IOTA': 2, 'AB': 2,
-    # Вес 1
+    # Weight 1
     'KAIA': 1, 'FLOKI': 1, 'SPX': 1,
 }
 
 def create_database_connection():
     """Create database connection"""
     try:
-        # Используем DATABASE_URL напрямую, но заменяем asyncpg на psycopg2 для синхронного подключения
+        # Replace asyncpg with psycopg2 for sync connection
         db_url = Config.DATABASE_URL.replace('postgresql+asyncpg://', 'postgresql://')
         engine = create_engine(db_url)
         SessionLocal = sessionmaker(bind=engine)

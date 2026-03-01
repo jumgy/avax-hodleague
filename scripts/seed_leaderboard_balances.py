@@ -1,9 +1,8 @@
 """
-Скрипт для начисления балансов пользователям в тестовой БД.
-Нужен для проверки лидерборда GET /api/users/leaderboard?sort_by=balance.
+Seed user balances for leaderboard testing.
 
-Записывает в user_rewards записи со статусом claimed, чтобы они попали
-в user_balances_view (available_balance). Суммы различаются, чтобы тестировать сортировку.
+Writes claimed user_rewards so they appear in user_balances_view (available_balance).
+Use GET /api/users/leaderboard?sort_by=balance to verify sorting.
 """
 import asyncio
 import random
@@ -28,16 +27,16 @@ async def seed_leaderboard_balances(
     amount_max: float = 100_000.0,
     reward_type_id: Optional[int] = None,
 ) -> None:
-    """
-    Начислить claimed-награды активным пользователям с разными суммами.
+    """Grant claimed rewards to active users with varying amounts.
 
-    :param max_users: максимум пользователей (по умолчанию 50)
-    :param amount_min: минимальная сумма на пользователя
-    :param amount_max: максимальная сумма на пользователя
-    :param reward_type_id: если задан — использовать только этот тип награды, иначе первый активный
+    Args:
+        max_users: Maximum number of users to process (default 50).
+        amount_min: Minimum amount per user.
+        amount_max: Maximum amount per user.
+        reward_type_id: If set, use only this reward type; otherwise use first active.
     """
     async with AsyncSessionLocal() as session:
-        # Тип награды
+        # Reward type
         if reward_type_id is not None:
             rt_result = await session.execute(
                 select(RewardType).where(
@@ -53,16 +52,16 @@ async def seed_leaderboard_balances(
             rt = rt_result.scalar_one_or_none()
 
         if not rt:
-            print("Нет активных типов наград (reward_types). Создайте хотя бы один.")
+            print("No active reward types found. Create at least one.")
             return
 
-        # Активные пользователи
+        # Active users
         users_result = await session.execute(
             select(User).where(User.is_active == True).order_by(User.id).limit(max_users)
         )
         users = users_result.scalars().all()
         if not users:
-            print("Нет активных пользователей.")
+            print("No active users found.")
             return
 
         now = datetime.now(timezone.utc)
@@ -82,16 +81,16 @@ async def seed_leaderboard_balances(
             created += 1
 
         await session.commit()
-        print(f"Начислено {created} записей (reward_type_id={rt.id}, {rt.name}) пользователям. Проверьте: GET /api/users/leaderboard?sort_by=balance")
+        print(f"Granted {created} rewards (reward_type_id={rt.id}, {rt.name}). Verify: GET /api/users/leaderboard?sort_by=balance")
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Начислить балансы для теста лидерборда")
-    parser.add_argument("--max-users", type=int, default=50, help="Макс. пользователей (default: 50)")
-    parser.add_argument("--min", type=float, default=100.0, help="Мин. сумма на пользователя")
-    parser.add_argument("--max", type=float, default=100_000.0, help="Макс. сумма на пользователя")
-    parser.add_argument("--reward-type-id", type=int, default=None, help="ID типа награды (default: первый активный)")
+    parser = argparse.ArgumentParser(description="Seed balances for leaderboard testing")
+    parser.add_argument("--max-users", type=int, default=50, help="Max users (default: 50)")
+    parser.add_argument("--min", type=float, default=100.0, help="Min amount per user")
+    parser.add_argument("--max", type=float, default=100_000.0, help="Max amount per user")
+    parser.add_argument("--reward-type-id", type=int, default=None, help="Reward type ID (default: first active)")
     args = parser.parse_args()
     asyncio.run(seed_leaderboard_balances(
         max_users=args.max_users,

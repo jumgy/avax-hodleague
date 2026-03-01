@@ -128,12 +128,12 @@ def populate_card_weights(session):
                 tier_stats[tier_name].append(token_symbol)
                 
                 logger.info(
-                    f"✅ {token_symbol:8s} | weight={token_weight:2d} | "
+                    f"{token_symbol:8s} | weight={token_weight:2d} | "
                     f"tier={tier_name.upper():4s} | base_weight={base_weight}"
                 )
                 
             except Exception as e:
-                logger.error(f"❌ Failed to create weight for card {card_id} ({token_symbol}): {e}")
+                logger.error(f"Failed to create weight for card {card_id} ({token_symbol}): {e}")
                 failed_count += 1
         
         # Commit all inserts
@@ -148,11 +148,11 @@ def populate_card_weights(session):
         logger.info(f"Failed to create: {failed_count}")
         logger.info("-" * 80)
         logger.info("TIER DISTRIBUTION:")
-        logger.info(f"  🔥 TOP tier (base_weight 3.0): {len(tier_stats['top'])} cards")
+        logger.info(f"  TOP tier (base_weight 3.0): {len(tier_stats['top'])} cards")
         logger.info(f"     Tokens: {', '.join(tier_stats['top'])}")
-        logger.info(f"  ⚡ MID tier (base_weight 2.0): {len(tier_stats['mid'])} cards")
+        logger.info(f"  MID tier (base_weight 2.0): {len(tier_stats['mid'])} cards")
         logger.info(f"     Tokens: {', '.join(tier_stats['mid'])}")
-        logger.info(f"  📦 LOW tier (base_weight 1.0): {len(tier_stats['low'])} cards")
+        logger.info(f"  LOW tier (base_weight 1.0): {len(tier_stats['low'])} cards")
         logger.info(f"     Tokens: {', '.join(tier_stats['low'])}")
         logger.info("=" * 80)
         
@@ -190,9 +190,8 @@ def verify_card_weights(session):
         for row in result:
             base_weight, count, tokens = row
             tier_name = "TOP" if base_weight >= 3.0 else ("MID" if base_weight >= 2.0 else "LOW")
-            tier_emoji = "🔥" if tier_name == "TOP" else ("⚡" if tier_name == "MID" else "📦")
-            
-            logger.info(f"\n{tier_emoji} {tier_name} tier (base_weight={base_weight}):")
+
+            logger.info(f"\n{tier_name} tier (base_weight={base_weight}):")
             logger.info(f"  Count: {count} cards")
             logger.info(f"  Tokens: {', '.join(tokens)}")
         
@@ -233,7 +232,7 @@ def main():
         verify_card_weights(session)
         
         logger.info("=" * 80)
-        logger.info("✅ CARD WEIGHTS POPULATION COMPLETED SUCCESSFULLY!")
+        logger.info("CARD WEIGHTS POPULATION COMPLETED SUCCESSFULLY!")
         logger.info("=" * 80)
         
         return True
@@ -249,8 +248,8 @@ def main():
 if __name__ == "__main__":
     success = main()
     if success:
-        logger.info("✅ Script completed successfully")
+        logger.info("Script completed successfully")
         sys.exit(0)
     else:
-        logger.error("❌ Script failed")
+        logger.error("Script failed")
         sys.exit(1)

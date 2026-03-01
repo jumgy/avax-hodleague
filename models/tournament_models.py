@@ -14,11 +14,11 @@ class Tournament(Base):
 
     start_date = Column(DateTime(timezone=True), nullable=False)
     end_date = Column(DateTime(timezone=True), nullable=False)
-    gameplay_start_date = Column(DateTime(timezone=True), nullable=True)  # Когда начинается игра и фиксируются цены
+    gameplay_start_date = Column(DateTime(timezone=True), nullable=True)  # When gameplay starts and prices are fixed
 
     weight_limit = Column(Integer, nullable=False, default=30)  # Maximum deck weight limit
-    reward_types = Column(JSON, nullable=True)  # [1, 2, 3] - список ID типов наград
-    prize_pools = Column(JSON, nullable=True)   # {"1": "100000", "2": "500000"} - пулы для каждого типа
+    reward_types = Column(JSON, nullable=True)  # [1, 2, 3] - reward type IDs
+    prize_pools = Column(JSON, nullable=True)  # {"1": "100000", "2": "500000"} - pool per reward type
 
     is_active = Column(Boolean, nullable=False, default=True, server_default='true')
     
@@ -44,7 +44,7 @@ class Tournament(Base):
         return (self.end_date - self.start_date).days
     
 class TournamentTokenSnapshot(Base):
-    """Snapshot цен токенов на момент старта турнира"""
+    """Token price snapshot at tournament start."""
     __tablename__ = 'tournament_token_snapshots'
     
     id = Column(Integer, primary_key=True)

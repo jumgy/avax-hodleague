@@ -1,4 +1,4 @@
-# Prometheus: postgres_exporter (БД) + node_exporter (хост: CPU, RAM, диск). Всё внутри Docker-сети.
+# Prometheus: postgres_exporter (DB) + node_exporter (host: CPU, RAM, disk). All inside Docker network.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s

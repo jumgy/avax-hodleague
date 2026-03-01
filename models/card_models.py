@@ -15,9 +15,9 @@ class Card(Base):
     rarity_id = Column(Integer, ForeignKey('rarities.id'), nullable=False)
     design_type = Column(String(50), nullable=False)  # "classic", "neon", "retro", etc.
     
-    # Изображения
-    template_image_url = Column(String(500), nullable=False)  # Базовый шаблон БЕЗ текста
-    rendered_image_url = Column(String(500), nullable=True)  # Финальная картинка С текстом
+    # Images
+    template_image_url = Column(String(500), nullable=False)  # Base template without text
+    rendered_image_url = Column(String(500), nullable=True)  # Final image with text
     last_rendered_at = Column(DateTime(timezone=True), nullable=True)
     
     is_active = Column(Boolean, nullable=False, default=True)

@@ -66,14 +66,11 @@ async def get_tournament_decks(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token),
 ):
-    """
-    Получить все турнирные колоды с фильтрацией, сортировкой и пагинацией
-    """
+    """Get all tournament decks with filtering, sorting and pagination."""
     
-    # Базовый запрос
     query = select(TournamentDeck)
     
-    # Применяем фильтры
+    # Apply filters
     if id is not None:
         query = query.where(TournamentDeck.id == id)
     
@@ -95,19 +92,19 @@ async def get_tournament_decks(
     if submitted_to:
         query = query.where(TournamentDeck.submitted_at <= submitted_to)
     
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(TournamentDeck, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
     
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     items = result.scalars().all()
@@ -127,7 +124,7 @@ async def get_tournament_deck(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретную турнирную колоду по ID"""
+    """Get tournament deck by ID."""
     
     query = select(TournamentDeck).where(TournamentDeck.id == deck_id)
     result = await db.execute(query)
@@ -153,14 +150,11 @@ async def get_tournament_results(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """
-    Получить все результаты турниров с фильтрацией, сортировкой и пагинацией
-    """
+    """Get all tournament results with filtering, sorting and pagination."""
     
-    # Базовый запрос
     query = select(TournamentResult)
     
-    # Применяем фильтры
+    # Apply filters
     if id is not None:
         query = query.where(TournamentResult.id == id)
     
@@ -179,19 +173,19 @@ async def get_tournament_results(
     if calculated_to:
         query = query.where(TournamentResult.calculated_at <= calculated_to)
     
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(TournamentResult, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
     
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     items = result.scalars().all()
@@ -211,7 +205,7 @@ async def get_tournament_result(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретный результат турнира по ID"""
+    """Get tournament result by ID."""
     
     query = select(TournamentResult).where(TournamentResult.id == result_id)
     result = await db.execute(query)

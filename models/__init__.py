@@ -1,6 +1,6 @@
 # models/__init__.py
 
-from .database import Base, async_engine  # ← убрал engine, оставил только async_engine
+from .database import Base, async_engine
 
 # Import all models
 from .user_models import User

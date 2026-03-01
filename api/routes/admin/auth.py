@@ -14,13 +14,13 @@ from utils.rate_limit import limiter
 logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
-# ===== ФУНКЦИИ =====
+# ===== Helpers =====
 
 def create_access_token(data: dict) -> str:
     """Create JWT access token for admin"""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(hours=Config.ADMIN_JWT_EXPIRE_HOURS)
-    to_encode.update({"exp": expire, "type": "admin"})  # Помечаем тип токена
+    to_encode.update({"exp": expire, "type": "admin"})  # Mark token type
     encoded_jwt = jwt.encode(
         to_encode, 
         Config.ADMIN_JWT_SECRET_KEY,
@@ -39,7 +39,7 @@ def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(secur
             options={"verify_signature": True} 
         )
         
-        # Проверяем тип токена
+        # Check token type
         if payload.get("type") != "admin":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -58,7 +58,7 @@ def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(secur
         return payload
         
     except JWTError as e:
-        logger.warning(f"🚨 Invalid admin token attempt: {str(e)}")
+        logger.warning(f"Invalid admin token attempt: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Access denied",
@@ -101,25 +101,22 @@ async def system_login(request: Request, body: LoginRequest):
     """System authentication endpoint"""
     client_ip = request.client.host
     
-    # Аутентификация
     if not authenticate_admin(body.username, body.password):
-        # Логируем неудачную попытку
         logger.warning(
-            f"🚨 Failed admin login attempt: username={body.username}, ip={client_ip}"
+            f"Failed admin login attempt: username={body.username}, ip={client_ip}"
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed"
         )
     
-    # Успешная аутентификация
-    logger.info(f"✅ Admin login successful: {body.username} from {client_ip}")
+    logger.info(f"Admin login successful: {body.username} from {client_ip}")
     
     access_token = create_access_token(
         data={
-            "sub": body.username,  # 🔧 Используем body
+            "sub": body.username,
             "role": "system_admin",
-            "ip": client_ip  # Записываем IP в токен
+            "ip": client_ip
         }
     )
     
@@ -143,6 +140,6 @@ async def check_system_access(payload: dict = Depends(verify_admin_token)):
 
 @router.post("/auth/logout")
 async def logout(payload: dict = Depends(verify_admin_token)):
-    """Logout endpoint (для симметрии, токен остается валидным до истечения)"""
+    """Logout endpoint (token remains valid until expiry)."""
     logger.info(f"Admin logout: {payload.get('sub')}")
     return {"message": "Logged out successfully"}

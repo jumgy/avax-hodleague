@@ -84,9 +84,7 @@ class CardRenderService:
             return default, default
     
     def _draw_condensed_number(self, draw, text, position, font, fill, anchor="lb", squeeze_factor=0.75):
-        """
-        Рисует число с эффектом сжатия по горизонтали (condensed).
-        """
+        """Draw number with horizontal squeeze (condensed) effect."""
         bbox = draw.textbbox((0, 0), text, font=font, anchor="lt")
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -127,10 +125,10 @@ class CardRenderService:
         Render a card by overlaying text on template image.
         
         Args:
-            template_path: путь к локальному файлу темплейта (временный файл)
-            output_path: путь для сохранения результата (временный файл)
-            market_cap: капитализация
-            weight: вес карты
+            template_path: Path to local template file.
+            output_path: Path to save result.
+            market_cap: Market cap value.
+            weight: Card weight.
         """
         try:
             if not os.path.exists(template_path):
@@ -183,7 +181,7 @@ class CardRenderService:
                 anchor="lt"
             )
             
-            # === WEIGHT NUMBER (большое, condensed) ===
+            # Weight number (large, condensed)
             number_layer, number_pos = self._draw_condensed_number(
                 draw,
                 weight_number,
@@ -194,7 +192,7 @@ class CardRenderService:
                 squeeze_factor=0.70
             )
             
-            # Применяем прозрачность
+            # Apply opacity
             alpha = text_layer.split()[3]
             alpha = alpha.point(lambda p: int(p * self.TEXT_OPACITY))
             text_layer.putalpha(alpha)
@@ -209,40 +207,37 @@ class CardRenderService:
             
 
             
-            # ⬇️ УМЕНЬШАЕМ РАЗРЕШЕНИЕ В 2 РАЗА
+            # Downscale to output size
             img = img.resize(
                 (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
-                Image.Resampling.LANCZOS  # Лучший алгоритм для downscale
+                Image.Resampling.LANCZOS
             )
-            
-            # ⬇️ СОХРАНЯЕМ В WebP
+
             output_path = output_path.replace('.png', '.webp')
             img.save(
                 output_path,
                 "WebP",
-                quality=85,      # Можешь попробовать 80 для ещё меньшего размера
-                method=6,        # Максимальное сжатие
+                quality=85,
+                method=6,
                 optimize=True
             )
             
-            logger.info(f"📊 Image saved: {img.size}, mode: {img.mode}")
-            
-            # Log file size
+            logger.info(f"Image saved: {img.size}, mode: {img.mode}")
+
             file_size_kb = os.path.getsize(output_path) / 1024
-            logger.info(f"✅ Card rendered: {os.path.basename(output_path)} ({file_size_kb:.1f} KB)")
+            logger.info(f"Card rendered: {os.path.basename(output_path)} ({file_size_kb:.1f} KB)")
             
             return True
         
         except Exception as e:
-            logger.error(f"❌ Failed to render card: {e}", exc_info=True)
+            logger.error(f"Failed to render card: {e}", exc_info=True)
             return False
     
     async def render_card_by_id(self, card_id: int) -> Optional[str]:
-        """
-        Рендерит карту и загружает результат в R2.
-        
+        """Render card and upload result to R2.
+
         Returns:
-            CDN URL отрендеренной картинки или None при ошибке
+            CDN URL of rendered image or None on error.
         """
         template_temp_path = None
         output_temp_path = None
@@ -272,39 +267,38 @@ class CardRenderService:
                 
                 template_url = card.template_image_url
                 
-                # ⬇️ ДОБАВЛЕНО: Быстрый skip для placeholder и невалидных URL
+                # Skip placeholder or invalid URLs
                 if not template_url or not template_url.startswith('http'):
-                    logger.warning(f"⚠️ Skipping card {card_id}: invalid URL '{template_url}'")
+                    logger.warning(f"Skipping card {card_id}: invalid URL '{template_url}'")
                     return None
                 
                 if 'placeholder' in template_url.lower():
-                    logger.warning(f"⚠️ Skipping card {card_id}: placeholder template")
+                    logger.warning(f"Skipping card {card_id}: placeholder template")
                     return None
                 
-                # ⬇️ ИЗМЕНЕНО: Добавлен timeout 5 секунд
-                logger.info(f"📥 Downloading template from: {template_url}")
-                
+                logger.info(f"Downloading template from: {template_url}")
+
                 try:
-                    response = requests.get(template_url, timeout=5)  # ⬅️ timeout!
+                    response = requests.get(template_url, timeout=5)
                     response.raise_for_status()
                 except requests.exceptions.Timeout:
-                    logger.error(f"❌ Card {card_id}: template download timeout ({template_url})")
+                    logger.error(f"Card {card_id}: template download timeout ({template_url})")
                     return None
                 except requests.exceptions.RequestException as e:
-                    logger.error(f"❌ Card {card_id}: failed to download template - {e}")
+                    logger.error(f"Card {card_id}: failed to download template - {e}")
                     return None
                 
-                # Сохраняем темплейт во временный файл
+                # Save template to temp file
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as f:
                     f.write(response.content)
                     template_temp_path = f.name
                 
-                # Создаём временный файл для результата
+                # Temp file for result
                 output_temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.webp')
                 output_temp_path = output_temp_file.name
                 output_temp_file.close()
                 
-                # Рендерим карту
+                # Render card
                 success = self.render_card(
                     template_path=template_temp_path,
                     output_path=output_temp_path,
@@ -315,14 +309,13 @@ class CardRenderService:
                 if not success:
                     return None
 
-                # ⬇️ ИЗМЕНЕНО: Загружаем результат в R2
+                # Upload result to R2
                 timestamp = int(datetime.utcnow().timestamp())
                 output_filename = f"card_{card.id}_{timestamp}.webp"
                 object_key = f"card_renders/{output_filename}"
 
-                # Логируем размер перед загрузкой
                 file_size_kb = os.path.getsize(output_temp_path) / 1024
-                logger.info(f"📦 Uploading to R2: {output_filename} ({file_size_kb:.1f} KB)")
+                logger.info(f"Uploading to R2: {output_filename} ({file_size_kb:.1f} KB)")
 
                 rendered_url = r2_storage.upload_file(
                     output_temp_path,
@@ -332,18 +325,16 @@ class CardRenderService:
                 
                 old_rendered_url = card.rendered_image_url
                 
-                # Обновляем БД
+                # Update DB
                 card.rendered_image_url = rendered_url
                 card.last_rendered_at = datetime.utcnow()
                 await db.commit()
                 
-                logger.info(f"✅ Card {card_id} rendered and uploaded to R2: {rendered_url}")
-                
-                # ⬇️ ИЗМЕНЕНО: Удаляем старый рендер из R2 (если он был)
+                logger.info(f"Card {card_id} rendered and uploaded to R2: {rendered_url}")
+
+                # Delete old render from R2 if it was ours and unused
                 if old_rendered_url and old_rendered_url != rendered_url:
-                    # Проверяем что старый URL из нашего R2
                     if r2_storage.public_url in old_rendered_url:
-                        # Проверяем что этот URL больше не используется другими картами
                         in_use = await db.execute(
                             select(Card.id).where(
                                 Card.rendered_image_url == old_rendered_url,
@@ -352,34 +343,33 @@ class CardRenderService:
                         )
                         
                         if not in_use.first():
-                            # Извлекаем object_key из URL
                             old_object_key = old_rendered_url.replace(f"{r2_storage.public_url}/", "")
-                            
+
                             try:
                                 r2_storage.delete_file(old_object_key)
-                                logger.info(f"🗑️ Удалён старый рендер из R2: {old_object_key}")
+                                logger.info(f"Deleted old render from R2: {old_object_key}")
                             except Exception as e:
-                                logger.warning(f"⚠️ Не удалось удалить старый рендер {old_object_key}: {e}")
+                                logger.warning(f"Failed to delete old render {old_object_key}: {e}")
                 
                 return rendered_url
         
         except Exception as e:
-            logger.error(f"❌ Failed to render card {card_id}: {e}", exc_info=True)
+            logger.error(f"Failed to render card {card_id}: {e}", exc_info=True)
             return None
         
         finally:
-            # Удаляем временные файлы
+            # Remove temp files
             if template_temp_path and os.path.exists(template_temp_path):
                 try:
                     os.remove(template_temp_path)
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to delete temp template: {e}")
+                    logger.warning(f"Failed to delete temp template: {e}")
             
             if output_temp_path and os.path.exists(output_temp_path):
                 try:
                     os.remove(output_temp_path)
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to delete temp output: {e}")
+                    logger.warning(f"Failed to delete temp output: {e}")
     
     async def render_all_active_cards(self) -> dict:
         """Render all active cards"""
@@ -390,7 +380,7 @@ class CardRenderService:
                 )
                 card_ids = [row[0] for row in result.all()]
             
-            logger.info(f"🎨 Starting render for {len(card_ids)} active cards...")
+            logger.info(f"Starting render for {len(card_ids)} active cards...")
             
             success_count = 0
             failed_count = 0
@@ -402,16 +392,16 @@ class CardRenderService:
                 else:
                     failed_count += 1
             
-            logger.info("🔄 Refreshing materialized view active_cards_with_score...")
+            logger.info("Refreshing materialized view active_cards_with_score...")
             try:
                 async with DatabaseSession() as db:
                     await db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY active_cards_with_score"))
                     await db.commit()
-                logger.info("✅ Materialized view refreshed successfully")
+                logger.info("Materialized view refreshed successfully")
             except Exception as view_error:
-                logger.error(f"❌ Failed to refresh materialized view: {view_error}", exc_info=True)
-            
-            logger.info(f"✅ Complete: {success_count} success, {failed_count} failed")
+                logger.error(f"Failed to refresh materialized view: {view_error}", exc_info=True)
+
+            logger.info(f"Complete: {success_count} success, {failed_count} failed")
             
             return {
                 "total": len(card_ids),
@@ -420,7 +410,7 @@ class CardRenderService:
             }
         
         except Exception as e:
-            logger.error(f"❌ Failed to render cards: {e}", exc_info=True)
+            logger.error(f"Failed to render cards: {e}", exc_info=True)
             return {"total": 0, "success": 0, "failed": 0}
 
 

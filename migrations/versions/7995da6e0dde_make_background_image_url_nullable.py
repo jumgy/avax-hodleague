@@ -18,13 +18,13 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade():
-    # Делаем background_image_url nullable
+    # Make background_image_url nullable
     op.alter_column('cards', 'background_image_url',
                     existing_type=sa.String(length=500),
                     nullable=True)
 
 def downgrade():
-    # Откат - делаем NOT NULL обратно
+    # Rollback: make NOT NULL again
     op.alter_column('cards', 'background_image_url',
                     existing_type=sa.String(length=500),
                     nullable=False)

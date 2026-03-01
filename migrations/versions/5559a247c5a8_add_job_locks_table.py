@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Создаём таблицу для distributed locks
+    # Create table for distributed locks
     op.create_table(
         'job_locks',
         sa.Column('job_name', sa.String(length=100), nullable=False),
@@ -30,7 +30,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('job_name')
     )
     
-    # Индекс для быстрого поиска просроченных блокировок
+    # Index for fast lookup of expired locks
     op.create_index(
         'idx_job_locks_expires',
         'job_locks',

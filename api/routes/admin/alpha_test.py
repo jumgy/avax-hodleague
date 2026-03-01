@@ -20,7 +20,7 @@ class AlphaTestAccessCreate(BaseModel):
             raise ValueError('Wallet address must start with 0x')
         if len(v) != 42:
             raise ValueError('Wallet address must be 42 characters (0x + 40 hex)')
-        # Проверка на hex символы
+        # Validate hex characters
         try:
             int(v[2:], 16)
         except ValueError:
@@ -65,12 +65,11 @@ async def get_all_alpha_test_access(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить все адреса в whitelist альфа-теста"""
+    """Get all alpha test whitelist addresses."""
     
-    # Базовый запрос
     query = select(AlphaTestAccess)
     
-    # Применяем фильтры
+    # Apply filters
     if id is not None:
         query = query.where(AlphaTestAccess.id == id)
     
@@ -91,24 +90,24 @@ async def get_all_alpha_test_access(
         cutoff_date = datetime.utcnow() - timedelta(days=days_added_to)
         query = query.where(AlphaTestAccess.created_at >= cutoff_date)
     
-    # Подсчитываем общее количество
+    # Total count
     count_query = select(func.count()).select_from(query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar()
     
-    # Применяем сортировку
+    # Apply sort
     sort_column = getattr(AlphaTestAccess, sort_by)
     if sort_order == "desc":
         query = query.order_by(sort_column.desc())
     else:
         query = query.order_by(sort_column.asc())
     
-    # Применяем пагинацию и выполняем запрос
+    # Paginate and execute
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     addresses = result.scalars().all()
     
-    # Формируем результат
+    # Build response
     items = []
     for address in addresses:
         days_since_added = (datetime.utcnow() - address.created_at).days
@@ -137,7 +136,7 @@ async def get_alpha_test_access(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить конкретный адрес по ID"""
+    """Get alpha test access by ID."""
     query = select(AlphaTestAccess).where(AlphaTestAccess.id == access_id)
     result = await db.execute(query)
     address = result.scalar_one_or_none()
@@ -163,9 +162,9 @@ async def add_alpha_test_access(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Добавить новый адрес в whitelist"""
+    """Add new address to whitelist."""
     
-    # Проверяем, не существует ли уже такой адрес
+    # Check address not already in whitelist
     existing_query = select(AlphaTestAccess).where(
         AlphaTestAccess.wallet_address == access_data.wallet_address
     )
@@ -178,7 +177,7 @@ async def add_alpha_test_access(
             detail=f"Wallet address '{access_data.wallet_address}' already in whitelist"
         )
     
-    # Создаём новую запись
+    # Create new record
     new_access = AlphaTestAccess(
         wallet_address=access_data.wallet_address,
         created_at=datetime.utcnow()
@@ -205,7 +204,7 @@ async def delete_alpha_test_access(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Удалить адрес из whitelist"""
+    """Remove address from whitelist."""
     query = select(AlphaTestAccess).where(AlphaTestAccess.id == access_id)
     result = await db.execute(query)
     address = result.scalar_one_or_none()
@@ -224,14 +223,14 @@ async def get_alpha_test_summary(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Получить статистику по whitelist"""
+    """Get whitelist statistics."""
     
-    # Общее количество адресов
+    # Total count
     total_query = select(func.count()).select_from(AlphaTestAccess)
     total_result = await db.execute(total_query)
     total_addresses = total_result.scalar()
     
-    # Добавлено за последнюю неделю
+    # Added in last 7 days
     week_ago = datetime.utcnow() - timedelta(days=7)
     week_query = select(func.count()).select_from(AlphaTestAccess).where(
         AlphaTestAccess.created_at >= week_ago
@@ -239,7 +238,7 @@ async def get_alpha_test_summary(
     week_result = await db.execute(week_query)
     recent_additions = week_result.scalar()
     
-    # Добавлено за последние 24 часа
+    # Added in last 24 hours
     day_ago = datetime.utcnow() - timedelta(days=1)
     day_query = select(func.count()).select_from(AlphaTestAccess).where(
         AlphaTestAccess.created_at >= day_ago
@@ -260,7 +259,7 @@ async def bulk_add_alpha_test_access(
     db: AsyncSession = Depends(get_async_db),
     admin: dict = Depends(verify_admin_token)
 ):
-    """Добавить несколько адресов в whitelist за раз"""
+    """Add multiple addresses to whitelist at once."""
     
     added = []
     skipped = []
@@ -268,13 +267,13 @@ async def bulk_add_alpha_test_access(
     
     for wallet in wallet_addresses:
         try:
-            # Валидация
+            # Validate
             wallet = wallet.strip().lower()
             if not wallet.startswith('0x') or len(wallet) != 42:
                 errors.append({"wallet": wallet, "reason": "Invalid format"})
                 continue
             
-            # Проверяем существование
+            # Check existence
             existing_query = select(AlphaTestAccess).where(
                 AlphaTestAccess.wallet_address == wallet
             )
@@ -285,7 +284,7 @@ async def bulk_add_alpha_test_access(
                 skipped.append(wallet)
                 continue
             
-            # Добавляем
+            # Add
             new_access = AlphaTestAccess(
                 wallet_address=wallet,
                 created_at=datetime.utcnow()

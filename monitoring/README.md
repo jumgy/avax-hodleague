@@ -1,52 +1,52 @@
-# Мониторинг PostgreSQL
+# PostgreSQL Monitoring
 
-Стек: **postgres_exporter** → **Prometheus** → **Grafana**. База снаружи не открывается — только контейнеры в одной сети; наружу торчит только веб-интерфейс Grafana (логин/пароль).
+Stack: **postgres_exporter** -> **Prometheus** -> **Grafana**. The database is not exposed externally; only containers in the same network. The Grafana web UI is exposed (login/password).
 
-## Запуск
+## Running
 
-1. В `.env` задай пароль для входа в Grafana:
+1. Set Grafana admin password in `.env`:
    ```env
-   GRAFANA_ADMIN_PASSWORD=твой_надёжный_пароль
+   GRAFANA_ADMIN_PASSWORD=your_secure_password
    ```
-2. Подними стек (вместе с мониторингом):
+2. Start the stack (with monitoring):
    ```bash
    docker compose up -d
    ```
-3. Открой Grafana: **http://localhost:3000** (или хост:порт из `GRAFANA_PORT`). Логин: `admin` (или `GRAFANA_ADMIN_USER`), пароль — из `GRAFANA_ADMIN_PASSWORD`.
+3. Open Grafana at **http://localhost:3000** (or host:port from `GRAFANA_PORT`). Login: `admin` (or `GRAFANA_ADMIN_USER`), password from `GRAFANA_ADMIN_PASSWORD`.
 
-## Поддомен (reverse proxy)
+## Subdomain (reverse proxy)
 
-Если бэкенд доступен по домену, а Grafana хочешь по поддомену (например `https://monitor.weekend.example`):
+If the backend is on a domain and you want Grafana on a subdomain (e.g. `https://monitor.weekend.example`):
 
-1. В `.env`:
+1. In `.env`:
    ```env
    GRAFANA_ROOT_URL=https://monitor.weekend.example/
    ```
-2. В nginx/traefik/caddy настрой проксирование поддомена на контейнер `grafana:3000` (порт наружу можно не пробрасывать, если прокси на той же машине ходит в Docker-сеть).
+2. In nginx/traefik/caddy configure proxying of the subdomain to the `grafana:3000` container (you may not need to expose the port if the proxy is on the same host).
 
-Дополнительная защита (Basic Auth, IP-ограничение) — в конфиге прокси по желанию.
+Additional protection (Basic Auth, IP allowlist) can be configured in the proxy.
 
-## Дашборды в Grafana
+## Grafana dashboards
 
-После входа: **Dashboards** → **New** → **Import** → введи ID → **Load** → выбери источник **Prometheus** → **Import**.
+After login: **Dashboards** -> **New** -> **Import** -> enter ID -> **Load** -> select **Prometheus** as source -> **Import**.
 
-| ID    | Назначение |
-|-------|------------|
-| **14114** | PostgreSQL Overview — нагрузка БД, QPS, соединения, cache hit ratio. |
-| **1860**  | Node Exporter Full — нагрузка хоста: CPU, память (сколько осталось), диск, сеть, load average. |
+| ID     | Purpose |
+|--------|---------|
+| **14114** | PostgreSQL Overview — DB load, QPS, connections, cache hit ratio. |
+| **1860**  | Node Exporter Full — host load: CPU, memory, disk, network, load average. |
 
-На Windows (Docker Desktop) при ошибке монтирования `/proc` у `node_exporter` метрики хоста могут быть недоступны — тогда дашборд 1860 покажет метрики контейнера или VM Docker.
+On Windows (Docker Desktop), if mounting `/proc` fails for `node_exporter`, host metrics may be unavailable — then dashboard 1860 will show container or Docker VM metrics.
 
-**Если в дашборде Node Exporter (1860) «No data» и в фильтре Instance только «None»:** Prometheus скрапит node_exporter только после перезагрузки конфига. Выполни `docker compose restart prometheus`, подожди 15–30 секунд, обнови страницу дашборда в Grafana — в выпадающем списке **Instance** должно появиться значение (например `node_exporter:9100`), выбери его и сохрани.
+**If Node Exporter dashboard (1860) shows "No data" and Instance filter only has "None":** Prometheus scrapes node_exporter only after config reload. Run `docker compose restart prometheus`, wait 15–30 seconds, refresh the dashboard in Grafana — the **Instance** dropdown should list a value (e.g. `node_exporter:9100`). Select it and save.
 
-## Что снаружи, что внутри
+## What is exposed
 
-| Сервис            | Порт наружу | Назначение        |
-|-------------------|-------------|-------------------|
-| postgres          | нет         | —                 |
-| node_exporter     | нет         | метрики хоста     |
-| postgres_exporter | нет         | метрики БД        |
-| prometheus        | нет         | сбор метрик       |
-| grafana           | 3000 (опц.) | UI дашбордов      |
+| Service           | Port exposed | Purpose        |
+|-------------------|-------------|----------------|
+| postgres          | no          | —              |
+| node_exporter     | no          | host metrics   |
+| postgres_exporter | no          | DB metrics     |
+| prometheus        | no          | metric scrape  |
+| grafana           | 3000 (opt.) | dashboard UI   |
 
-База доступна только контейнерам по имени `postgres:5432`. С хоста без `docker-compose.override.yml` к ней не подключиться.
+The database is only reachable by containers at `postgres:5432`. Without `docker-compose.override.yml` you cannot connect to it from the host.

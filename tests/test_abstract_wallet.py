@@ -1,6 +1,6 @@
 # test_abstract_wallet.py
-# Интерактивный скрипт проверки EIP-1271 для Abstract wallet.
-# Запуск: python -m tests.test_abstract_wallet (не собирается pytest при tests/).
+# Interactive script to verify EIP-1271 for Abstract wallet.
+# Run: python -m tests.test_abstract_wallet (not collected by pytest when running tests/).
 import requests
 from web3 import Web3
 
