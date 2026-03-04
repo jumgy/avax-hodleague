@@ -1,0 +1,330 @@
+{
+    "success": true,
+    "total": 36,
+    "templates": [
+      {
+        "filename": "abster_classic_common_20260304_152719.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/abster_classic_common_20260304_152719.png",
+        "size_kb": 405.88,
+        "last_modified": "2026-03-04T15:27:20.754000+00:00",
+        "token_symbol": "ABSTER",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "abx_classic_common_20260304_152729.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/abx_classic_common_20260304_152729.png",
+        "size_kb": 435.86,
+        "last_modified": "2026-03-04T15:27:31.211000+00:00",
+        "token_symbol": "ABX",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "ada_classic_common_20260304_152757.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/ada_classic_common_20260304_152757.png",
+        "size_kb": 449.45,
+        "last_modified": "2026-03-04T15:27:59.237000+00:00",
+        "token_symbol": "ADA",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "aero_classic_common_20260304_152731.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/aero_classic_common_20260304_152731.png",
+        "size_kb": 436.2,
+        "last_modified": "2026-03-04T15:27:32.721000+00:00",
+        "token_symbol": "AERO",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "apt_classic_common_20260304_152759.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/apt_classic_common_20260304_152759.png",
+        "size_kb": 442.31,
+        "last_modified": "2026-03-04T15:28:00.858000+00:00",
+        "token_symbol": "APT",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "arb_classic_common_20260304_152742.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/arb_classic_common_20260304_152742.png",
+        "size_kb": 422.61,
+        "last_modified": "2026-03-04T15:27:43.968000+00:00",
+        "token_symbol": "ARB",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "aster_classic_common_20260304_152744.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/aster_classic_common_20260304_152744.png",
+        "size_kb": 413.92,
+        "last_modified": "2026-03-04T15:27:45.594000+00:00",
+        "token_symbol": "ASTER",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "bch_classic_common_20260304_152801.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/bch_classic_common_20260304_152801.png",
+        "size_kb": 432.47,
+        "last_modified": "2026-03-04T15:28:02.508000+00:00",
+        "token_symbol": "BCH",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "birb_classic_common_20260304_152720.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/birb_classic_common_20260304_152720.png",
+        "size_kb": 418.52,
+        "last_modified": "2026-03-04T15:27:22.378000+00:00",
+        "token_symbol": "BIRB",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "bnb_classic_common_20260304_152805.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/bnb_classic_common_20260304_152805.png",
+        "size_kb": 433.2,
+        "last_modified": "2026-03-04T15:28:07.371000+00:00",
+        "token_symbol": "BNB",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "bonk_classic_common_20260304_152737.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/bonk_classic_common_20260304_152737.png",
+        "size_kb": 418.2,
+        "last_modified": "2026-03-04T15:27:38.430000+00:00",
+        "token_symbol": "BONK",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "btc_classic_common_20260304_152807.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/btc_classic_common_20260304_152807.png",
+        "size_kb": 437.23,
+        "last_modified": "2026-03-04T15:28:09.018000+00:00",
+        "token_symbol": "BTC",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "dash_classic_common_20260304_152750.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/dash_classic_common_20260304_152750.png",
+        "size_kb": 439.81,
+        "last_modified": "2026-03-04T15:27:51.243000+00:00",
+        "token_symbol": "DASH",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "doge_classic_common_20260304_152802.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/doge_classic_common_20260304_152802.png",
+        "size_kb": 426.3,
+        "last_modified": "2026-03-04T15:28:04.159000+00:00",
+        "token_symbol": "DOGE",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "eth_classic_common_20260304_152717.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/eth_classic_common_20260304_152717.png",
+        "size_kb": 438.4,
+        "last_modified": "2026-03-04T15:27:19.214000+00:00",
+        "token_symbol": "ETH",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "floki_classic_common_20260304_152751.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/floki_classic_common_20260304_152751.png",
+        "size_kb": 430.59,
+        "last_modified": "2026-03-04T15:27:52.811000+00:00",
+        "token_symbol": "FLOKI",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "hype_classic_common_20260304_152732.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/hype_classic_common_20260304_152732.png",
+        "size_kb": 426.51,
+        "last_modified": "2026-03-04T15:27:34.248000+00:00",
+        "token_symbol": "HYPE",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "jup_classic_common_20260304_152738.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/jup_classic_common_20260304_152738.png",
+        "size_kb": 417.91,
+        "last_modified": "2026-03-04T15:27:39.247000+00:00",
+        "token_symbol": "JUP",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "ldo_classic_common_20260304_152752.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/ldo_classic_common_20260304_152752.png",
+        "size_kb": 420.73,
+        "last_modified": "2026-03-04T15:27:54.371000+00:00",
+        "token_symbol": "LDO",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "ltc_classic_common_20260304_152754.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/ltc_classic_common_20260304_152754.png",
+        "size_kb": 438.95,
+        "last_modified": "2026-03-04T15:27:56.132000+00:00",
+        "token_symbol": "LTC",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "mnt_classic_common_20260304_152745.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/mnt_classic_common_20260304_152745.png",
+        "size_kb": 440.09,
+        "last_modified": "2026-03-04T15:27:47.169000+00:00",
+        "token_symbol": "MNT",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "near_classic_common_20260304_152722.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/near_classic_common_20260304_152722.png",
+        "size_kb": 420.66,
+        "last_modified": "2026-03-04T15:27:23.906000+00:00",
+        "token_symbol": "NEAR",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "op_classic_common_20260304_152739.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/op_classic_common_20260304_152739.png",
+        "size_kb": 437.35,
+        "last_modified": "2026-03-04T15:27:40.872000+00:00",
+        "token_symbol": "OP",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "pengu_classic_common_20260304_152724.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/pengu_classic_common_20260304_152724.png",
+        "size_kb": 446.47,
+        "last_modified": "2026-03-04T15:27:25.477000+00:00",
+        "token_symbol": "PENGU",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "pepe_classic_common_20260304_152741.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/pepe_classic_common_20260304_152741.png",
+        "size_kb": 430.03,
+        "last_modified": "2026-03-04T15:27:42.378000+00:00",
+        "token_symbol": "PEPE",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "pol_classic_common_20260304_152804.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/pol_classic_common_20260304_152804.png",
+        "size_kb": 439.49,
+        "last_modified": "2026-03-04T15:28:05.739000+00:00",
+        "token_symbol": "POL",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "pump_classic_common_20260304_152809.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/pump_classic_common_20260304_152809.png",
+        "size_kb": 405.98,
+        "last_modified": "2026-03-04T15:28:10.548000+00:00",
+        "token_symbol": "PUMP",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "sol_classic_common_20260304_152725.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/sol_classic_common_20260304_152725.png",
+        "size_kb": 415.1,
+        "last_modified": "2026-03-04T15:27:26.441000+00:00",
+        "token_symbol": "SOL",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "spx_classic_common_20260304_152734.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/spx_classic_common_20260304_152734.png",
+        "size_kb": 422.62,
+        "last_modified": "2026-03-04T15:27:35.102000+00:00",
+        "token_symbol": "SPX",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "sui_classic_common_20260304_152756.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/sui_classic_common_20260304_152756.png",
+        "size_kb": 445.55,
+        "last_modified": "2026-03-04T15:27:57.704000+00:00",
+        "token_symbol": "SUI",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "ton_classic_common_20260304_152747.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/ton_classic_common_20260304_152747.png",
+        "size_kb": 433.36,
+        "last_modified": "2026-03-04T15:27:48.945000+00:00",
+        "token_symbol": "TON",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "trx_classic_common_20260304_152726.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/trx_classic_common_20260304_152726.png",
+        "size_kb": 427.71,
+        "last_modified": "2026-03-04T15:27:28.007000+00:00",
+        "token_symbol": "TRX",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "uni_classic_common_20260304_152728.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/uni_classic_common_20260304_152728.png",
+        "size_kb": 426.55,
+        "last_modified": "2026-03-04T15:27:29.578000+00:00",
+        "token_symbol": "UNI",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "virtual_classic_common_20260304_152749.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/virtual_classic_common_20260304_152749.png",
+        "size_kb": 444.54,
+        "last_modified": "2026-03-04T15:27:50.480000+00:00",
+        "token_symbol": "VIRTUAL",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "wlfi_classic_common_20260304_152735.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/wlfi_classic_common_20260304_152735.png",
+        "size_kb": 432.12,
+        "last_modified": "2026-03-04T15:27:36.891000+00:00",
+        "token_symbol": "WLFI",
+        "design_type": "classic",
+        "rarity": "common"
+      },
+      {
+        "filename": "xrp_classic_common_20260304_152810.png",
+        "url": "https://cdn-avax.hodleague.com/card_templates/xrp_classic_common_20260304_152810.png",
+        "size_kb": 446.99,
+        "last_modified": "2026-03-04T15:28:12.071000+00:00",
+        "token_symbol": "XRP",
+        "design_type": "classic",
+        "rarity": "common"
+      }
+    ]
+  }
