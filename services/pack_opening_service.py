@@ -1,0 +1,635 @@
+# services/pack_opening_service.py
+
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, List, Optional, Any
+import random
+import logging
+from datetime import datetime, timezone
+import hashlib
+
+from models.pack_models import PackType
+from models.user_pack_models import UserPack, PackOpening
+from models.user_card_models import UserCard
+from models.card_models import Card
+
+from services.pack_random_service import generate_server_seed
+from services.pack_signing_service import sign_mint_with_signature
+
+logger = logging.getLogger(__name__)
+
+class PackOpeningService:
+    """Service for pack opening logic"""
+
+    async def check_pack_availability(
+        self, 
+        user_id: int, 
+        pack_type_id: Optional[int], 
+        db: AsyncSession
+    ) -> Dict:
+        """
+        Check available packs for user
+        
+        Args:
+            user_id: User ID
+            pack_type_id: Specific pack type ID (optional)
+            db: Database session
+            
+        Returns:
+            Dict with available packs info
+        """
+        try:
+            query = select(
+                UserPack.pack_type_id,
+                func.count(UserPack.id).label('count')
+            ).where(
+                UserPack.user_id == user_id,
+                UserPack.is_opened == False
+            )
+            
+            if pack_type_id:
+                query = query.where(UserPack.pack_type_id == pack_type_id)
+            
+            query = query.group_by(UserPack.pack_type_id)
+            
+            result = await db.execute(query)
+            rows = result.all()
+            
+            packs_by_type = {row.pack_type_id: row.count for row in rows}
+            total = sum(packs_by_type.values())
+            
+            return {
+                "total": total,
+                "by_type": packs_by_type
+            }
+            
+        except Exception as e:
+            logger.error(f"Error checking pack availability for user {user_id}: {e}")
+            return {"total": 0, "by_type": {}}
+
+    async def get_pack_type_details(
+        self, 
+        pack_type_id: int, 
+        db: AsyncSession
+    ) -> Optional[PackType]:
+        """Get pack type configuration"""
+        try:
+            result = await db.execute(
+                select(PackType).where(
+                    PackType.id == pack_type_id,
+                    PackType.is_active == True
+                )
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting pack type {pack_type_id}: {e}")
+            return None
+
+    async def prepare_open_offchain(
+        self,
+        user_id: int,
+        wallet_address: str,
+        user_pack_id: int,
+        client_seed: bytes,
+        db: AsyncSession,
+    ) -> Dict[str, Any]:
+        """
+        Prepare off-chain pack open for HodleagueCards.mintWithSignature.
+
+        - Verifies that UserPack belongs to user and is not opened.
+        - If PackOpening for this pack already exists, returns the same data (no reroll).
+        - Otherwise generates server_seed, derives card_ids deterministically, signs payload.
+        """
+        if len(client_seed) != 32:
+            raise ValueError("client_seed must be 32 bytes")
+
+        # 1. Ensure pack belongs to user and is not opened.
+        up_result = await db.execute(
+            select(UserPack).where(
+                UserPack.id == user_pack_id,
+                UserPack.user_id == user_id,
+                UserPack.is_opened == False,
+            )
+        )
+        user_pack = up_result.scalar_one_or_none()
+        if not user_pack:
+            raise ValueError("Pack not found or already opened")
+
+        # 2. If opening already exists for this pack, return existing data.
+        existing_result = await db.execute(
+            select(PackOpening).where(PackOpening.pack_id == user_pack.id)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing:
+            return {
+                "pack_opening_id": existing.id,
+                "user_pack_id": user_pack.id,
+                "card_ids": existing.card_ids,
+                "server_seed": existing.server_seed.hex(),
+                "server_seed_hash": existing.server_seed_hash.hex(),
+                "client_seed": existing.client_seed.hex(),
+                "combined_hash": existing.combined_hash.hex(),
+                "signature": "0x" + existing.signature.hex(),
+            }
+
+        # 3. Get pack type configuration.
+        pack_type = await self.get_pack_type_details(user_pack.pack_type_id, db)
+        if not pack_type:
+            raise ValueError("Pack type not found or inactive")
+
+        # 4. Generate seeds and card_ids deterministically.
+        server_seed = generate_server_seed()
+        server_seed_hash = hashlib.sha256(server_seed).digest()
+        combined_hash = hashlib.sha256(server_seed + client_seed).digest()
+
+        # Deterministic RNG from combined_hash for card selection.
+        rng = random.Random(int.from_bytes(combined_hash, "big"))
+        card_ids = await self._deterministic_card_ids_from_rng(
+            pack_type=pack_type,
+            rng=rng,
+            db=db,
+        )
+        if not card_ids:
+            raise ValueError("Could not determine cards for pack")
+
+        # 5. Create PackOpening with status=prepared.
+        pack_opening = PackOpening(
+            user_id=user_id,
+            pack_id=user_pack.id,
+            opened_at=datetime.now(timezone.utc),
+            cards_count=len(card_ids),
+            status="prepared",
+            card_ids=card_ids,
+            server_seed=server_seed,
+            server_seed_hash=server_seed_hash,
+            client_seed=client_seed,
+            combined_hash=combined_hash,
+            signature=b"",  # filled after signing
+        )
+        db.add(pack_opening)
+        await db.flush()
+
+        # 6. Sign payload for mintWithSignature.
+        signature = sign_mint_with_signature(
+            user_address=wallet_address,
+            opening_id=pack_opening.id,
+            card_ids=card_ids,
+            server_seed=server_seed,
+        )
+        pack_opening.signature = signature
+
+        return {
+            "pack_opening_id": pack_opening.id,
+            "user_pack_id": user_pack.id,
+            "card_ids": card_ids,
+            "server_seed": server_seed.hex(),
+            "server_seed_hash": server_seed_hash.hex(),
+            "client_seed": client_seed.hex(),
+            "combined_hash": combined_hash.hex(),
+            "signature": "0x" + signature.hex(),
+        }
+
+    async def generate_cards_for_pack(
+        self, 
+        pack_type: PackType, 
+        db: AsyncSession
+    ) -> List[int]:
+        """
+        Generate card IDs based on pack type rules
+        
+        Args:
+            pack_type: PackType object with guaranteed_slots
+            db: Database session
+            
+        Returns:
+            List of card_ids
+        """
+        try:
+            guaranteed_slots = pack_type.guaranteed_slots
+            
+            # Validate configuration
+            if not guaranteed_slots:
+                logger.error(f"Pack type {pack_type.id} ({pack_type.name}) has NULL guaranteed_slots")
+                raise ValueError(f"Pack type '{pack_type.name}' has no configuration (guaranteed_slots is NULL)")
+            
+            if not isinstance(guaranteed_slots, dict):
+                logger.error(f"Pack type {pack_type.id} guaranteed_slots is not a dict: {type(guaranteed_slots)}")
+                raise ValueError(f"Pack type '{pack_type.name}' has invalid configuration format")
+            
+            if 'card_pools' not in guaranteed_slots:
+                logger.error(f"Pack type {pack_type.id} missing 'card_pools': {guaranteed_slots}")
+                raise ValueError(f"Pack type '{pack_type.name}' missing 'card_pools' in configuration")
+            
+            if 'drop_rules' not in guaranteed_slots:
+                logger.error(f"Pack type {pack_type.id} missing 'drop_rules': {guaranteed_slots}")
+                raise ValueError(f"Pack type '{pack_type.name}' missing 'drop_rules' in configuration")
+            
+            card_pools = guaranteed_slots['card_pools']
+            drop_rules = guaranteed_slots['drop_rules']
+            
+            logger.info(f"Opening pack type {pack_type.id} ({pack_type.name})")
+            logger.info(f"Card pools: {card_pools}")
+            logger.info(f"Drop rules: {drop_rules}")
+            
+            selected_card_ids = []
+            
+            # Process each category (top, mid, low, etc.)
+            for category, count in drop_rules.items():
+                if category not in card_pools:
+                    logger.warning(f"Category '{category}' in drop_rules but not in card_pools - skipping")
+                    continue
+                
+                token_symbols = card_pools[category]
+                
+                if not token_symbols:
+                    logger.warning(f"Category '{category}' has empty token list - skipping")
+                    continue
+                
+                if len(token_symbols) < count:
+                    logger.warning(f"Category '{category}': need {count} cards, but only {len(token_symbols)} available - taking all")
+                    selected_symbols = token_symbols
+                else:
+                    # Random selection without replacement
+                    selected_symbols = random.sample(token_symbols, count)
+                
+                logger.info(f"Category '{category}': selected {selected_symbols}")
+                
+                # Get card_id for each selected token
+                for symbol in selected_symbols:
+                    card_id = await self._get_card_id_by_symbol(symbol, db)
+                    if card_id:
+                        selected_card_ids.append(card_id)
+                        logger.info(f"  {symbol} → card_id {card_id}")
+                    else:
+                        logger.warning(f"  {symbol} → NOT FOUND (skipping)")
+            
+            if len(selected_card_ids) != pack_type.cards_per_pack:
+                logger.warning(
+                    f"Generated {len(selected_card_ids)} cards, expected {pack_type.cards_per_pack}"
+                )
+            
+            if not selected_card_ids:
+                raise ValueError(f"Failed to generate any cards for pack '{pack_type.name}' - check token symbols")
+            
+            logger.info(f"Final card_ids: {selected_card_ids}")
+            return selected_card_ids
+            
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error generating cards for pack {pack_type.id}: {e}")
+            raise ValueError(f"Failed to generate cards for pack '{pack_type.name}': {str(e)}")
+
+    async def _get_card_id_by_symbol(
+        self, 
+        token_symbol: str, 
+        db: AsyncSession
+    ) -> Optional[int]:
+        """
+        Find active card by token symbol
+        Since each token has only one card, we just pick the first active one
+        """
+        try:
+            # Join Card with Token to find by symbol
+            from models.token_models import Token
+            
+            result = await db.execute(
+                select(Card.id)
+                .join(Token, Card.token_id == Token.id)
+                .where(
+                    Token.symbol == token_symbol,
+                    Token.is_active == True,
+                    Card.is_active == True
+                )
+                .limit(1)
+            )
+            
+            card_id = result.scalar_one_or_none()
+            return card_id
+            
+        except Exception as e:
+            logger.error(f"Error finding card for symbol {token_symbol}: {e}")
+            return None
+        
+        
+
+    async def _get_cards_details(
+        self, 
+        user_card_ids: List[int], 
+        db: AsyncSession
+    ) -> List[Dict]:
+        """Get basic card details for opened cards (uses cards table, no MV needed)."""
+        try:
+            from sqlalchemy import text
+
+            query = text("""
+                SELECT 
+                    uc.id as user_card_id,
+                    c.id as card_id,
+                    t.symbol as token_symbol,
+                    t.name as token_name,
+                    t.image_url as token_image_url,
+                    r.name as rarity_name,
+                    r.color as rarity_color,
+                    c.design_type,
+                    c.rendered_image_url
+                FROM user_cards uc
+                JOIN cards c ON uc.card_id = c.id
+                JOIN tokens t ON c.token_id = t.id
+                JOIN rarities r ON c.rarity_id = r.id
+                WHERE uc.id = ANY(:user_card_ids)
+            """)
+            
+            result = await db.execute(query, {"user_card_ids": user_card_ids})
+            rows = result.fetchall()
+            
+            cards = []
+            for row in rows:
+                cards.append({
+                    "user_card_id": row.user_card_id,
+                    "card_id": row.card_id,
+                    "token_symbol": row.token_symbol,
+                    "token_name": row.token_name,
+                    "token_image_url": row.token_image_url,
+                    "rarity_name": row.rarity_name,
+                    "rarity_color": row.rarity_color,
+                    "design_type": row.design_type,
+                    "rendered_image_url": row.rendered_image_url
+                })
+            
+            return cards
+            
+        except Exception as e:
+            logger.error(f"Error getting card details: {e}")
+            return []
+
+    async def get_pack_history(
+        self, 
+        user_id: int, 
+        limit: int, 
+        offset: int, 
+        db: AsyncSession
+    ) -> Dict:
+        """Get pack opening history with cards received"""
+        try:
+            from sqlalchemy import func, text
+            
+            # Count total openings
+            count_result = await db.execute(
+                select(func.count(PackOpening.id))
+                .where(PackOpening.user_id == user_id)
+            )
+            total = count_result.scalar() or 0
+            
+            # Get paginated history (include on-chain openings: pack_id can be null)
+            query = (
+                select(PackOpening)
+                .where(PackOpening.user_id == user_id)
+                .order_by(PackOpening.opened_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            result = await db.execute(query)
+            pack_openings = result.scalars().all()
+
+            openings = []
+            for po in pack_openings:
+                pack_type_name = "Pack"
+                if po.pack_id:
+                    up_r = await db.execute(select(UserPack).where(UserPack.id == po.pack_id))
+                    up = up_r.scalar_one_or_none()
+                    if up:
+                        pt_r = await db.execute(select(PackType.name).where(PackType.id == up.pack_type_id))
+                        pt_row = pt_r.scalar_one_or_none()
+                        pack_type_name = (pt_row[0] if pt_row else None) or "Pack"
+                cards = await self._get_opening_cards(po.id, db)
+                openings.append({
+                    "pack_opening_id": po.id,
+                    "pack_type_name": pack_type_name,
+                    "opened_at": po.opened_at.isoformat(),
+                    "cards_count": po.cards_count,
+                    "cards_received": cards,
+                })
+            
+            return {
+                "total": total,
+                "openings": openings
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting pack history for user {user_id}: {e}")
+            return {"total": 0, "openings": []}
+    
+    async def get_pack_opening_status(
+        self,
+        pack_opening_id: int,
+        user_id: int,
+        db: AsyncSession,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get status of a pack opening for polling.
+        Returns None if not found or not owned by user.
+        """
+        result = await db.execute(
+            select(
+                PackOpening.id,
+                PackOpening.status,
+                PackOpening.card_ids,
+                PackOpening.nft_token_ids,
+            ).where(
+                PackOpening.id == pack_opening_id,
+                PackOpening.user_id == user_id,
+            )
+        )
+        row = result.first()
+        if not row:
+            return None
+        return {
+            "pack_opening_id": row.id,
+            "status": row.status,
+            "card_ids": row.card_ids,
+            "nft_token_ids": row.nft_token_ids,
+        }
+
+    async def get_pack_opening_by_id(
+        self,
+        pack_opening_id: int,
+        user_id: int,
+        db: AsyncSession
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get specific pack opening by ID (off-chain or on-chain).
+        Returns None if not found or user doesn't have access.
+        """
+        from models.user_pack_models import PackOpening, UserPack
+        from models.user_card_models import UserCard
+        from models.card_models import Card
+        from models.token_models import Token
+        from models.rarity_models import Rarity
+        from models.pack_models import PackType
+
+        result = await db.execute(
+            select(PackOpening).where(
+                PackOpening.id == pack_opening_id,
+                PackOpening.user_id == user_id,
+            )
+        )
+        pack_opening = result.scalar_one_or_none()
+        if not pack_opening:
+            return None
+
+        pack_type = None
+        if pack_opening.pack_id:
+            up_result = await db.execute(select(UserPack).where(UserPack.id == pack_opening.pack_id))
+            user_pack = up_result.scalar_one_or_none()
+            if user_pack:
+                pack_type_result = await db.execute(select(PackType).where(PackType.id == user_pack.pack_type_id))
+                pack_type = pack_type_result.scalar_one_or_none()
+        pack_type_name = pack_type.name if pack_type else "Pack"
+
+        # Get cards from this opening
+        result = await db.execute(
+            select(UserCard, Card, Token, Rarity)
+            .join(Card, UserCard.card_id == Card.id)
+            .join(Token, Card.token_id == Token.id)
+            .join(Rarity, Card.rarity_id == Rarity.id)
+            .where(UserCard.pack_opening_id == pack_opening_id)
+            .order_by(UserCard.id)
+        )
+        cards_data = result.all()
+        
+        # Format cards
+        cards_received = []
+        for user_card, card, token, rarity in cards_data:
+            cards_received.append({
+                "user_card_id": user_card.id,
+                "card_id": card.id,
+                "token_symbol": token.symbol,
+                "token_name": token.name,
+                "token_image_url": token.image_url,
+                "rarity_name": rarity.name,
+                "rarity_color": rarity.color,
+                "design_type": card.design_type,
+                "rendered_image_url": card.rendered_image_url
+            })
+        
+        return {
+            "pack_opening_id": pack_opening.id,
+            "pack_type_name": pack_type_name,
+            "opened_at": pack_opening.opened_at.isoformat(),
+            "cards_received": cards_received
+        }
+
+    async def _get_opening_cards(
+        self, 
+        pack_opening_id: int, 
+        db: AsyncSession
+    ) -> List[Dict]:
+        """Get basic card details for a pack opening (uses cards table, no MV needed)."""
+        try:
+            from sqlalchemy import text
+
+            query = text("""
+                SELECT 
+                    uc.id as user_card_id,
+                    c.id as card_id,
+                    t.symbol as token_symbol,
+                    t.name as token_name,
+                    t.image_url as token_image_url,
+                    r.name as rarity_name,
+                    r.color as rarity_color,
+                    c.design_type,
+                    c.rendered_image_url
+                FROM user_cards uc
+                JOIN cards c ON uc.card_id = c.id
+                JOIN tokens t ON c.token_id = t.id
+                JOIN rarities r ON c.rarity_id = r.id
+                WHERE uc.pack_opening_id = :pack_opening_id
+                ORDER BY r.name DESC, t.symbol ASC
+            """)
+            
+            result = await db.execute(query, {"pack_opening_id": pack_opening_id})
+            rows = result.fetchall()
+            
+            cards = []
+            for row in rows:
+                cards.append({
+                    "user_card_id": row.user_card_id,
+                    "card_id": row.card_id,
+                    "token_symbol": row.token_symbol,
+                    "token_name": row.token_name,
+                    "token_image_url": row.token_image_url,
+                    "rarity_name": row.rarity_name,
+                    "rarity_color": row.rarity_color,
+                    "design_type": row.design_type,
+                    "rendered_image_url": row.rendered_image_url
+                })
+            
+            return cards
+            
+        except Exception as e:
+            logger.error(f"Error getting cards for opening {pack_opening_id}: {e}")
+            return []
+
+    async def _deterministic_card_ids_from_rng(
+        self,
+        pack_type: PackType,
+        rng: random.Random,
+        db: AsyncSession,
+    ) -> List[int]:
+        """
+        Deterministically pick card_ids using provided RNG (seeded by combined_hash).
+        Mirrors generate_cards_for_pack but takes rng instead of global random.
+        """
+        guaranteed_slots = pack_type.guaranteed_slots
+
+        if not guaranteed_slots:
+            raise ValueError(
+                f"Pack type '{pack_type.name}' has no configuration (guaranteed_slots is NULL)"
+            )
+        if not isinstance(guaranteed_slots, dict):
+            raise ValueError(
+                f"Pack type '{pack_type.name}' has invalid configuration format"
+            )
+        if "card_pools" not in guaranteed_slots:
+            raise ValueError(
+                f"Pack type '{pack_type.name}' missing 'card_pools' in configuration"
+            )
+        if "drop_rules" not in guaranteed_slots:
+            raise ValueError(
+                f"Pack type '{pack_type.name}' missing 'drop_rules' in configuration"
+            )
+
+        card_pools = guaranteed_slots["card_pools"]
+        drop_rules = guaranteed_slots["drop_rules"]
+
+        selected_card_ids: List[int] = []
+
+        for category, count in drop_rules.items():
+            if category not in card_pools:
+                continue
+            token_symbols = card_pools[category]
+            if not token_symbols:
+                continue
+
+            if len(token_symbols) < count:
+                selected_symbols = token_symbols
+            else:
+                # Use provided RNG instead of global random for reproducibility.
+                selected_symbols = rng.sample(token_symbols, count)
+
+            for symbol in selected_symbols:
+                card_id = await self._get_card_id_by_symbol(symbol, db)
+                if card_id:
+                    selected_card_ids.append(card_id)
+
+        if not selected_card_ids:
+            raise ValueError(
+                f"Failed to generate any cards for pack '{pack_type.name}' - check token symbols"
+            )
+
+        return selected_card_ids
+
+
+# Singleton instance
+pack_opening_service = PackOpeningService()

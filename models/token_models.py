@@ -1,0 +1,57 @@
+# models/token_models.py
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Numeric, BigInteger
+from sqlalchemy.orm import relationship
+from datetime import datetime, timezone
+from .database import Base
+
+class Token(Base):
+    """
+    Tokens available in the fantasy game.
+    Managed through admin interface.
+    """
+    __tablename__ = 'tokens'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)  # "Bitcoin"
+    symbol = Column(String(20), nullable=False, unique=True)  # "BTC"  
+    weight = Column(Integer, nullable=False)  # Tournament weight (1-10)
+    image_url = Column(String(500), nullable=False)  # Token logo URL
+    is_active = Column(Boolean, nullable=False, default=True)  # Active in game
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), nullable=False, 
+                   default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, 
+                    default=lambda: datetime.now(timezone.utc),
+                    onupdate=lambda: datetime.now(timezone.utc))
+    
+    prices = relationship("TokenPrice", back_populates="token", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<Token(id={self.id}, symbol='{self.symbol}', name='{self.name}', weight={self.weight})>"
+
+class TokenPrice(Base):
+    """
+    Historical price data for tokens from multiple sources.
+    Updated every 30 minutes from exchange APIs.
+    """
+    __tablename__ = 'token_prices'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    token_id = Column(Integer, ForeignKey('tokens.id'), nullable=False)
+    
+    # Price data
+    price = Column(Numeric(20, 8), nullable=False)
+    market_cap = Column(BigInteger, nullable=True)
+    change_24h = Column(Numeric(10, 4), nullable=True)
+    
+    # Source metadata
+    sources_count = Column(Integer, nullable=False, default=1)  # Number of price sources
+    timestamp = Column(DateTime(timezone=True), nullable=False, 
+                  default=lambda: datetime.now(timezone.utc))
+    
+    # Relationships
+    token = relationship("Token", back_populates="prices")
+    
+    def __repr__(self):
+        return f"<TokenPrice(token_id={self.token_id}, price=${self.price}, timestamp={self.timestamp})>"

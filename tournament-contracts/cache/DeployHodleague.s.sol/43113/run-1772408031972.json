@@ -1,0 +1,22 @@
+{
+  "transactions": [
+    {
+      "rpc": "https://api.avax-test.network/ext/bc/C/rpc"
+    },
+    {
+      "rpc": "https://api.avax-test.network/ext/bc/C/rpc"
+    },
+    {
+      "rpc": "https://api.avax-test.network/ext/bc/C/rpc"
+    },
+    {
+      "rpc": "https://api.avax-test.network/ext/bc/C/rpc"
+    },
+    {
+      "rpc": "https://api.avax-test.network/ext/bc/C/rpc"
+    },
+    {
+      "rpc": "https://api.avax-test.network/ext/bc/C/rpc"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+# python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# virtualenv
+.venv/
+env/
+venv/
+ENV/
+*.egg-info/
+
+# PyCharm, VSCode, other IDE
+.idea/
+.vscode/
+!.vscode/python.code-snippets
+!.vscode/tasks.json
+.cursor
+
+
+# OS trash
+.DS_Store
+
+# database and state files
+*.db
+*.sqlite3
+instance/
+*.log
+*.bak
+
+# dotenv
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.uat
+.env.*
+.json
+
+# mypy, coverage, etc
+.mypy_cache/
+.coverage
+coverage.json
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+
+# Docker
+docker-compose.override.yml
