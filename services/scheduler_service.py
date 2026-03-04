@@ -17,6 +17,8 @@ from models.database import AsyncSessionLocal
 from models.user_pack_models import PackSource
 from services.lock_service import JobLockService
 from services.user_pack_grant_service import user_pack_grant_service
+from services.blockchain_event_listener import confirm_pack_opening_by_tx_hash  # kept for explicit imports; listener job removed
+from services.card_inventory_health_job import run_card_inventory_health_check
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -69,6 +71,17 @@ class SchedulerService:
                 max_instances=1,
                 misfire_grace_time=60
             )
+
+            # Job 4: Card inventory health check (compare on-chain ownerOf vs user_cards).
+            self.scheduler.add_job(
+                func=self._card_inventory_health_job,
+                trigger=IntervalTrigger(hours=6),
+                id='card_inventory_health',
+                name='Card Inventory Health Check',
+                replace_existing=True,
+                max_instances=1,
+                misfire_grace_time=600
+            )
             
             self.scheduler.start()
             self._started = True
@@ -89,6 +102,8 @@ class SchedulerService:
             
             logger.info("Running initial tournament checks...")
             await self._check_tournaments_lifecycle()
+
+            # No initial pack event listener: packs are off-chain only.
 
         except Exception as e:
             logger.error(f"Failed to start scheduler: {e}")
@@ -350,27 +365,7 @@ class SchedulerService:
                     await cleanup_db.commit()
                     logger.info(f"Marked {result.rowcount} expired cards as inactive")
 
-                # 4. Soft-delete expired packs
-                async with AsyncSessionLocal() as pack_cleanup_db:
-                    from sqlalchemy import update
-                    from models.user_pack_models import UserPack
-                    
-                    result = await pack_cleanup_db.execute(
-                        update(UserPack)
-                        .where(
-                            and_(
-                                UserPack.expires_at <= now,
-                                UserPack.is_opened == False  # Unopened only
-                            )
-                        )
-                        .values(
-                            is_opened=True  # Mark as used
-                        )
-                    )
-                    await pack_cleanup_db.commit()
-                    logger.info(f"Marked {result.rowcount} expired packs as opened")
-
-                # 5. Grant new packs to all users
+                # 4. Grant new packs to all users
                 async with AsyncSessionLocal() as pack_db:
                     from models.user_models import User
                     
@@ -390,6 +385,13 @@ class SchedulerService:
                             
         except Exception as e:
             logger.error(f"Tournament finish checker failed: {e}", exc_info=True)
+
+    async def _card_inventory_health_job(self):
+        """Periodic health check for card inventory (on-chain vs DB)."""
+        try:
+            await run_card_inventory_health_check()
+        except Exception as e:
+            logger.error("Card inventory health job failed: %s", e, exc_info=True)
 
     async def run_price_and_score_now(self):
         """Manually trigger price update and score calculation"""

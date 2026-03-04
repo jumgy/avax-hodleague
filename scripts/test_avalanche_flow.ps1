@@ -1,4 +1,4 @@
-# Test Avalanche flow: auth -> tournaments -> validate-deck (preferred_network, avalanche_contract_address)
+# Test Avalanche flow: auth -> tournaments -> validate-deck (chain_id, contract_address)
 $Base = "http://localhost:8000"
 $Wallet = "0xB39bc1Db1A9DbE3A19fC212973a9663997778CfD"
 
@@ -60,19 +60,14 @@ try {
 }
 
 Write-Host ""
-Write-Host "--- validate-deck response (network / Avalanche) ---"
-Write-Host "  preferred_network:         $($validate.preferred_network)"
-Write-Host "  switch_network_required:   $($validate.switch_network_required)"
-Write-Host "  avalanche_chain_id:        $($validate.avalanche_chain_id)"
-Write-Host "  avalanche_contract_address: $($validate.avalanche_contract_address)"
+Write-Host "--- validate-deck response (Avalanche) ---"
+Write-Host "  chain_id:         $($validate.chain_id)"
+Write-Host "  contract_address: $($validate.contract_address)"
 Write-Host "  valid: $($validate.valid), deck_hash: $($validate.deck_hash)"
 Write-Host ""
 
-$expectedContract = "0x6BE2e8C41E899c51e899B962e2C8dcED2125B48e"
-if ($validate.avalanche_contract_address -eq $expectedContract -and $validate.avalanche_chain_id -eq 43114) {
-    Write-Host "[OK] Avalanche config present (contract + chain_id). For no Abstract gas, preferred_network should be avalanche."
-} elseif ($validate.preferred_network -eq "avalanche") {
-    Write-Host "[OK] preferred_network=avalanche (wallet has no gas on Abstract, only on Avalanche)."
+if ($validate.chain_id -eq 43114 -and $validate.contract_address) {
+    Write-Host "[OK] Avalanche config present (chain_id=43114, contract_address=$($validate.contract_address))."
 } else {
-    Write-Host "[INFO] preferred_network=$($validate.preferred_network). Set WEB3_PROVIDER_URL_AVALANCHE and TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE in .env if needed."
+    Write-Host "[INFO] Set WEB3_PROVIDER_URL and TOURNAMENT_CONTRACT_ADDRESS in .env for Avalanche."
 }

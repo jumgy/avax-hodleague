@@ -1,66 +1,52 @@
-## Foundry
+## Hodleague Tournament Contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This folder contains the Solidity contracts and Foundry project used by Fantasy Crypto Tournament.
 
-Foundry consists of:
+Current production setup:
+- `HodleagueCards.sol` – ERC‑721 cards, used in production (mintWithSignature + PackOpened).
+- `HodleaguePacks.sol` – legacy ERC‑1155 packs, kept for reference and tests only (not used by the backend flow anymore).
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+Helper scripts:
+- Foundry scripts under `script/` for local testing and experimental deployments.
 
-## Documentation
+## HodleagueCards (ERC‑721)
 
-https://book.getfoundry.sh/
+`HodleagueCards` is an upgradeable ERC‑721 contract:
+- Stores minimal state: token owner and `tokenId`.
+- All metadata is served off-chain by the backend:
+  - `baseTokenURI` is set to `NFT_METADATA_BASE_URL` from the API (`/nft/cards/{id}`).
+  - `tokenURI(tokenId)` = `baseURI + tokenId`.
+- Access control:
+  - `DEFAULT_ADMIN_ROLE` – upgrades, base URI changes, role management.
+  - `MINTER_ROLE` – backend signer or hot-wallet for direct mints.
+  - `BURNER_ROLE` – reserved for future crafting / upgrade flows.
 
-## Usage
+In the current architecture packs are off-chain only. The backend signs `mintWithSignature` payloads and listens for the `PackOpened` event to create `UserCard` records.
 
-### Build
+## HodleaguePacks (legacy ERC‑1155)
 
-```shell
-$ forge build
+`HodleaguePacks` is an upgradeable ERC‑1155 contract that originally implemented on-chain packs with a commit‑reveal flow.
+
+In the current version of the game:
+
+- Packs are managed purely off-chain in PostgreSQL (`UserPack`, `PackOpening`).
+- Only `HodleagueCards` is used in the live backend flow.
+- `HodleaguePacks` and its tests are kept for historical reference and local experiments, but the production API does not call this contract.
+
+## Using this project
+
+This is a standard Foundry project. You can use your own deployment and upgrade scripts or reuse the ones under `script/` for local testing and staging environments.
+
+## Foundry quick start
+
+From `tournament-contracts/`:
+
+```bash
+forge build
+forge test
 ```
 
-### Test
+Core tests:
+- `test/HodleagueCards.t.sol` – ERC‑721 behaviour, access control, PackOpened events.
+- `test/HodleaguePacks.t.sol` – legacy commit‑reveal logic and UUPS upgrades (not used in production).
 
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```

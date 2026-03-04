@@ -1,6 +1,6 @@
 """
 Service for checking native (gas) balance on EVM chains via RPC.
-Used to decide preferred network (Abstract vs Avalanche) for tournament registration.
+Can be used to check Avalanche C-Chain balance for gas (e.g. before registration).
 """
 
 import asyncio
@@ -16,7 +16,7 @@ async def get_native_balance_wei(provider_url: str, wallet_address: str) -> Opti
     """
     Fetch native token balance (wei) for an address on the given chain.
 
-    :param provider_url: RPC URL (e.g. Abstract or Avalanche C-Chain).
+    :param provider_url: RPC URL (e.g. Avalanche C-Chain).
     :param wallet_address: EOA address (0x...).
     :return: Balance in wei, or None if RPC failed (caller should treat as no balance / fallback).
     """

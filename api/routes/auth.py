@@ -4,15 +4,18 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, validator
 from typing import Optional
 import logging
+from datetime import datetime, timezone
 
-from models.database import get_async_db
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from services.web3_auth_service import web3_auth_service
-from services.user_card_grant_service import user_card_grant_service
-from services.user_pack_grant_service import user_pack_grant_service
-from utils.rate_limit import limiter
 
 from config import Config
+from models.database import get_async_db
+from models.pack_models import PackType
+from models.user_pack_models import UserPack, PackSource
+from services.web3_auth_service import web3_auth_service
+from services.user_pack_grant_service import user_pack_grant_service
+from utils.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -227,18 +230,21 @@ async def verify_signature(
         cards_granted_count = 0
         packs_granted_count = 0
         
-        # Grant starter packs to new users
+        # Grant starter packs to new users: off-chain only (UserPack rows, no on-chain mint).
         if is_new_user:
             try:
                 granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
                     user_id=user.id,
-                    source="reward"
+                    source="reward",
                 )
                 packs_granted_count = len(granted_packs)
-                logger.info(f"Granted {packs_granted_count} starter packs to new user {user.id}")
+                logger.info(
+                    "Granted %s starter packs (off-chain) to new user %s",
+                    packs_granted_count,
+                    user.id,
+                )
             except Exception as pack_error:
-                logger.error(f"Error granting starter packs to user {user.id}: {pack_error}")
-                packs_granted_count = 0
+                logger.error("Error granting starter packs to user %s: %s", user.id, pack_error)
         
         # Create JWT
         access_token = web3_auth_service.create_jwt_token(user)
@@ -344,18 +350,25 @@ if Config.ENVIRONMENT != "production":
             cards_granted_count = 0
             packs_granted_count = 0
             
-            # Grant starter packs to new users
+            # Grant starter packs to new users: off-chain only (UserPack rows).
             if is_new_user:
                 try:
                     granted_packs = await user_pack_grant_service.grant_all_active_packs_to_user(
                         user_id=user.id,
-                        source="admin"
+                        source="admin",
                     )
                     packs_granted_count = len(granted_packs)
-                    logger.info(f"Granted {packs_granted_count} test packs to new user {user.id}")
+                    logger.info(
+                        "Granted %s test packs (off-chain) to new user %s",
+                        packs_granted_count,
+                        user.id,
+                    )
                 except Exception as pack_error:
-                    logger.error(f"Error granting test packs to user {user.id}: {pack_error}")
-                    packs_granted_count = 0
+                    logger.error(
+                        "Error granting test packs to user %s: %s",
+                        user.id,
+                        pack_error,
+                    )
             
             # Create JWT
             access_token = web3_auth_service.create_jwt_token(user)
@@ -384,29 +397,6 @@ if Config.ENVIRONMENT != "production":
         except Exception as e:
             logger.error(f"Error in test verify: {e}")
             raise HTTPException(status_code=500, detail="Test authentication failed")
-
-    
-    @router.post("/grant-cards")
-    async def grant_cards_to_user(
-        target_user_id: int,
-        current_user: dict = Depends(verify_jwt_dependency)
-    ):
-        """DEV ONLY: Manually grant all available cards to a user"""
-        try:
-            granted_cards = await user_card_grant_service.grant_all_active_cards_to_user(
-                user_id=target_user_id,
-                source="admin"
-            )
-            return {
-                "success": True,
-                "cards_granted": len(granted_cards),
-                "message": f"Successfully granted {len(granted_cards)} cards to user {target_user_id}"
-            }
-        except ValueError:
-            raise HTTPException(status_code=404, detail="Not found")
-        except Exception as e:
-            logger.error(f"Error granting cards to user {target_user_id}: {e}")
-            raise HTTPException(status_code=500, detail="Failed to grant cards")
 
     
     @router.post("/grant-packs")

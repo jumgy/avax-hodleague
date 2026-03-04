@@ -1,7 +1,7 @@
 # services/user_pack_grant_service.py
 import logging
 from typing import List
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 
@@ -19,27 +19,6 @@ class UserPackGrantService:
     def __init__(self):
         self.db_session = None
 
-    def _get_next_friday_17utc(self) -> datetime:
-        """Return next Friday 17:00 UTC."""
-        now = datetime.utcnow().replace(tzinfo=timezone.utc)
-        current_weekday = now.weekday()  # 0 = Monday, 4 = Friday
-
-        # If today is Friday
-        if current_weekday == 4:
-            friday_17 = now.replace(hour=17, minute=0, second=0, microsecond=0)
-            if now < friday_17:
-                return friday_17
-            else:
-                return friday_17 + timedelta(days=7)
-
-        if current_weekday < 4:
-            days_until_friday = 4 - current_weekday
-        else:
-            days_until_friday = 7 - current_weekday + 4
-        
-        next_friday = now + timedelta(days=days_until_friday)
-        return next_friday.replace(hour=17, minute=0, second=0, microsecond=0)
-    
     async def grant_all_active_packs_to_user(
         self, 
         user_id: int, 
@@ -74,10 +53,6 @@ class UserPackGrantService:
                     logger.info("No active pack types found in database")
                     return []
                 
-                # Calculate expires_at
-                expires_at = self._get_next_friday_17utc()
-                logger.info(f"Packs will expire at: {expires_at}")
-
                 # Create new UserPack records
                 new_user_packs = []
                 for pack_type in active_pack_types:
@@ -85,7 +60,7 @@ class UserPackGrantService:
                         user_id=user_id,
                         pack_type_id=pack_type.id,
                         obtained_at=datetime.utcnow(),
-                        expires_at=expires_at,
+                        expires_at=None,
                         is_opened=False,
                         source=source
                     )

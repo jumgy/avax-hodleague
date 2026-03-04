@@ -20,24 +20,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create table for distributed locks
-    op.create_table(
-        'job_locks',
-        sa.Column('job_name', sa.String(length=100), nullable=False),
-        sa.Column('locked_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('locked_by', sa.String(length=255), nullable=False),
-        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint('job_name')
-    )
-    
-    # Index for fast lookup of expired locks
-    op.create_index(
-        'idx_job_locks_expires',
-        'job_locks',
-        ['expires_at']
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS job_locks (
+            job_name VARCHAR(100) NOT NULL PRIMARY KEY,
+            locked_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            locked_by VARCHAR(255) NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+        )
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS idx_job_locks_expires ON job_locks (expires_at)")
 
 
 def downgrade() -> None:
-    op.drop_index('idx_job_locks_expires', table_name='job_locks')
-    op.drop_table('job_locks')
+    op.execute("DROP INDEX IF EXISTS idx_job_locks_expires")
+    op.execute("DROP TABLE IF EXISTS job_locks")

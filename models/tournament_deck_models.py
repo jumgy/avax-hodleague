@@ -26,7 +26,7 @@ class TournamentDeck(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     validation_errors = Column(Text, nullable=True)
     transaction_hash = Column(String(66), nullable=True)
-    registration_chain_id = Column(Integer, nullable=True)  # 2741 Abstract, 43114 Avalanche C-Chain
+    registration_chain_id = Column(Integer, nullable=True)  # 43114 Avalanche C-Chain
 
     # Relationships
     tournament = relationship("Tournament")

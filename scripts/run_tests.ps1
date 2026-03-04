@@ -15,7 +15,11 @@ param(
     [switch]$FailFast,
     
     [Parameter(Mandatory=$false)]
-    [string]$Keyword
+    [string]$Keyword,
+    
+    # Only print the pytest command, do not run tests (useful when run_tests.ps1 fails to spawn)
+    [Parameter(Mandatory=$false)]
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -87,6 +91,11 @@ Write-Host ""
 Write-Info "Command: pytest $($args -join ' ')"
 Write-Host "─" * 80
 Write-Host ""
+
+if ($DryRun) {
+    Write-Warning "DryRun: not running pytest. Run manually: pytest $($args -join ' ')"
+    exit 0
+}
 
 # Run pytest
 try {

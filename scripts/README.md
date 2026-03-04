@@ -164,6 +164,29 @@ alembic current
 4. Create migration for the model
 5. Run tests
 
+### NFT Base URI (Local Testing)
+
+When testing NFT packs locally, the HodleagueCards contract must point to your backend for metadata. Use the set_nft_base_uri script:
+
+```powershell
+# 1. Add to .env:
+#    NFT_METADATA_BASE_URL=https://YOUR_NGROK.ngrok-free.app/nft/cards/
+#    NFT_ADMIN_PRIVATE_KEY=0x... (deployer key)
+
+# 2. Expose local backend: ngrok http 8000
+
+# 3. Run script
+python -m scripts.set_nft_base_uri
+```
+
+**E2E pack open (on-chain, two-step):** `python scripts/test_pack_open_e2e.py --api-url http://localhost:8000 --pack-type-id 1` (backend + .env with Fuji contracts and keys).
+
+**Deploy and run after contract/backend changes (commit-reveal + abandoned-commit job):**
+1. **Contract:** Deploy or upgrade HodleaguePacks (must have `commitOpen`, `revealOpen`, `relayerRevealOpen`, `getCommit`). Point `.env` to the proxy address.
+2. **Migrations:** `alembic upgrade head` (adds `commit_id`, `relayer_tx_hash` on pack_openings).
+3. **Backend:** Restart the API (e.g. docker-compose restart or uvicorn) so scheduler loads the abandoned-commit job (runs every 1h; reveals for users who burned a pack but never revealed, after `ABANDONED_COMMIT_REVEAL_HOURS`, default 24).
+4. **Test:** `python scripts/test_pack_open_e2e.py --api-url http://localhost:8000 --pack-type-id 1`.
+
 ### Dev Server
 
 - **Run Server (Dev)** - run uvicorn with hot-reload

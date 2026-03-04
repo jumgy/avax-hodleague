@@ -112,22 +112,37 @@ class Config:
         if len(ADMIN_PASSWORD) < 16:
             raise ValueError("ADMIN_PASSWORD too short for production. Minimum 16 characters.")
 
-    # ===== WEB3 & BLOCKCHAIN SETTINGS =====
-    WEB3_PROVIDER_URL = os.environ.get("WEB3_PROVIDER_URL", "https://api.mainnet.abs.xyz")
-    TOURNAMENT_CONTRACT_ADDRESS = os.environ.get(
-        "TOURNAMENT_CONTRACT_ADDRESS", "0x507Db3dfd3695270D7F2b08a25906e171C07B4C4"
+    # ===== WEB3 & BLOCKCHAIN SETTINGS (Avalanche C-Chain only) =====
+    WEB3_PROVIDER_URL = os.environ.get(
+        "WEB3_PROVIDER_URL", "https://api.avax.network/ext/bc/C/rpc"
     )
-    # Abstract chain ID (for frontend / audit)
-    ABSTRACT_CHAIN_ID = 2741
-
-    # Avalanche C-Chain (optional; if not set, only Abstract is used)
-    WEB3_PROVIDER_URL_AVALANCHE = os.environ.get("WEB3_PROVIDER_URL_AVALANCHE", "")
-    TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE = os.environ.get("TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE", "")
+    TOURNAMENT_CONTRACT_ADDRESS = os.environ.get("TOURNAMENT_CONTRACT_ADDRESS", "")
     AVALANCHE_CHAIN_ID = 43114
 
+    # ===== HODLEAGUE NFT PACKS & CARDS (ERC-1155 / ERC-721) =====
+    CARDS_CONTRACT_ADDRESS = os.environ.get("CARDS_CONTRACT_ADDRESS", "")
+    PACKS_CONTRACT_ADDRESS = os.environ.get("PACKS_CONTRACT_ADDRESS", "")
+    PACK_SIGNER_PRIVATE_KEY = os.environ.get("PACK_SIGNER_PRIVATE_KEY", "")
+    HOT_WALLET_PRIVATE_KEY = os.environ.get("HOT_WALLET_PRIVATE_KEY", "")
+    CHAIN_ID = int(os.environ.get("CHAIN_ID", "43114"))
+    # Abandoned commit job: reveal on behalf of user after this many hours (pack burned but user never revealed).
+    ABANDONED_COMMIT_REVEAL_HOURS: int = int(
+        os.getenv("ABANDONED_COMMIT_REVEAL_HOURS", "24")
+    )
+
+    # Base URL for ERC-721 metadata (tokenURI). Must end with /.
+    # Production: https://api.hodleague.com/nft/cards/
+    # Local: http://localhost:8000/nft/cards/ (or ngrok URL for external access)
+    NFT_METADATA_BASE_URL = os.environ.get(
+        "NFT_METADATA_BASE_URL", "https://api.hodleague.com/nft/cards/"
+    )
+
+    # Private key with DEFAULT_ADMIN_ROLE on HodleagueCards/Packs (for setBaseURI, setPackPrice).
+    # Use deployer key for dev; multisig for production.
+    NFT_ADMIN_PRIVATE_KEY = os.environ.get("NFT_ADMIN_PRIVATE_KEY", "")
+
     # Min native balance (wei) to consider "enough gas" for registerDeck
-    MIN_GAS_BALANCE_ABSTRACT = int(os.environ.get("MIN_GAS_BALANCE_ABSTRACT", "100000000000000"))  # 0.0001 ETH equiv
-    MIN_GAS_BALANCE_AVALANCHE = int(os.environ.get("MIN_GAS_BALANCE_AVALANCHE", "100000000000000"))  # 0.0001 AVAX
+    MIN_GAS_BALANCE = int(os.environ.get("MIN_GAS_BALANCE", "100000000000000"))  # 0.0001 AVAX
 
     # Contract ABI.
     TOURNAMENT_CONTRACT_ABI = [

@@ -11,6 +11,7 @@ from .pack_models import PackType
 from .pack_probability_models import PackRarityConfig, CardWeight
 from .user_card_models import UserCard, UserCardStatus, UserCardSource
 from .user_pack_models import UserPack, PackOpening, PackSource
+from .pack_opening_commitment_models import PackOpeningCommitment
 from .tournament_models import Tournament, TournamentStatus, TournamentTokenSnapshot, RarityType
 from .tournament_deck_models import TournamentDeck, TournamentPrizeConfig, TournamentResult
 from .reward_models import RewardType, UserReward, RewardCategory, ClaimStatus
@@ -35,6 +36,7 @@ __all__ = [
     "UserCardSource",
     "UserPack",
     "PackOpening",
+    "PackOpeningCommitment",
     "PackSource",
     "Tournament",
     "TournamentStatus",

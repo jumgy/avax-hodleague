@@ -4,6 +4,7 @@ import logging
 import sys
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -15,6 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from api.routes import router as api_router
+from api.routes.nft import router as nft_router
 from utils.rate_limit import limiter
 from api.routes.admin import admin_router
 
@@ -45,6 +47,29 @@ def setup_logging():
     )
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
+
+    # Dedicated log files for health checks (packs and cards).
+    logs_dir = Path("logs")
+    try:
+        logs_dir.mkdir(exist_ok=True)
+    except Exception:
+        # If directory cannot be created, fail silently and keep console logs only.
+        logs_dir = None
+
+    if logs_dir is not None:
+        pack_logger = logging.getLogger("pack_health")
+        pack_logger.setLevel(logging.WARNING)
+        pack_file_handler = logging.FileHandler(logs_dir / "pack_health.log", encoding="utf-8")
+        pack_file_handler.setLevel(logging.WARNING)
+        pack_file_handler.setFormatter(formatter)
+        pack_logger.addHandler(pack_file_handler)
+
+        card_logger = logging.getLogger("card_health")
+        card_logger.setLevel(logging.WARNING)
+        card_file_handler = logging.FileHandler(logs_dir / "card_health.log", encoding="utf-8")
+        card_file_handler.setLevel(logging.WARNING)
+        card_file_handler.setFormatter(formatter)
+        card_logger.addHandler(card_file_handler)
 
     # Disable SQLAlchemy logs when DB_ECHO=False.
     if not Config.DB_ECHO:
@@ -160,6 +185,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(api_router, prefix="/api")
+app.include_router(nft_router)  # /nft/cards/{id} for ERC-721 tokenURI
 app.include_router(admin_router)
 
 # ============ PROTECTED DOCS ENDPOINTS ============

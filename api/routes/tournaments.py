@@ -21,6 +21,7 @@ from models.tournament_deck_models import TournamentDeck, TournamentResult
 from models.tournament_models import Tournament, TournamentStatus
 from models.user_card_models import UserCard
 from models.user_models import User
+from config import Config
 from services.prize_config_service import PrizeConfigService
 from services.tournament_registration_service import TournamentRegistrationService
 from services.tournament_service import tournament_service
@@ -134,9 +135,9 @@ class PrizePoolInfo(BaseModel):
 
 
 class MyRegistrationNetworkInfo(BaseModel):
-    """Network where the user is registered for the tournament. Frontend must call the contract in this network for unregister."""
+    """Avalanche network info for contract calls (register/unregister)."""
 
-    network: Literal["abstract", "avalanche"]
+    network: Literal["avalanche"] = "avalanche"
     chain_id: int
     contract_address: str
 
@@ -193,7 +194,7 @@ class DeckValidateRequest(BaseModel):
 
 
 class DeckValidateResponse(BaseModel):
-    """Pre-validation response with deck_hash for contract and recommended network."""
+    """Pre-validation response with deck_hash and Avalanche contract info for frontend."""
 
     valid: bool
     deck_hash: str
@@ -201,25 +202,21 @@ class DeckValidateResponse(BaseModel):
     weight_limit: float
     cards: list[CardInDeckResponse]
     message: str
-    preferred_network: Literal["abstract", "avalanche"] = "abstract"
-    switch_network_required: bool = False
-    avalanche_chain_id: Optional[int] = None
-    avalanche_contract_address: Optional[str] = None
+    chain_id: int
+    contract_address: str
 
 
 class DeckRegisterRequest(BaseModel):
-    """Request for final registration with tx_hash."""
+    """Request for final registration with tx_hash (Avalanche transaction)."""
 
     deck_composition: list[int]
     tx_hash: str
-    network: Literal["abstract", "avalanche"] = "abstract"
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "deck_composition": [210, 211, 212, 213, 214],
                 "tx_hash": "0x1234567890abcdef...",
-                "network": "abstract",
             }
         }
     )
@@ -238,14 +235,11 @@ class DeckRegisterResponse(BaseModel):
 
 
 class DeckUnregisterRequest(BaseModel):
-    """Request to cancel registration."""
+    """Request to cancel registration (Avalanche unregister tx_hash)."""
 
     tx_hash: str
-    network: Literal["abstract", "avalanche"] = "abstract"
 
-    model_config = ConfigDict(
-        json_schema_extra={"example": {"tx_hash": "0xabcdef1234567890...", "network": "abstract"}}
-    )
+    model_config = ConfigDict(json_schema_extra={"example": {"tx_hash": "0xabcdef1234567890..."}})
 
 
 class DeckUnregisterResponse(BaseModel):
@@ -1213,7 +1207,8 @@ async def validate_deck_for_registration(
 ):
     """
     Step 1: Pre-validate deck without writing to DB.
-    Frontend must: (1) call this endpoint, (2) get deck_hash, (3) call contract registerDeck(tournamentId, deck_hash),
+    Frontend must: (1) call this endpoint, (2) get deck_hash and contract info,
+    (3) call contract registerDeck(tournamentId, deck_hash) on Avalanche,
     (4) after contract success call POST /register with tx_hash.
     """
     try:
@@ -1226,18 +1221,6 @@ async def validate_deck_for_registration(
             db=db, tournament_id=tournament_id, user_id=user_id, deck_composition=body.deck_composition
         )
 
-        # Recommend network by gas balance (Abstract vs Avalanche)
-        wallet = (current_user.get("wallet_address") or "").strip()
-        if not wallet:
-            user_wallet = (await db.execute(select(User.wallet_address).where(User.id == user_id))).scalar_one_or_none()
-            if user_wallet:
-                wallet = (user_wallet or "").strip()
-            if not wallet:
-                logger.warning("validate-deck: no wallet_address in JWT and user %s has no wallet in DB", user_id)
-        network_rec = await TournamentRegistrationService.get_registration_network_recommendation(wallet)
-        message = network_rec.get("message") or validation_result["message"]
-
-        # Build response
         cards_info = [
             CardInDeckResponse(
                 user_card_id=card["user_card_id"],
@@ -1254,11 +1237,9 @@ async def validate_deck_for_registration(
             total_weight=validation_result["total_weight"],
             weight_limit=validation_result["weight_limit"],
             cards=cards_info,
-            message=message,
-            preferred_network=network_rec["preferred_network"],
-            switch_network_required=network_rec["switch_network_required"],
-            avalanche_chain_id=network_rec.get("avalanche_chain_id"),
-            avalanche_contract_address=network_rec.get("avalanche_contract_address"),
+            message=validation_result["message"],
+            chain_id=Config.AVALANCHE_CHAIN_ID,
+            contract_address=Config.TOURNAMENT_CONTRACT_ADDRESS or "",
         )
 
     except HTTPException:
@@ -1298,9 +1279,8 @@ async def register_for_tournament(
                 detail="Invalid user data in token. Missing user_id or wallet_address",
             )
 
-        logger.info(f"Registering for tournament {tournament_id}: tx_hash={body.tx_hash}, network={body.network}")
+        logger.info("Registering for tournament %s: tx_hash=%s", tournament_id, body.tx_hash)
 
-        # Final registration with tx verification (network: abstract or avalanche)
         tournament_deck = await TournamentRegistrationService.register_deck_with_verification(
             db=db,
             tournament_id=tournament_id,
@@ -1308,7 +1288,6 @@ async def register_for_tournament(
             user_wallet=user_wallet,
             deck_composition=body.deck_composition,
             tx_hash=body.tx_hash,
-            network=body.network,
         )
 
         # Load card info for response
@@ -1374,14 +1353,12 @@ async def unregister_from_tournament(
         if not user_id or not user_wallet:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid user data in token")
 
-        # Unregister with tx verification (network: abstract or avalanche)
         result = await TournamentRegistrationService.unregister_deck_with_verification(
             db=db,
             tournament_id=tournament_id,
             user_id=user_id,
             user_wallet=user_wallet,
             tx_hash=body.tx_hash,
-            network=body.network,
         )
 
         return DeckUnregisterResponse(

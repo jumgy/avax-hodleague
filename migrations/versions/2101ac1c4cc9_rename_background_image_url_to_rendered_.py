@@ -16,11 +16,25 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
-    # Rename column instead of drop/create
-    op.alter_column('cards', 'background_image_url', 
-                    new_column_name='rendered_image_url')
+    # Idempotent: rename only if background_image_url exists (skip if rendered_image_url already from create_all).
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'cards' AND column_name = 'background_image_url')
+               AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'cards' AND column_name = 'rendered_image_url') THEN
+                ALTER TABLE cards RENAME COLUMN background_image_url TO rendered_image_url;
+            END IF;
+        END $$;
+    """)
+
 
 def downgrade() -> None:
-    # Rollback rename
-    op.alter_column('cards', 'rendered_image_url', 
-                    new_column_name='background_image_url')
+    op.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'cards' AND column_name = 'rendered_image_url')
+               AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'cards' AND column_name = 'background_image_url') THEN
+                ALTER TABLE cards RENAME COLUMN rendered_image_url TO background_image_url;
+            END IF;
+        END $$;
+    """)

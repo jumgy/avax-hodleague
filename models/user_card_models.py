@@ -1,25 +1,30 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, BigInteger
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from .database import Base
 
+
 class UserCard(Base):
     """
     Individual card instances owned by users.
+    On-chain flow: nft_token_id + chain_id + contract_address link to ERC-721 token.
     """
     __tablename__ = 'user_cards'
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     card_id = Column(Integer, ForeignKey('cards.id'), nullable=False)
     pack_opening_id = Column(Integer, ForeignKey('pack_openings.id'), nullable=True)
-    obtained_at = Column(DateTime(timezone=True), nullable=False, 
-                    default=lambda: datetime.now(timezone.utc))
+    obtained_at = Column(DateTime(timezone=True), nullable=False,
+                        default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(20), nullable=False, default="pack_opening")
     status = Column(String(20), nullable=False, default="available")
     is_active = Column(Boolean, nullable=False, default=True)
     transaction_hash = Column(String(66), nullable=True)
+    nft_token_id = Column(BigInteger, nullable=True)
+    chain_id = Column(Integer, nullable=True)
+    contract_address = Column(String(42), nullable=True)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), nullable=False, 

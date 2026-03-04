@@ -15,7 +15,6 @@ from models.token_models import Token
 from models.tournament_deck_models import TournamentDeck
 from models.tournament_models import Tournament
 from models.user_card_models import UserCard
-from services.chain_balance_service import get_native_balance_wei
 from services.web3_verification_service import Web3VerificationService
 
 logger = logging.getLogger(__name__)
@@ -182,94 +181,35 @@ class TournamentRegistrationService:
         }
 
     @staticmethod
-    async def get_registration_network_recommendation(wallet_address: str) -> dict[str, Any]:
-        """Recommend network for registration based on gas balance.
-
-        If no gas on Abstract but gas on Avalanche, recommend switching to Avalanche.
-        On RPC errors or missing Avalanche config, fallback to Abstract.
-
-        Returns:
-            Dict with preferred_network, switch_network_required, avalanche_chain_id, etc.
-        """
-        result: dict[str, Any] = {
-            "preferred_network": "abstract",
-            "switch_network_required": False,
-            "avalanche_chain_id": None,
-            "avalanche_contract_address": None,
-            "message": None,
-        }
-
-        wallet = (wallet_address or "").strip()
-        if not wallet:
-            logger.warning(
-                "get_registration_network_recommendation: wallet_address is empty, cannot check gas; defaulting to Abstract"
-            )
-            return result
-
-        if not Config.WEB3_PROVIDER_URL_AVALANCHE or not Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE:
-            logger.info(
-                "Avalanche not configured (WEB3_PROVIDER_URL_AVALANCHE or TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE missing); "
-                "network recommendation defaults to Abstract"
-            )
-            return result
-
-        try:
-            balance_abstract = await get_native_balance_wei(Config.WEB3_PROVIDER_URL, wallet)
-            balance_avax = await get_native_balance_wei(Config.WEB3_PROVIDER_URL_AVALANCHE, wallet)
-        except Exception as e:
-            logger.warning("Balance check failed, defaulting to Abstract: %s", e)
-            return result
-
-        has_gas_abstract = balance_abstract is not None and balance_abstract >= Config.MIN_GAS_BALANCE_ABSTRACT
-        has_gas_avax = balance_avax is not None and balance_avax >= Config.MIN_GAS_BALANCE_AVALANCHE
-
-        logger.debug(
-            "Gas check: abstract=%s (min=%s), avax=%s (min=%s); has_abstract=%s, has_avax=%s",
-            balance_abstract,
-            Config.MIN_GAS_BALANCE_ABSTRACT,
-            balance_avax,
-            Config.MIN_GAS_BALANCE_AVALANCHE,
-            has_gas_abstract,
-            has_gas_avax,
-        )
-
-        if has_gas_abstract:
-            return result
-        if has_gas_avax:
-            result["preferred_network"] = "avalanche"
-            result["switch_network_required"] = True
-            result["avalanche_chain_id"] = Config.AVALANCHE_CHAIN_ID
-            result["avalanche_contract_address"] = Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE
-            result["message"] = "Not enough gas on Abstract. Switch to Avalanche to register."
-            logger.info(
-                "Network recommendation: no gas on Abstract, gas on Avalanche → preferred_network=avalanche, "
-                "switch_network_required=True"
-            )
-            return result
-        return result
-
-    @staticmethod
     def get_network_info_for_chain_id(chain_id: int | None) -> dict[str, Any] | None:
         """Return network info for unregister by chain_id (from tournament_decks.registration_chain_id).
 
-        Returns network, chain_id, contract_address for the frontend to call unregister in the same network.
+        Avalanche only: returns chain_id and contract_address for the frontend to call unregister.
         """
         if chain_id is None:
             return None
-        if chain_id == Config.ABSTRACT_CHAIN_ID:
-            return {
-                "network": "abstract",
-                "chain_id": Config.ABSTRACT_CHAIN_ID,
-                "contract_address": Config.TOURNAMENT_CONTRACT_ADDRESS,
-            }
-        if chain_id == Config.AVALANCHE_CHAIN_ID and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE:
+        if chain_id == Config.AVALANCHE_CHAIN_ID and Config.TOURNAMENT_CONTRACT_ADDRESS:
             return {
                 "network": "avalanche",
                 "chain_id": Config.AVALANCHE_CHAIN_ID,
-                "contract_address": Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE,
+                "contract_address": Config.TOURNAMENT_CONTRACT_ADDRESS,
             }
         logger.warning("Unknown registration_chain_id=%s, cannot map to network", chain_id)
         return None
+
+    @staticmethod
+    def _get_avalanche_web3_config() -> tuple[str, str, int]:
+        """Return (provider_url, contract_address, chain_id) for Avalanche C-Chain."""
+        if not Config.WEB3_PROVIDER_URL or not Config.TOURNAMENT_CONTRACT_ADDRESS:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Avalanche is not configured (WEB3_PROVIDER_URL or TOURNAMENT_CONTRACT_ADDRESS missing).",
+            )
+        return (
+            Config.WEB3_PROVIDER_URL,
+            Config.TOURNAMENT_CONTRACT_ADDRESS,
+            Config.AVALANCHE_CHAIN_ID,
+        )
 
     @staticmethod
     async def detect_onchain_registration(
@@ -277,103 +217,61 @@ class TournamentRegistrationService:
         wallet_address: str,
         timeout_seconds: float = 1.0,
     ) -> dict[str, Any]:
-        """Quick check of registration directly in the smart contract.
-
-        Checks all available networks (Abstract + Avalanche) in parallel.
-        Each RPC call is time-limited via asyncio.wait_for to avoid blocking.
-        """
-
+        """Quick check of registration directly in the smart contract on Avalanche."""
         wallet = (wallet_address or "").strip()
         if not wallet:
             logger.warning("detect_onchain_registration: empty wallet_address, skipping on-chain check")
             return {"is_registered": False}
 
-        networks: list[str] = ["abstract"]
-        if Config.WEB3_PROVIDER_URL_AVALANCHE and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE:
-            networks.append("avalanche")
+        try:
+            provider_url, contract_address, chain_id = TournamentRegistrationService._get_avalanche_web3_config()
+        except HTTPException:
+            return {"is_registered": False}
 
-        async def _check_network(network: str) -> tuple[str, dict[str, Any]]:
-            try:
-                provider_url, contract_address, chain_id = TournamentRegistrationService._web3_config_for_network(
-                    network
-                )
-                web3_service = Web3VerificationService(
-                    web3_provider_url=provider_url,
-                    contract_address=contract_address,
-                    contract_abi=Config.TOURNAMENT_CONTRACT_ABI,
-                )
+        try:
+            web3_service = Web3VerificationService(
+                web3_provider_url=provider_url,
+                contract_address=contract_address,
+                contract_abi=Config.TOURNAMENT_CONTRACT_ABI,
+            )
 
-                def _call() -> dict[str, Any]:
-                    return web3_service.check_registration_onchain(
-                        tournament_id=tournament_id,
-                        user_wallet=wallet,
-                    )
-
-                result: dict[str, Any] = await asyncio.wait_for(
-                    asyncio.to_thread(_call),
-                    timeout=timeout_seconds,
+            def _call() -> dict[str, Any]:
+                return web3_service.check_registration_onchain(
+                    tournament_id=tournament_id,
+                    user_wallet=wallet,
                 )
 
-                if result.get("is_registered"):
-                    return network, {
-                        "is_registered": True,
-                        "network": network,
-                        "chain_id": chain_id,
-                        "contract_address": contract_address,
-                        "deck_hash": result.get("deck_hash"),
-                    }
+            result: dict[str, Any] = await asyncio.wait_for(
+                asyncio.to_thread(_call),
+                timeout=timeout_seconds,
+            )
 
-                return network, {"is_registered": False}
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "detect_onchain_registration: timeout while checking network=%s for tournament_id=%s",
-                    network,
-                    tournament_id,
-                )
-                return network, {"is_registered": False}
-            except Exception as e:
-                logger.error(
-                    "detect_onchain_registration: error while checking network=%s for tournament_id=%s: %s",
-                    network,
-                    tournament_id,
-                    e,
-                )
-                return network, {"is_registered": False}
-
-        # Check all available networks in parallel
-        check_results = await asyncio.gather(*[_check_network(net) for net in networks])
-
-        for network, data in check_results:
-            if data.get("is_registered"):
+            if result.get("is_registered"):
                 logger.info(
-                    "On-chain registration detected for tournament_id=%s, wallet=%s, network=%s",
+                    "On-chain registration detected for tournament_id=%s, wallet=%s",
                     tournament_id,
                     wallet,
-                    network,
                 )
-                return data
+                return {
+                    "is_registered": True,
+                    "network": "avalanche",
+                    "chain_id": chain_id,
+                    "contract_address": contract_address,
+                    "deck_hash": result.get("deck_hash"),
+                }
+        except asyncio.TimeoutError:
+            logger.warning(
+                "detect_onchain_registration: timeout for tournament_id=%s",
+                tournament_id,
+            )
+        except Exception as e:
+            logger.error(
+                "detect_onchain_registration: error for tournament_id=%s: %s",
+                tournament_id,
+                e,
+            )
 
         return {"is_registered": False}
-
-    @staticmethod
-    def _web3_config_for_network(network: str) -> tuple[str, str, int]:
-        """Return (provider_url, contract_address, chain_id) for the given network."""
-        if network == "avalanche":
-            if not Config.WEB3_PROVIDER_URL_AVALANCHE or not Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Avalanche is not configured. Use network=abstract.",
-                )
-            return (
-                Config.WEB3_PROVIDER_URL_AVALANCHE,
-                Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE,
-                Config.AVALANCHE_CHAIN_ID,
-            )
-        return (
-            Config.WEB3_PROVIDER_URL,
-            Config.TOURNAMENT_CONTRACT_ADDRESS,
-            Config.ABSTRACT_CHAIN_ID,
-        )
 
     @staticmethod
     async def register_deck_with_verification(
@@ -383,14 +281,10 @@ class TournamentRegistrationService:
         user_wallet: str,
         deck_composition: list[int],
         tx_hash: str,
-        network: str = "abstract",
     ) -> TournamentDeck:
-        """Final registration with blockchain transaction verification.
+        """Final registration with blockchain transaction verification on Avalanche.
 
         Called after the user has signed the transaction in the contract.
-
-        Args:
-            network: "abstract" or "avalanche" — network where the transaction was signed.
 
         Returns:
             TournamentDeck.
@@ -403,11 +297,14 @@ class TournamentRegistrationService:
         # 2. Generate deck_hash
         deck_hash = TournamentRegistrationService.generate_deck_hash(tournament_id, user_id, deck_composition)
 
-        # 3. Verify blockchain transaction in selected network
-        provider_url, contract_address, chain_id = TournamentRegistrationService._web3_config_for_network(network)
+        # 3. Verify blockchain transaction on Avalanche
+        provider_url, contract_address, chain_id = TournamentRegistrationService._get_avalanche_web3_config()
         logger.info(
-            f"Verifying transaction {tx_hash} in network={network} "
-            f"(provider={provider_url}, contract={contract_address}, chain_id={chain_id})"
+            "Verifying transaction %s on Avalanche (provider=%s, contract=%s, chain_id=%s)",
+            tx_hash,
+            provider_url,
+            contract_address,
+            chain_id,
         )
 
         web3_service = Web3VerificationService(
@@ -419,54 +316,6 @@ class TournamentRegistrationService:
         verification = await web3_service.verify_register_transaction(
             tx_hash=tx_hash, tournament_id=tournament_id, expected_deck_hash=deck_hash, user_wallet=user_wallet
         )
-
-        # If transaction not found in given network, try fallback network
-        if not verification["valid"] and "Transaction not found" in verification.get("error", ""):
-            fallback_network = "avalanche" if network == "abstract" else "abstract"
-
-            # Check if fallback network is configured
-            if (
-                fallback_network == "avalanche"
-                and Config.WEB3_PROVIDER_URL_AVALANCHE
-                and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE
-            ):
-                logger.warning(
-                    f"Transaction {tx_hash} not found in {network} network, "
-                    f"trying fallback network: {fallback_network}"
-                )
-                try:
-                    fallback_provider_url, fallback_contract_address, fallback_chain_id = (
-                        TournamentRegistrationService._web3_config_for_network(fallback_network)
-                    )
-                    logger.info(
-                        f"Fallback verification: provider={fallback_provider_url}, "
-                        f"contract={fallback_contract_address}, chain_id={fallback_chain_id}"
-                    )
-                    fallback_web3_service = Web3VerificationService(
-                        web3_provider_url=fallback_provider_url,
-                        contract_address=fallback_contract_address,
-                        contract_abi=Config.TOURNAMENT_CONTRACT_ABI,
-                    )
-                    verification = await fallback_web3_service.verify_register_transaction(
-                        tx_hash=tx_hash,
-                        tournament_id=tournament_id,
-                        expected_deck_hash=deck_hash,
-                        user_wallet=user_wallet,
-                    )
-                    if verification["valid"]:
-                        logger.info(
-                            f"Transaction {tx_hash} found in fallback network {fallback_network}, "
-                            f"updating chain_id from {chain_id} to {fallback_chain_id}"
-                        )
-                        chain_id = fallback_chain_id  # Update chain_id for DB
-                        network = fallback_network
-                    else:
-                        logger.error(
-                            f"Transaction {tx_hash} also not found in fallback network {fallback_network}: "
-                            f"{verification.get('error', 'Unknown error')}"
-                        )
-                except Exception as e:
-                    logger.error(f"Fallback verification failed: {e}")
 
         if not verification["valid"]:
             raise HTTPException(
@@ -505,15 +354,10 @@ class TournamentRegistrationService:
         user_id: int,
         user_wallet: str,
         tx_hash: str,
-        network: str = "abstract",
     ) -> dict:
-        """Unregister with blockchain transaction verification.
+        """Unregister with blockchain transaction verification on Avalanche.
 
-        User must call unregisterDeck in the contract (same network as registration),
-        then pass tx_hash and network here to unlock cards.
-
-        Args:
-            network: "abstract" or "avalanche" — network where unregister was signed.
+        User must call unregisterDeck in the contract, then pass tx_hash here to unlock cards.
 
         Returns:
             Dict with success, cards_unlocked, tx_hash.
@@ -543,8 +387,8 @@ class TournamentRegistrationService:
         if not deck:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not registered in this tournament")
 
-        # 3. Verify UNREGISTER transaction in selected network (fallback on "Transaction not found")
-        provider_url, contract_address, _ = TournamentRegistrationService._web3_config_for_network(network)
+        # 3. Verify UNREGISTER transaction on Avalanche
+        provider_url, contract_address, _ = TournamentRegistrationService._get_avalanche_web3_config()
         web3_service = Web3VerificationService(
             web3_provider_url=provider_url,
             contract_address=contract_address,
@@ -554,40 +398,6 @@ class TournamentRegistrationService:
         verification = await web3_service.verify_unregister_transaction(
             tx_hash=tx_hash, tournament_id=tournament_id, user_wallet=user_wallet
         )
-
-        if not verification["valid"] and "Transaction not found" in verification.get("error", ""):
-            fallback_network = "avalanche" if network == "abstract" else "abstract"
-            if (
-                fallback_network == "avalanche"
-                and Config.WEB3_PROVIDER_URL_AVALANCHE
-                and Config.TOURNAMENT_CONTRACT_ADDRESS_AVALANCHE
-            ):
-                logger.warning(
-                    "Unregister tx %s not found in %s, trying fallback network: %s",
-                    tx_hash,
-                    network,
-                    fallback_network,
-                )
-                try:
-                    fallback_provider_url, fallback_contract_address, _ = (
-                        TournamentRegistrationService._web3_config_for_network(fallback_network)
-                    )
-                    fallback_web3_service = Web3VerificationService(
-                        web3_provider_url=fallback_provider_url,
-                        contract_address=fallback_contract_address,
-                        contract_abi=Config.TOURNAMENT_CONTRACT_ABI,
-                    )
-                    verification = await fallback_web3_service.verify_unregister_transaction(
-                        tx_hash=tx_hash, tournament_id=tournament_id, user_wallet=user_wallet
-                    )
-                    if verification["valid"]:
-                        logger.info(
-                            "Unregister tx %s found in fallback network %s",
-                            tx_hash,
-                            fallback_network,
-                        )
-                except Exception as e:
-                    logger.error("Fallback unregister verification failed: %s", e)
 
         if not verification["valid"]:
             raise HTTPException(

@@ -12,6 +12,7 @@ from .prizes import router as prizes_router
 from .users import router as users_router 
 from .user_cards import router as user_cards_router
 from .user_packs import router as user_packs_router
+from .packs import router as admin_packs_router
 from .tournament_details import router as tournament_details_router
 from .reward import router as reward_router
 from .user_rewards import router as admin_user_rewards
@@ -40,6 +41,7 @@ admin_router.include_router(prizes_router, tags=["Admin - Prizes"])
 admin_router.include_router(users_router, tags=["Admin - Users"])
 admin_router.include_router(user_cards_router, tags=["Admin - User Cards"])
 admin_router.include_router(user_packs_router, tags=["Admin - User Packs"])
+admin_router.include_router(admin_packs_router, tags=["Admin - Packs (On-Chain Mint)"])
 
 
 # Export router
