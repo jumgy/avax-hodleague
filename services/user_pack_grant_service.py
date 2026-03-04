@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 class UserPackGrantService:
     """Service for granting all available pack types to a user."""
 
+    STARTER_PACKS_PER_TYPE: int = 3
+
     def __init__(self):
         self.db_session = None
 
@@ -56,16 +58,17 @@ class UserPackGrantService:
                 # Create new UserPack records
                 new_user_packs = []
                 for pack_type in active_pack_types:
-                    user_pack = UserPack(
-                        user_id=user_id,
-                        pack_type_id=pack_type.id,
-                        obtained_at=datetime.utcnow(),
-                        expires_at=None,
-                        is_opened=False,
-                        source=source
-                    )
-                    new_user_packs.append(user_pack)
-                    session.add(user_pack)
+                    for _ in range(self.STARTER_PACKS_PER_TYPE):
+                        user_pack = UserPack(
+                            user_id=user_id,
+                            pack_type_id=pack_type.id,
+                            obtained_at=datetime.utcnow(),
+                            expires_at=None,
+                            is_opened=False,
+                            source=source
+                        )
+                        new_user_packs.append(user_pack)
+                        session.add(user_pack)
                 
                 # Flush to get IDs
                 await session.flush()
