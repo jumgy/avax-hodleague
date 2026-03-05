@@ -10,6 +10,7 @@ from models.pack_models import PackType
 import secrets
 
 from services.pack_opening_service import pack_opening_service
+from services.pack_mint_service import get_on_chain_pack_balance
 from services.blockchain_event_listener import confirm_pack_opening_by_tx_hash
 from api.routes.auth import verify_jwt_dependency
 from config import Config
