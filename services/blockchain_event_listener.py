@@ -27,6 +27,17 @@ logger = logging.getLogger(__name__)
 PACK_OPENED_TOPIC = "0x" + Web3.keccak(text="PackOpened(address,uint256,uint256[])").hex()
 
 
+def _log_data_to_bytes(data) -> bytes:
+    """Convert log 'data' (str 0x... or HexBytes) to raw bytes for eth_abi.decode."""
+    if data is None:
+        return b""
+    if hasattr(data, "hex"):
+        return bytes(data)
+    if isinstance(data, str):
+        return bytes.fromhex(data[2:] if data.startswith("0x") else data)
+    return bytes(data)
+
+
 def _parse_pack_opened_from_receipt(tx_hash: str):
     """
     Fetch transaction receipt and decode first PackOpened event from HodleagueCards.
@@ -51,10 +62,10 @@ def _parse_pack_opened_from_receipt(tx_hash: str):
 
     # keccak256("PackOpened(address,uint256,uint256[])")
     topic = Web3.keccak(text="PackOpened(address,uint256,uint256[])")
-    topic_hex = topic.hex()
+    topic_hex = ("0x" + topic.hex()) if hasattr(topic, "hex") else str(topic)
 
     for log in receipt["logs"]:
-        if not log.get("topics"):
+        if not log.get("topics") or len(log["topics"]) < 3:
             continue
         log_address = log.get("address")
         if not isinstance(log_address, str):
@@ -63,20 +74,24 @@ def _parse_pack_opened_from_receipt(tx_hash: str):
             continue
         topic0 = log["topics"][0]
         if hasattr(topic0, "hex"):
-            topic0 = "0x" + topic0.hex()
-        if str(topic0).lower() != topic_hex.lower():
+            topic0_str = "0x" + topic0.hex()
+        else:
+            topic0_str = str(topic0)
+        if topic0_str.lower() != topic_hex.lower():
             continue
         # Decode manually: indexed user, indexed openingId, non-indexed cardIds
         user_topic = log["topics"][1]
         opening_id_topic = log["topics"][2]
-        user_address = Web3.to_checksum_address("0x" + user_topic.hex()[-40:])
-        opening_id = int(opening_id_topic.hex(), 16)
+        user_hex = user_topic.hex() if hasattr(user_topic, "hex") else (user_topic[2:] if isinstance(user_topic, str) and user_topic.startswith("0x") else user_topic)
+        opening_hex = opening_id_topic.hex() if hasattr(opening_id_topic, "hex") else (opening_id_topic[2:] if isinstance(opening_id_topic, str) and str(opening_id_topic).startswith("0x") else opening_id_topic)
+        user_address = Web3.to_checksum_address("0x" + user_hex[-40:])
+        opening_id = int(opening_hex, 16)
         # cardIds are ABI-encoded in data as uint256[]
         try:
-            # First 32 bytes: offset, then dynamic array. Simpler: use eth_abi if needed.
             from eth_abi import decode
 
-            card_ids = decode(["uint256[]"], bytes.fromhex(log["data"][2:]))[0]
+            raw_data = _log_data_to_bytes(log.get("data"))
+            card_ids = list(decode(["uint256[]"], raw_data)[0]) if raw_data else []
         except Exception:
             card_ids = []
         return {
@@ -260,10 +275,11 @@ def _fetch_pack_opened_events(from_block: int, to_block: int) -> list[dict]:
         try:
             user_topic = log["topics"][1]
             opening_id_topic = log["topics"][2]
-            user_address = Web3.to_checksum_address("0x" + user_topic.hex()[-40:])
-            opening_id = int(opening_id_topic.hex(), 16)
+            user_address = Web3.to_checksum_address("0x" + (user_topic.hex() if hasattr(user_topic, "hex") else str(user_topic))[-40:])
+            opening_id = int((opening_id_topic.hex() if hasattr(opening_id_topic, "hex") else str(opening_id_topic)), 16)
             from eth_abi import decode
-            card_ids = list(decode(["uint256[]"], bytes.fromhex(log["data"][2:]))[0])
+            raw_data = _log_data_to_bytes(log.get("data"))
+            card_ids = list(decode(["uint256[]"], raw_data)[0]) if raw_data else []
         except Exception as e:
             logger.debug("Decode PackOpened log failed: %s", e)
             continue

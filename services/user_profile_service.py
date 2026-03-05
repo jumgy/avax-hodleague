@@ -205,6 +205,7 @@ class UserProfileService:
             cards = []
 
             for row in result:
+                rendered_url = row.rendered_image_url or row.token_image_url or ""
                 card_data = {
                     "user_card_id": row.user_card_id,
                     "card_id": row.card_id,
@@ -215,7 +216,7 @@ class UserProfileService:
                     "rarity_name": row.rarity_name,
                     "rarity_color": row.rarity_color,
                     "design_type": row.design_type,
-                    "rendered_image_url": row.rendered_image_url,
+                    "rendered_image_url": rendered_url,
                     "calculated_score": float(row.calculated_score) if row.calculated_score else 0,
                     "current_price": float(row.current_price) if row.current_price else None,
                     "market_cap": int(row.market_cap) if row.market_cap else None,

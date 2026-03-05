@@ -345,6 +345,7 @@ class PackOpeningService:
             
             cards = []
             for row in rows:
+                rendered_url = row.rendered_image_url or row.token_image_url or ""
                 cards.append({
                     "user_card_id": row.user_card_id,
                     "card_id": row.card_id,
@@ -354,7 +355,7 @@ class PackOpeningService:
                     "rarity_name": row.rarity_name,
                     "rarity_color": row.rarity_color,
                     "design_type": row.design_type,
-                    "rendered_image_url": row.rendered_image_url
+                    "rendered_image_url": rendered_url,
                 })
             
             return cards
@@ -501,6 +502,7 @@ class PackOpeningService:
         # Format cards
         cards_received = []
         for user_card, card, token, rarity in cards_data:
+            rendered_url = card.rendered_image_url or token.image_url or ""
             cards_received.append({
                 "user_card_id": user_card.id,
                 "card_id": card.id,
@@ -510,7 +512,7 @@ class PackOpeningService:
                 "rarity_name": rarity.name,
                 "rarity_color": rarity.color,
                 "design_type": card.design_type,
-                "rendered_image_url": card.rendered_image_url
+                "rendered_image_url": rendered_url,
             })
         
         return {

@@ -249,9 +249,12 @@ async def verify_signature(
         # Create JWT
         access_token = web3_auth_service.create_jwt_token(user)
         
-        # UAT: SameSite=None for cross-origin; production: SameSite=lax for same-site
+        # development: allow http (e.g. localhost); production/UAT: secure only
         if Config.ENVIRONMENT == "production":
             cookie_secure = True
+            cookie_samesite = "lax"
+        elif Config.ENVIRONMENT == "development":
+            cookie_secure = False  # So cookies work over http://localhost
             cookie_samesite = "lax"
         else:
             cookie_secure = True  # UAT uses HTTPS
@@ -299,8 +302,11 @@ async def logout(response: Response):
     if Config.ENVIRONMENT == "production":
         cookie_secure = True
         cookie_samesite = "lax"
+    elif Config.ENVIRONMENT == "development":
+        cookie_secure = False
+        cookie_samesite = "lax"
     else:
-        cookie_secure = True  # When HTTPS is used
+        cookie_secure = True  # UAT uses HTTPS
         cookie_samesite = "none"
     response.delete_cookie(
         key="access_token",

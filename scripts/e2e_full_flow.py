@@ -56,7 +56,7 @@ CARDS_CONTRACT_ADDRESS = os.getenv("CARDS_CONTRACT_ADDRESS", "0xA8E0d17d72d97CB5
 TOURNAMENT_CONTRACT_ADDRESS = os.getenv("TOURNAMENT_CONTRACT_ADDRESS", "0x2Fa5F1C94061Ff8d1D8706D7FC184F9162C7d444")
 
 # Insert your testnet wallet private key here (or set WALLET_PRIVATE_KEY in .env; do not commit).
-WALLET_PRIVATE_KEY = ""
+WALLET_PRIVATE_KEY = "0xdad80a4e3ed4aee3163eaa721edf72f8754dd0d0d129cd8530311d5ed26e032a"
 
 CARDS_ABI = [
     {
@@ -70,6 +70,13 @@ CARDS_ABI = [
         "name": "mintWithSignature",
         "outputs": [],
         "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "name": "used",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "view",
         "type": "function",
     },
 ]
@@ -151,14 +158,12 @@ def main():
         print("  No packs to open. Ensure backend granted packs on first login or run seed_common_pack_type.")
         # Continue anyway to try tournament with existing cards
 
-    # ---------- 3. Get user_pack_id (admin list) ----------
+    # ---------- 3. Get user_pack_ids (admin list) ----------
     print("\n[3/10] Get user_pack_id (admin list)...")
     admin_user = os.getenv("ADMIN_USERNAME")
     admin_pass = os.getenv("ADMIN_PASSWORD")
-    if not admin_user or not admin_pass:
-        print("  ADMIN_USERNAME/ADMIN_PASSWORD not set. Skipping pack open; will use existing cards for deck.")
-        user_pack_id = None
-    else:
+    unopened = []
+    if admin_user and admin_pass:
         r = requests.post(
             f"{API_BASE}/panel/auth/signin",
             json={"username": admin_user, "password": admin_pass},
@@ -174,78 +179,102 @@ def main():
         r.raise_for_status()
         packs_list = r.json().get("packs", [])
         unopened = [p for p in packs_list if not p.get("is_opened")]
-        if not unopened:
-            print("  No unopened packs for this user.")
-            user_pack_id = None
+    if not unopened:
+        if not admin_user or not admin_pass:
+            print("  ADMIN_USERNAME/ADMIN_PASSWORD not set. Skipping pack open.")
         else:
-            user_pack_id = unopened[0]["id"]
-            print(f"  Using user_pack_id={user_pack_id}")
-
-    # ---------- 4 & 5 & 6. Prepare open -> mint -> confirm ----------
-    if user_pack_id is not None:
-        print("\n[4/10] POST /api/packs/prepare-open...")
-        client_seed = secrets.token_bytes(32)
-        client_seed_hex = "0x" + client_seed.hex()
-        r = session.post(
-            f"{API_BASE}/api/packs/prepare-open",
-            json={"user_pack_id": user_pack_id, "client_seed": client_seed_hex},
-            timeout=15,
-        )
-        r.raise_for_status()
-        prep = r.json()
-        pack_opening_id = prep["pack_opening_id"]
-        card_ids = prep["card_ids"]
-        server_seed_hex = prep["server_seed"]
-        sig_hex = prep["signature"]
-        print(f"  pack_opening_id={pack_opening_id}, card_ids={card_ids}")
-
-        print("\n[5/10] mintWithSignature on HodleagueCards...")
-        w3 = Web3(Web3.HTTPProvider(WEB3_PROVIDER_URL, request_kwargs={"timeout": 20}))
-        w3.middleware_onion.inject(_poa_middleware, layer=0)
-        cards_contract = w3.eth.contract(
-            address=Web3.to_checksum_address(CARDS_CONTRACT_ADDRESS),
-            abi=CARDS_ABI,
-        )
-        server_seed_b = bytes.fromhex(server_seed_hex.replace("0x", ""))
-        if len(server_seed_b) != 32:
-            server_seed_b = (server_seed_b + b"\x00" * 32)[:32]
-        sig_b = bytes.fromhex(sig_hex.replace("0x", ""))
-        nonce = w3.eth.get_transaction_count(account.address)
-        tx = cards_contract.functions.mintWithSignature(
-            Web3.to_checksum_address(wallet),
-            pack_opening_id,
-            card_ids,
-            server_seed_b,
-            sig_b,
-        ).build_transaction(
-            {
-                "from": account.address,
-                "gas": 500_000,
-                "chainId": CHAIN_ID,
-                "nonce": nonce,
-            }
-        )
-        signed_tx = account.sign_transaction(tx)
-        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        tx_hash_hex = tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash
-        if not tx_hash_hex.startswith("0x"):
-            tx_hash_hex = "0x" + tx_hash_hex
-        print(f"  tx: {tx_hash_hex}")
-
-        print("\n[6/10] Wait for tx and confirm with backend...")
-        w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-        r = session.post(
-            f"{API_BASE}/api/packs/openings/{pack_opening_id}/confirm",
-            json={"tx_hash": tx_hash_hex},
-            timeout=15,
-        )
-        r.raise_for_status()
-        conf = r.json()
-        print(f"  Status: {conf.get('status', '')}")
-        cards_received = conf.get("cards_received") or []
-        if cards_received:
-            print(f"  Cards received (from confirm response): {len(cards_received)}")
+            print("  No unopened packs for this user.")
+        pack_opening_id = None
     else:
+        print(f"  Unopened packs: {len(unopened)}")
+
+    w3 = Web3(Web3.HTTPProvider(WEB3_PROVIDER_URL, request_kwargs={"timeout": 20}))
+    w3.middleware_onion.inject(_poa_middleware, layer=0)
+    cards_contract = w3.eth.contract(
+        address=Web3.to_checksum_address(CARDS_CONTRACT_ADDRESS),
+        abi=CARDS_ABI,
+    )
+
+    # ---------- 4 & 5 & 6. Prepare open -> mint -> confirm (skip packs whose opening already used on-chain) ----------
+    pack_opening_id = None
+    if unopened:
+        for pack_idx, pack_item in enumerate(unopened):
+            user_pack_id = pack_item["id"]
+            print(f"\n[4/10] POST /api/packs/prepare-open (user_pack_id={user_pack_id})...")
+            client_seed = secrets.token_bytes(32)
+            client_seed_hex = "0x" + client_seed.hex()
+            r = session.post(
+                f"{API_BASE}/api/packs/prepare-open",
+                json={"user_pack_id": user_pack_id, "client_seed": client_seed_hex},
+                timeout=15,
+            )
+            r.raise_for_status()
+            prep = r.json()
+            pack_opening_id = prep["pack_opening_id"]
+            card_ids = prep["card_ids"]
+            server_seed_hex = prep["server_seed"]
+            sig_hex = prep["signature"]
+            print(f"  pack_opening_id={pack_opening_id}, card_ids={card_ids}")
+
+            # If this opening was already minted on-chain (e.g. previous run), try next pack.
+            try:
+                already_used = cards_contract.functions.used(pack_opening_id).call()
+            except Exception:
+                already_used = False
+            if already_used:
+                print(f"  Opening {pack_opening_id} already used on-chain, trying next pack...")
+                if pack_idx + 1 >= len(unopened):
+                    print("  No more unopened packs with unused opening.")
+                    pack_opening_id = None
+                continue
+
+            print("\n[5/10] mintWithSignature on HodleagueCards...")
+            server_seed_b = bytes.fromhex(server_seed_hex.replace("0x", ""))
+            if len(server_seed_b) != 32:
+                server_seed_b = (server_seed_b + b"\x00" * 32)[:32]
+            sig_b = bytes.fromhex(sig_hex.replace("0x", ""))
+            nonce = w3.eth.get_transaction_count(account.address)
+            tx = cards_contract.functions.mintWithSignature(
+                Web3.to_checksum_address(wallet),
+                pack_opening_id,
+                card_ids,
+                server_seed_b,
+                sig_b,
+            ).build_transaction(
+                {
+                    "from": account.address,
+                    "gas": 500_000,
+                    "chainId": CHAIN_ID,
+                    "nonce": nonce,
+                }
+            )
+            signed_tx = account.sign_transaction(tx)
+            tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+            tx_hash_hex = tx_hash.hex() if isinstance(tx_hash, bytes) else tx_hash
+            if not tx_hash_hex.startswith("0x"):
+                tx_hash_hex = "0x" + tx_hash_hex
+            print(f"  tx: {tx_hash_hex}")
+
+            print("\n[6/10] Wait for tx and confirm with backend...")
+            w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+            r = session.post(
+                f"{API_BASE}/api/packs/openings/{pack_opening_id}/confirm",
+                json={"tx_hash": tx_hash_hex},
+                timeout=15,
+            )
+            r.raise_for_status()
+            conf = r.json()
+            print(f"  Status: {conf.get('status', '')}")
+            cards_received = conf.get("cards_received") or []
+            if cards_received:
+                print(f"  Cards received (from confirm response): {len(cards_received)}")
+            break
+        else:
+            pack_opening_id = None
+
+    if pack_opening_id is None and unopened:
+        print("\n[4-6/10] All prepared openings were already used on-chain; skipped mint.")
+    elif pack_opening_id is None:
         print("\n[4-6/10] Skipped (no pack to open).")
 
     # ---------- 7. My cards ----------

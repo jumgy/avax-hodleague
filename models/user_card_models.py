@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, BigInteger
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, BigInteger, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from .database import Base
@@ -22,7 +22,8 @@ class UserCard(Base):
     status = Column(String(20), nullable=False, default="available")
     is_active = Column(Boolean, nullable=False, default=True)
     transaction_hash = Column(String(66), nullable=True)
-    nft_token_id = Column(BigInteger, nullable=True)
+    # Full 256-bit ERC-721 token id stored as NUMERIC(78,0) in PostgreSQL.
+    nft_token_id = Column(Numeric(78, 0), nullable=True)
     chain_id = Column(Integer, nullable=True)
     contract_address = Column(String(42), nullable=True)
     
