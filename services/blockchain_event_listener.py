@@ -2,8 +2,9 @@
 Listener and helpers for on-chain card mints.
 
 In the current architecture packs are off-chain only. This module focuses on:
-  - Confirming HodleagueCards.mintWithSignature transactions by tx hash.
-  - Creating UserCard records and marking PackOpening as completed.
+  - Confirming HodleagueCards.mintWithSignature transactions by tx hash (client sends tx_hash).
+  - Background job: poll PackOpened events from HodleagueCards so even if the client never
+    sends tx_hash, we still create UserCard records when we see the mint on-chain.
 """
 
 import asyncio
@@ -18,8 +19,12 @@ from config import Config
 from models.user_models import User
 from models.user_pack_models import PackOpening, UserPack
 from models.user_card_models import UserCard
+from models.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
+
+# HodleagueCards emits PackOpened(address indexed user, uint256 indexed openingId, uint256[] cardIds)
+PACK_OPENED_TOPIC = "0x" + Web3.keccak(text="PackOpened(address,uint256,uint256[])").hex()
 
 
 def _parse_pack_opened_from_receipt(tx_hash: str):
@@ -225,3 +230,79 @@ async def confirm_pack_opening_by_tx_hash(
         db=db,
     )
     return "processed" if ok else "mismatch"
+
+
+def _fetch_pack_opened_events(from_block: int, to_block: int) -> list[dict]:
+    """
+    Fetch PackOpened logs from HodleagueCards in the given block range.
+    Returns list of {"user": address, "openingId": int, "cardIds": list[int]}.
+    """
+    cards_address = (Config.CARDS_CONTRACT_ADDRESS or "").strip()
+    if not cards_address:
+        return []
+    w3 = Web3(Web3.HTTPProvider(Config.WEB3_PROVIDER_URL, request_kwargs={"timeout": 15}))
+    try:
+        logs = w3.eth.get_logs(
+            {
+                "address": Web3.to_checksum_address(cards_address),
+                "fromBlock": from_block,
+                "toBlock": to_block,
+                "topics": [PACK_OPENED_TOPIC],
+            }
+        )
+    except Exception as e:
+        logger.warning("get_logs PackOpened failed: %s", e)
+        return []
+    out = []
+    for log in logs:
+        if not log.get("topics") or len(log["topics"]) < 3:
+            continue
+        try:
+            user_topic = log["topics"][1]
+            opening_id_topic = log["topics"][2]
+            user_address = Web3.to_checksum_address("0x" + user_topic.hex()[-40:])
+            opening_id = int(opening_id_topic.hex(), 16)
+            from eth_abi import decode
+            card_ids = list(decode(["uint256[]"], bytes.fromhex(log["data"][2:]))[0])
+        except Exception as e:
+            logger.debug("Decode PackOpened log failed: %s", e)
+            continue
+        out.append({"user": user_address, "openingId": opening_id, "cardIds": card_ids})
+    return out
+
+
+# Block range to poll: ~2 sec/block on Avalanche C-Chain, 10s job => ~5 blocks; use 20 for margin.
+PACK_OPENED_POLL_BLOCKS = 20
+
+
+async def process_pack_opened_events_job() -> None:
+    """
+    Poll recent blocks for PackOpened events and apply them to the DB.
+    So even if the client never calls /confirm with tx_hash, we still create UserCards
+    when the user mints via HodleagueCards.mintWithSignature.
+    """
+    cards_address = (Config.CARDS_CONTRACT_ADDRESS or "").strip()
+    if not cards_address:
+        return
+    try:
+        w3 = Web3(Web3.HTTPProvider(Config.WEB3_PROVIDER_URL, request_kwargs={"timeout": 10}))
+        latest = w3.eth.block_number
+        from_block = max(0, latest - PACK_OPENED_POLL_BLOCKS)
+        events = await asyncio.to_thread(_fetch_pack_opened_events, from_block, latest)
+        if not events:
+            return
+        async with AsyncSessionLocal() as db:
+            for ev in events:
+                try:
+                    await _apply_pack_opened_event(
+                        user_address=ev["user"],
+                        opening_id=int(ev["openingId"]),
+                        card_ids=[int(x) for x in ev["cardIds"]],
+                        db=db,
+                    )
+                    await db.commit()
+                except Exception as e:
+                    logger.warning("apply PackOpened event opening_id=%s: %s", ev.get("openingId"), e)
+                    await db.rollback()
+    except Exception as e:
+        logger.warning("process_pack_opened_events_job failed: %s", e)

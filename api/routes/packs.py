@@ -86,6 +86,17 @@ class OpenPackResponse(BaseModel):
     opened_at: str
     cards_received: List[CardReceived]
 
+
+class ConfirmOpenResponse(BaseModel):
+    """On success, returns full opening so the client does not need a separate GET."""
+    status: str  # "completed"
+    pack_opening_id: int
+    pack_type_name: str
+    opened_at: str
+    cards_received: List[CardReceived]
+    nft_token_ids: Optional[List[int]] = None
+
+
 class PackHistoryItem(BaseModel):
     pack_opening_id: int
     pack_type_name: str
@@ -274,9 +285,9 @@ async def get_pack_opening_status(
 
 @router.post(
     "/packs/openings/{pack_opening_id}/confirm",
-    response_model=PackOpeningStatusResponse,
+    response_model=ConfirmOpenResponse,
     summary="Confirm card mint by tx hash",
-    description="After submitting mintWithSignature tx, send tx_hash to apply PackOpened event and mark opening completed.",
+    description="After submitting mintWithSignature tx, send tx_hash. On success returns full opening with cards (no extra GET needed).",
 )
 @limiter.limit("30/minute")
 async def confirm_pack_open(
@@ -286,7 +297,7 @@ async def confirm_pack_open(
     current_user: dict = Depends(verify_jwt_dependency),
     db: AsyncSession = Depends(get_async_db),
 ):
-    """Confirm on-chain mintWithSignature by transaction hash; creates UserCards and sets status=completed."""
+    """Confirm on-chain mintWithSignature by transaction hash; creates UserCards. Returns full opening with cards_received."""
     try:
         user_id = current_user["user_id"]
         ownership = await pack_opening_service.get_pack_opening_status(
@@ -315,12 +326,29 @@ async def confirm_pack_open(
                 detail="Transaction does not match this pack opening (user or opening_id)",
             )
         await db.commit()
-        result = await pack_opening_service.get_pack_opening_status(
+        full = await pack_opening_service.get_pack_opening_by_id(
             pack_opening_id=pack_opening_id,
             user_id=user_id,
             db=db,
         )
-        return PackOpeningStatusResponse(**result)
+        if not full:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Opening confirmed but failed to load result",
+            )
+        status_result = await pack_opening_service.get_pack_opening_status(
+            pack_opening_id=pack_opening_id,
+            user_id=user_id,
+            db=db,
+        )
+        return ConfirmOpenResponse(
+            status="completed",
+            pack_opening_id=full["pack_opening_id"],
+            pack_type_name=full["pack_type_name"],
+            opened_at=full["opened_at"],
+            cards_received=full["cards_received"],
+            nft_token_ids=status_result.get("nft_token_ids"),
+        )
     except HTTPException:
         raise
     except Exception as e:

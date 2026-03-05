@@ -11,7 +11,6 @@ from eth_account import Account
 from web3 import Web3
 
 from config import Config
-from services.pack_signing_service import sign_reveal_open
 
 logger = logging.getLogger(__name__)
 
@@ -48,29 +47,6 @@ PACKS_ABI = [
         "stateMutability": "nonpayable",
         "type": "function",
     },
-    {
-        "inputs": [{"internalType": "uint256", "name": "commitId", "type": "uint256"}],
-        "name": "getCommit",
-        "outputs": [
-            {"internalType": "address", "name": "user", "type": "address"},
-            {"internalType": "uint256", "name": "packTypeId", "type": "uint256"},
-            {"internalType": "uint256", "name": "timestamp", "type": "uint256"},
-        ],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [
-            {"internalType": "uint256", "name": "commitId", "type": "uint256"},
-            {"internalType": "uint256[]", "name": "cardIds", "type": "uint256[]"},
-            {"internalType": "bytes32", "name": "serverSeed", "type": "bytes32"},
-            {"internalType": "bytes", "name": "signature", "type": "bytes"},
-        ],
-        "name": "relayerRevealOpen",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
 ]
 
 
@@ -89,16 +65,6 @@ def _get_hot_wallet_account() -> Account:
     key = (Config.HOT_WALLET_PRIVATE_KEY or "").strip()
     if not key:
         raise ValueError("HOT_WALLET_PRIVATE_KEY is not set")
-    if key.startswith("0x"):
-        key = key[2:]
-    return Account.from_key(key)
-
-
-def _get_signer_account() -> Account:
-    """Return Account for PACK_SIGNER key (SIGNER_ROLE). Used to send relayerRevealOpen tx."""
-    key = (Config.PACK_SIGNER_PRIVATE_KEY or "").strip()
-    if not key:
-        raise ValueError("PACK_SIGNER_PRIVATE_KEY is not set")
     if key.startswith("0x"):
         key = key[2:]
     return Account.from_key(key)
@@ -222,57 +188,6 @@ async def get_commit(commit_id: int) -> Optional[tuple[str, int, int]]:
     except Exception as e:
         logger.debug("getCommit failed for commit_id=%s: %s", commit_id, e)
         return None
-
-
-async def relayer_reveal_open(
-    commit_id: int,
-    user_wallet_address: str,
-    card_ids: list[int],
-    server_seed: bytes,
-) -> str:
-    """
-    Call relayerRevealOpen on HodleaguePacks as SIGNER. Used for abandoned commits
-    (user got prepare-open but never sent revealOpen). Cards mint to user_wallet_address.
-    """
-    if len(server_seed) != 32:
-        raise ValueError("server_seed must be 32 bytes")
-    signature = sign_reveal_open(
-        user_address=user_wallet_address,
-        commit_id=commit_id,
-        card_ids=card_ids,
-        server_seed=server_seed,
-    )
-    account = _get_signer_account()
-    contract = _get_packs_contract()
-
-    def _build_and_send():
-        w3 = contract.w3
-        nonce = w3.eth.get_transaction_count(account.address)
-        tx = contract.functions.relayerRevealOpen(
-            commit_id,
-            card_ids,
-            server_seed,
-            signature,
-        ).build_transaction(
-            {
-                "from": account.address,
-                "gas": 500_000,
-                "chainId": Config.CHAIN_ID,
-                "nonce": nonce,
-            }
-        )
-        signed = account.sign_transaction(tx)
-        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        return tx_hash.hex()
-
-    tx_hash = await asyncio.to_thread(_build_and_send)
-    logger.info(
-        "Relayer reveal tx submitted: %s (commit_id=%s, user=%s)",
-        tx_hash,
-        commit_id,
-        user_wallet_address[:10],
-    )
-    return tx_hash
 
 
 async def set_pack_price(pack_type_id: int, price_wei: int) -> str:

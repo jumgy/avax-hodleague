@@ -17,7 +17,7 @@ from models.database import AsyncSessionLocal
 from models.user_pack_models import PackSource
 from services.lock_service import JobLockService
 from services.user_pack_grant_service import user_pack_grant_service
-from services.blockchain_event_listener import confirm_pack_opening_by_tx_hash  # kept for explicit imports; listener job removed
+from services.blockchain_event_listener import confirm_pack_opening_by_tx_hash, process_pack_opened_events_job
 from services.card_inventory_health_job import run_card_inventory_health_check
 from config import Config
 
@@ -81,6 +81,17 @@ class SchedulerService:
                 replace_existing=True,
                 max_instances=1,
                 misfire_grace_time=600
+            )
+
+            # Job 5: Poll HodleagueCards PackOpened events so we create UserCards even if client never sends tx_hash.
+            self.scheduler.add_job(
+                func=self._pack_opened_listener_job,
+                trigger=IntervalTrigger(seconds=10),
+                id='pack_opened_listener',
+                name='PackOpened event listener',
+                replace_existing=True,
+                max_instances=1,
+                misfire_grace_time=30
             )
             
             self.scheduler.start()
@@ -392,6 +403,13 @@ class SchedulerService:
             await run_card_inventory_health_check()
         except Exception as e:
             logger.error("Card inventory health job failed: %s", e, exc_info=True)
+
+    async def _pack_opened_listener_job(self):
+        """Poll PackOpened events from HodleagueCards and create UserCards when user mints."""
+        try:
+            await process_pack_opened_events_job()
+        except Exception as e:
+            logger.warning("PackOpened listener job failed: %s", e)
 
     async def run_price_and_score_now(self):
         """Manually trigger price update and score calculation"""
