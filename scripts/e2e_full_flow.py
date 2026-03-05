@@ -7,7 +7,7 @@ Flow:
   3. Get user_pack_id via admin GET /panel/packs/list/{user_id} (requires ADMIN_USERNAME/PASSWORD).
   4. POST /api/packs/prepare-open -> card_ids, server_seed, signature.
   5. HodleagueCards.mintWithSignature(...) on-chain.
-  6. POST /api/packs/openings/{id}/confirm with tx_hash.
+  6. POST /api/packs/openings/{id}/confirm with tx_hash (response includes full opening + cards_received, no extra GET).
   7. GET /api/users/me?include_cards=true -> pick 5 cards for deck.
   8. POST /api/tournaments/{id}/validate-deck -> deck_hash.
   9. TournamentRegistry.registerDeck(tournamentId, deckHash) on-chain.
@@ -240,7 +240,11 @@ def main():
             timeout=15,
         )
         r.raise_for_status()
-        print(f"  Status: {r.json().get('status', '')}")
+        conf = r.json()
+        print(f"  Status: {conf.get('status', '')}")
+        cards_received = conf.get("cards_received") or []
+        if cards_received:
+            print(f"  Cards received (from confirm response): {len(cards_received)}")
     else:
         print("\n[4-6/10] Skipped (no pack to open).")
 

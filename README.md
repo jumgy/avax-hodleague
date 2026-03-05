@@ -23,16 +23,21 @@ Key ideas:
   - On-chain state is minimal: only `tokenId` and owner.
   - Metadata (name, stats, images, rarity) is served by the backend at `NFT_METADATA_BASE_URL` → `/nft/cards/{id}`.
 
+- `TournamentRegistry.sol`
+  - Stores one deck commitment (hash) per user per tournament on-chain.
+  - User calls `registerDeck(tournamentId, deckHash)` or `unregisterDeck(tournamentId)`; the backend returns `deck_hash` and contract info from `POST /api/tournaments/{id}/validate-deck`. After the on-chain tx, the client sends the `tx_hash` to `POST /api/tournaments/{id}/register` (or `.../unregister`), and the backend verifies the tx and writes to PostgreSQL.
+  - Configure `TOURNAMENT_CONTRACT_ADDRESS` in `.env` to point to the deployed contract.
+
 - Packs (off-chain)
   - User packs are stored in PostgreSQL (`UserPack`, `PackOpening`) and managed by the backend.
   - When a user opens a pack, the backend:
     - deterministically selects `card_ids` based on pack configuration and seeds,
     - stores the exact result in `PackOpening` (`status="prepared"`),
     - signs a `mintWithSignature` payload for `HodleagueCards`,
-    - listens for the on-chain `PackOpened` event to create `UserCard` rows.
+    - returns that payload to the client; the client calls `HodleagueCards.mintWithSignature` and then `POST /api/packs/openings/{id}/confirm` with `tx_hash`, and the API returns the full opening with cards in one response. A background job also polls `PackOpened` events every 10 seconds so `UserCard` rows are created even if the client never sends `tx_hash`.
   - A legacy `HodleaguePacks.sol` ERC‑1155 contract exists in the `tournament-contracts` folder for historical reference, but it is not used by the current backend flow.
 
-The contract README describes roles and events for `HodleagueCards` and the legacy packs contract in more detail.
+The contract README describes roles, events, and `TournamentRegistry` in more detail.
 
 ---
 
@@ -40,8 +45,9 @@ The contract README describes roles and events for `HodleagueCards` and the lega
 
 The system is split into three layers:
 
-- **Smart contracts (Avalanche C‑Chain)** – source of truth for card ownership:
-  - ERC‑721 cards (`HodleagueCards`)
+- **Smart contracts (Avalanche C‑Chain)** – source of truth for card ownership and tournament registration:
+  - ERC‑721 cards (`HodleagueCards`) – mint via `mintWithSignature`, metadata from backend.
+  - Tournament registration (`TournamentRegistry`) – store deck commitment per user per tournament; backend verifies tx and syncs to DB.
   - A legacy ERC‑1155 packs contract (`HodleaguePacks`) remains in the repo but is not used in the live game flow.
 
 - **Backend API (FastAPI)** – game logic and API surface:
@@ -72,12 +78,16 @@ The system is split into three layers:
 
 3. **Mint cards on-chain**
    - The client sends a transaction to `HodleagueCards.mintWithSignature` with the data from `prepare-open`.
-   - After the transaction is mined, the client calls `/api/packs/openings/{id}/confirm` with the `tx_hash`.
-   - The backend:
-     - parses the on-chain `PackOpened` event,
-     - verifies it matches the stored opening,
-     - creates `UserCard` records and marks the opening as `completed`,
-     - sets `UserPack.is_opened = true` so the pack disappears from the unopened inventory.
+   - After the transaction is mined, the client calls `POST /api/packs/openings/{id}/confirm` with the `tx_hash`. The backend parses the `PackOpened` event, creates `UserCard` records, marks the opening as `completed`, and returns the full opening (including `cards_received` with images) in the same response so no extra GET is needed.
+   - A scheduler job runs every 10 seconds and polls recent blocks for `PackOpened` events; if the client never sends `tx_hash`, the backend still creates `UserCard` rows when it sees the mint, and the user will see the cards on the next profile or opening request.
+
+### Tournament registration (on-chain)
+
+1. **Validate deck** – Client sends `POST /api/tournaments/{id}/validate-deck` with `deck_composition` (list of `user_card_id`). Backend validates the deck (5 cards, weight limit, no duplicate tokens, etc.) and returns `deck_hash` plus `chain_id` and `contract_address` for the frontend.
+2. **On-chain commit** – User calls `TournamentRegistry.registerDeck(tournamentId, deckHash)` on Avalanche (same `tournamentId` as in the API, same `deckHash` from the validate response).
+3. **Backend register** – Client sends `POST /api/tournaments/{id}/register` with the same `deck_composition` and `tx_hash`. Backend verifies the transaction (correct function, user, and `deck_hash`), then creates `TournamentDeck` in PostgreSQL and locks the cards for the tournament. Unregistration: user calls `unregisterDeck(tournamentId)`, then `POST /api/tournaments/{id}/unregister` with `tx_hash`.
+
+Backend requires `TOURNAMENT_CONTRACT_ADDRESS` and `WEB3_PROVIDER_URL` in `.env` for verification.
 
 ### Cards and metadata
 
