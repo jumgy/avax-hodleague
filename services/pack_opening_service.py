@@ -1,6 +1,6 @@
 # services/pack_opening_service.py
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, List, Optional, Any
 import random
@@ -21,51 +21,65 @@ logger = logging.getLogger(__name__)
 class PackOpeningService:
     """Service for pack opening logic"""
 
-    async def check_pack_availability(
-        self, 
-        user_id: int, 
-        pack_type_id: Optional[int], 
-        db: AsyncSession
-    ) -> Dict:
+    async def get_available_packs(
+        self,
+        user_id: int,
+        pack_type_id: Optional[int],
+        db: AsyncSession,
+    ) -> Dict[str, Any]:
         """
-        Check available packs for user
-        
+        Get list of unopened packs for user with pack type details.
+
         Args:
-            user_id: User ID
-            pack_type_id: Specific pack type ID (optional)
-            db: Database session
-            
+            user_id: User ID.
+            pack_type_id: Optional filter by pack type ID.
+            db: Database session.
+
         Returns:
-            Dict with available packs info
+            Dict with "available_packs" (int) and "packs" (list of pack dicts).
         """
         try:
-            query = select(
-                UserPack.pack_type_id,
-                func.count(UserPack.id).label('count')
-            ).where(
-                UserPack.user_id == user_id,
-                UserPack.is_opened == False
+            query = (
+                select(UserPack, PackType)
+                .join(PackType, UserPack.pack_type_id == PackType.id)
+                .where(
+                    UserPack.user_id == user_id,
+                    UserPack.is_opened == False,
+                    PackType.is_active == True,
+                )
+                .order_by(UserPack.id)
             )
-            
-            if pack_type_id:
+            if pack_type_id is not None:
                 query = query.where(UserPack.pack_type_id == pack_type_id)
-            
-            query = query.group_by(UserPack.pack_type_id)
-            
+
             result = await db.execute(query)
             rows = result.all()
-            
-            packs_by_type = {row.pack_type_id: row.count for row in rows}
-            total = sum(packs_by_type.values())
-            
+
+            packs: List[Dict[str, Any]] = []
+            for user_pack, pack_type in rows:
+                packs.append({
+                    "user_pack_id": user_pack.id,
+                    "pack_type_id": pack_type.id,
+                    "pack_type_name": pack_type.name,
+                    "description": pack_type.description,
+                    "image_url": pack_type.image_url,
+                    "header_image_url": pack_type.header_image_url,
+                    "cards_per_pack": pack_type.cards_per_pack,
+                    "price": float(pack_type.price),
+                    "currency": pack_type.currency,
+                    "supply": pack_type.supply,
+                    "available_from": pack_type.available_from.isoformat() if pack_type.available_from else None,
+                    "available_until": pack_type.available_until.isoformat() if pack_type.available_until else None,
+                    "is_active": pack_type.is_active,
+                })
+
             return {
-                "total": total,
-                "by_type": packs_by_type
+                "available_packs": len(packs),
+                "packs": packs,
             }
-            
         except Exception as e:
-            logger.error(f"Error checking pack availability for user {user_id}: {e}")
-            return {"total": 0, "by_type": {}}
+            logger.error(f"Error getting available packs for user {user_id}: {e}")
+            return {"available_packs": 0, "packs": []}
 
     async def get_pack_type_details(
         self, 

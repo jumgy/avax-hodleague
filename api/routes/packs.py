@@ -2,18 +2,14 @@
 
 from fastapi import APIRouter, HTTPException, Request, status, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from models.database import get_async_db
-from models.pack_models import PackType
 import secrets
 
 from services.pack_opening_service import pack_opening_service
-from services.pack_mint_service import get_on_chain_pack_balance
 from services.blockchain_event_listener import confirm_pack_opening_by_tx_hash
 from api.routes.auth import verify_jwt_dependency
-from config import Config
 from utils.rate_limit import limiter
 import logging
 
@@ -23,9 +19,11 @@ router = APIRouter()
 
 # ==================== Pydantic Schemas ====================
 
-class PackTypeDetail(BaseModel):
+class AvailablePackItem(BaseModel):
+    """Single pack instance with pack type details."""
+    user_pack_id: int
     pack_type_id: int
-    name: str
+    pack_type_name: str
     description: str
     image_url: str
     header_image_url: str
@@ -36,11 +34,10 @@ class PackTypeDetail(BaseModel):
     available_from: Optional[str]
     available_until: Optional[str]
     is_active: bool
-    count: int  # Count owned by user
 
 class AvailablePacksResponse(BaseModel):
     available_packs: int
-    pack_types: List[PackTypeDetail]
+    packs: List[AvailablePackItem]
 
 class PrepareOpenRequest(BaseModel):
     user_pack_id: int
@@ -126,57 +123,15 @@ async def get_available_packs(
     """
     try:
         user_id = current_user["user_id"]
-        wallet_address = current_user.get("wallet_address", "")
-
-        # Get off-chain pack counts (UserPack, unopened)
-        availability = await pack_opening_service.check_pack_availability(
+        result = await pack_opening_service.get_available_packs(
             user_id=user_id,
             pack_type_id=None,
-            db=db
+            db=db,
         )
-
-        # Fetch all active pack types
-        result = await db.execute(
-            select(PackType).where(PackType.is_active == True)
-        )
-        pack_types = result.scalars().all()
-
-        # Merge off-chain counts with on-chain balanceOf for each pack type
-        pack_details = []
-        total_available = 0
-        for pack_type in pack_types:
-            off_chain_count = availability["by_type"].get(pack_type.id, 0)
-            on_chain_count = 0
-            if Config.PACKS_CONTRACT_ADDRESS and wallet_address:
-                balance = await get_on_chain_pack_balance(wallet_address, pack_type.id)
-                on_chain_count = balance or 0
-            count = off_chain_count + on_chain_count
-            if count <= 0:
-                continue
-            total_available += count
-            
-            pack_details.append(PackTypeDetail(
-                pack_type_id=pack_type.id,
-                name=pack_type.name,
-                description=pack_type.description,
-                image_url=pack_type.image_url,
-                header_image_url=pack_type.header_image_url,
-                cards_per_pack=pack_type.cards_per_pack,
-                price=float(pack_type.price),
-                currency=pack_type.currency,
-                supply=pack_type.supply,
-                available_from=pack_type.available_from.isoformat() if pack_type.available_from else None,
-                available_until=pack_type.available_until.isoformat() if pack_type.available_until else None,
-                is_active=pack_type.is_active,
-                count=count
-            ))
-
-        # Sort by pack_type_id
-        pack_details.sort(key=lambda x: x.pack_type_id)
-
+        pack_items = [AvailablePackItem(**p) for p in result["packs"]]
         return AvailablePacksResponse(
-            available_packs=total_available,
-            pack_types=pack_details
+            available_packs=result["available_packs"],
+            packs=pack_items,
         )
         
     except Exception as e:

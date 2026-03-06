@@ -56,7 +56,7 @@ CARDS_CONTRACT_ADDRESS = os.getenv("CARDS_CONTRACT_ADDRESS", "0xA8E0d17d72d97CB5
 TOURNAMENT_CONTRACT_ADDRESS = os.getenv("TOURNAMENT_CONTRACT_ADDRESS", "0x2Fa5F1C94061Ff8d1D8706D7FC184F9162C7d444")
 
 # Insert your testnet wallet private key here (or set WALLET_PRIVATE_KEY in .env; do not commit).
-WALLET_PRIVATE_KEY = ""
+WALLET_PRIVATE_KEY = "0xb2098d20b1314e336c2f2679a79785b84382de6b2b6e40a93230906ae0b1e441"
 
 CARDS_ABI = [
     {
@@ -147,43 +147,23 @@ def main():
     packs_granted = auth_data.get("packs_granted") or 0
     print(f"  User ID: {user_id}, packs_granted: {packs_granted}")
 
-    # ---------- 2. Available packs ----------
+    # ---------- 2. Available packs (list with user_pack_id per pack) ----------
     print("\n[2/10] GET /api/packs/available...")
     r = session.get(f"{API_BASE}/api/packs/available", timeout=10)
     r.raise_for_status()
     avail = r.json()
+    packs = avail.get("packs", [])
     total = avail.get("available_packs", 0)
     print(f"  Available packs: {total}")
     if total == 0:
         print("  No packs to open. Ensure backend granted packs on first login or run seed_common_pack_type.")
         # Continue anyway to try tournament with existing cards
 
-    # ---------- 3. Get user_pack_ids (admin list) ----------
-    print("\n[3/10] Get user_pack_id (admin list)...")
-    admin_user = os.getenv("ADMIN_USERNAME")
-    admin_pass = os.getenv("ADMIN_PASSWORD")
-    unopened = []
-    if admin_user and admin_pass:
-        r = requests.post(
-            f"{API_BASE}/panel/auth/signin",
-            json={"username": admin_user, "password": admin_pass},
-            timeout=10,
-        )
-        r.raise_for_status()
-        admin_jwt = r.json()["access_token"]
-        r = requests.get(
-            f"{API_BASE}/panel/packs/list/{user_id}",
-            headers={"Authorization": f"Bearer {admin_jwt}"},
-            timeout=10,
-        )
-        r.raise_for_status()
-        packs_list = r.json().get("packs", [])
-        unopened = [p for p in packs_list if not p.get("is_opened")]
+    # ---------- 3. Unopened packs (from /packs/available, each has user_pack_id) ----------
+    print("\n[3/10] Unopened packs from /packs/available...")
+    unopened = [{"id": p["user_pack_id"]} for p in packs]
     if not unopened:
-        if not admin_user or not admin_pass:
-            print("  ADMIN_USERNAME/ADMIN_PASSWORD not set. Skipping pack open.")
-        else:
-            print("  No unopened packs for this user.")
+        print("  No unopened packs for this user.")
         pack_opening_id = None
     else:
         print(f"  Unopened packs: {len(unopened)}")
