@@ -52,7 +52,7 @@ TOURNAMENT_ID = int(os.getenv("E2E_TOURNAMENT_ID", "1"))
 # Avalanche Fuji testnet
 CHAIN_ID = int(os.getenv("CHAIN_ID", "43113"))
 WEB3_PROVIDER_URL = os.getenv("WEB3_PROVIDER_URL", "https://api.avax-test.network/ext/bc/C/rpc")
-CARDS_CONTRACT_ADDRESS = os.getenv("CARDS_CONTRACT_ADDRESS", "0xA8E0d17d72d97CB5C5Bf7f93eFaDc823BB2311eD")
+CARDS_CONTRACT_ADDRESS = os.getenv("CARDS_CONTRACT_ADDRESS", "0xC6d712e7cd67E0e6aC2d4210A78B9B1e11639923")
 TOURNAMENT_CONTRACT_ADDRESS = os.getenv("TOURNAMENT_CONTRACT_ADDRESS", "0x2Fa5F1C94061Ff8d1D8706D7FC184F9162C7d444")
 
 # Insert your testnet wallet private key here (or set WALLET_PRIVATE_KEY in .env; do not commit).

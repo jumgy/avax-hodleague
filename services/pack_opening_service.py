@@ -111,7 +111,8 @@ class PackOpeningService:
         Prepare off-chain pack open for HodleagueCards.mintWithSignature.
 
         - Verifies that UserPack belongs to user and is not opened.
-        - If PackOpening for this pack already exists, returns the same data (no reroll).
+        - If PackOpening for this pack already exists, re-signs with current contract
+          config and updates stored signature, then returns (same cards, no reroll).
         - Otherwise generates server_seed, derives card_ids deterministically, signs payload.
         """
         if len(client_seed) != 32:
@@ -129,12 +130,21 @@ class PackOpeningService:
         if not user_pack:
             raise ValueError("Pack not found or already opened")
 
-        # 2. If opening already exists for this pack, return existing data.
+        # 2. If opening already exists for this pack, re-sign with current contract
+        # config (so signature is valid after redeploy) and update stored signature.
         existing_result = await db.execute(
             select(PackOpening).where(PackOpening.pack_id == user_pack.id)
         )
         existing = existing_result.scalar_one_or_none()
         if existing:
+            signature = sign_mint_with_signature(
+                user_address=wallet_address,
+                opening_id=existing.id,
+                card_ids=existing.card_ids,
+                server_seed=existing.server_seed,
+            )
+            existing.signature = signature
+            await db.flush()
             return {
                 "pack_opening_id": existing.id,
                 "user_pack_id": user_pack.id,
@@ -143,7 +153,7 @@ class PackOpeningService:
                 "server_seed_hash": existing.server_seed_hash.hex(),
                 "client_seed": existing.client_seed.hex(),
                 "combined_hash": existing.combined_hash.hex(),
-                "signature": "0x" + existing.signature.hex(),
+                "signature": "0x" + signature.hex(),
             }
 
         # 3. Get pack type configuration.
