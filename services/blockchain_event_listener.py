@@ -288,7 +288,7 @@ def _fetch_pack_opened_events(from_block: int, to_block: int) -> list[dict]:
 
 
 # Block range to poll: ~2 sec/block on Avalanche C-Chain, 10s job => ~5 blocks; use 20 for margin.
-PACK_OPENED_POLL_BLOCKS = 20
+PACK_OPENED_POLL_BLOCKS = 100
 
 
 async def process_pack_opened_events_job() -> None:

@@ -1,8 +1,14 @@
-## Fantasy Crypto Tournament – Overview
+# Hodleague (Backend)
 
-Fantasy Crypto Tournament is a fantasy game for the crypto market. Players collect card decks that represent real tokens and compete in time‑boxed tournaments based on real price movements.
+Backend API and services for **Hodleague**: a fantasy league where you collect token cards, build decks, and compete for rewards.
 
-This repository contains:
+## What is it?
+
+Hodleague is a game where your intuition and market understanding decide everything. Collect cards, build your deck, and compete in weekly tournaments. Results are driven by real token dynamics — those who read the market best come out on top.
+
+This repository is the **backend** of Hodleague: a FastAPI app that serves the API, manages packs and tournaments, and verifies on-chain actions (card mints, tournament registration).
+
+## What this repo contains
 - **On-chain contract** for cards (ERC‑721) on Avalanche (`HodleagueCards`; packs are off-chain)
 - **Backend API** (FastAPI + async SQLAlchemy + PostgreSQL)
 - **Scheduler jobs** for scoring, tournaments and blockchain listeners
@@ -110,6 +116,23 @@ Backend requires `TOURNAMENT_CONTRACT_ADDRESS` and `WEB3_PROVIDER_URL` in `.env`
 - `monitoring/` – Prometheus + Grafana stack for PostgreSQL monitoring
 - `config.py` – application configuration (reads from `.env`)
 - `main.py` – FastAPI entry point
+
+---
+
+## Running the backend locally
+
+For a quick local run (e.g. to try the API or run scripts):
+
+1. Clone the repo and create a `.env` file (see required vars in `config.py`; at minimum: `POSTGRES_*`, `DATABASE_URL`, `SECRET_KEY`).
+2. From the project root:
+
+```bash
+docker-compose up -d postgres
+# Apply migrations, then:
+docker-compose up backend
+```
+
+API will be at `http://localhost:8000` (or the port set in `.env`). Contract deployment and production setup are not covered here.
 
 ---
 
