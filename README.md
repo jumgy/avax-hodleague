@@ -24,12 +24,12 @@ On-chain logic lives in the `tournament-contracts` subproject. If you want to un
 
 Key ideas:
 
-- `HodleagueCards.sol` (ERC‑721)
+- [`HodleagueCards.sol` (ERC‑721)](https://testnet.snowtrace.io/address/0x848dDC58cb7A8376cDb814c83db8F3B925374f90/contract/43113/code)
   - Each NFT represents a fantasy card linked to a token in the game DB.
   - On-chain state is minimal: only `tokenId` and owner.
   - Metadata (name, stats, images, rarity) is served by the backend at `NFT_METADATA_BASE_URL` → `/nft/cards/{id}`.
 
-- `TournamentRegistry.sol`
+- [`TournamentRegistry.sol`](https://testnet.snowtrace.io/address/0x2Fa5F1C94061Ff8d1D8706D7FC184F9162C7d444/contract/43113/code)
   - Stores one deck commitment (hash) per user per tournament on-chain.
   - User calls `registerDeck(tournamentId, deckHash)` or `unregisterDeck(tournamentId)`; the backend returns `deck_hash` and contract info from `POST /api/tournaments/{id}/validate-deck`. After the on-chain tx, the client sends the `tx_hash` to `POST /api/tournaments/{id}/register` (or `.../unregister`), and the backend verifies the tx and writes to PostgreSQL.
   - Configure `TOURNAMENT_CONTRACT_ADDRESS` in `.env` to point to the deployed contract.
